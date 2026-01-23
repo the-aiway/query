@@ -63,7 +63,7 @@ export function getPillColor(value: string) {
 }
 
 // Helper to format cell values
-export function formatCell(value: unknown, type: string) {
+export function formatCell(value: unknown, type: string, colName: string) {
   if (value === null || value === undefined) return '';
   if (type.match(/date/im) && typeof value === 'number' && !isNaN(value)) {
     // Only return date part for display in pill, not full ISO
@@ -72,6 +72,7 @@ export function formatCell(value: unknown, type: string) {
   if (typeof value === 'bigint') return value.toString();
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   if (typeof value === 'string') return value;
+  if (colName === 'id') return (value as string).toString();
   if (typeof value === 'number') {
     if (value > 1_000_000) {
       return Math.round(value / 1000) + 'k';
@@ -91,32 +92,30 @@ export function formatCell(value: unknown, type: string) {
 
 export function copyToClipboard(text: string) {
   if (!text) return;
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    void navigator.clipboard.writeText(text).catch((error) => {
-      console.warn('[QueryTable] Clipboard API failed, falling back.', error);
-      fallbackCopy(text);
-    });
-    return;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // fall through
   }
 
-  fallbackCopy(text);
-}
-
-function fallbackCopy(text: string) {
-  if (typeof document === 'undefined' || !document.body) return;
-  const el = document.createElement('textarea');
-  el.value = text;
-  el.setAttribute('readonly', '');
-  el.style.position = 'fixed';
-  el.style.opacity = '0';
-  el.style.left = '-9999px';
-  document.body.appendChild(el);
-  el.select();
-  const ok = document.execCommand('copy');
-  if (!ok) {
-    console.warn('[QueryTable] document.execCommand("copy") failed.');
+  // Fallback
+  try {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.setAttribute('readonly', '');
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    el.style.left = '-9999px';
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+  } catch {
+    // ignore
   }
-  document.body.removeChild(el);
 }
 
 function getCellTheme(
@@ -229,13 +228,13 @@ export function Cell({
       if (v) {
         const val = v.get(pageRowIndex);
         rawValue = val && typeof val === 'object' ? val[child!] : undefined;
-        display = formatCell(rawValue, type);
+        display = formatCell(rawValue, type, colName);
       }
     } else {
       const v = pageData.vectors.get(colName);
       if (v) {
         rawValue = v.get(pageRowIndex);
-        display = formatCell(rawValue, type);
+        display = formatCell(rawValue, type, colName);
         isDate = !!type.match(/DATE|TIME|TIMESTAMP/i);
         if (colName.endsWith('id') && typeof rawValue === 'string' && rawValue.length === 36) {
           isUUID = true;
