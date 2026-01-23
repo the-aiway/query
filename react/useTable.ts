@@ -1,8 +1,8 @@
 
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { useDuckDB } from './DuckDBProvider';
-import { useDuckQueryContext } from './DuckQueryContext';
+import { useDuckDB } from '../duck/DuckDBProvider';
+import { useDuckQueryContext } from '../duck/DuckQueryContext';
 import { Md5 } from 'ts-md5';
 
 function quoteIdent(name: string) {

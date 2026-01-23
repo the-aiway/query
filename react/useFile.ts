@@ -1,6 +1,5 @@
-
-import { useDuckDB } from './DuckDBProvider';
-import { useDuckQueryContext } from './DuckQueryContext';
+import { useDuckDB } from '../duck/DuckDBProvider';
+import { useDuckQueryContext } from '../duck/DuckQueryContext';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { DuckDBDataProtocol } from '@duckdb/duckdb-wasm';
 import { useEffect } from 'react';

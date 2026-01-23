@@ -1,8 +1,8 @@
 
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Md5 } from 'ts-md5';
-import { useDuckDB } from './DuckDBProvider';
-import type { InferSQL } from './inferSqlReturntype';
+import { useDuckDB } from '../duck/DuckDBProvider';
+import type { InferSQL } from '../duck/inferSqlReturntype';
 
 function quoteIdent(name: string) {
   return `"${name.replaceAll('"', '""')}"`;
