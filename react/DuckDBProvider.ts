@@ -2,7 +2,7 @@ import type { AsyncDuckDB } from '@duckdb/duckdb-wasm';
 import * as DuckDBBrowser from '@duckdb/duckdb-wasm';
 import React, { createContext, useContext, type ReactNode } from 'react';
 
-import { ConnectionPool } from './ConnectionPool';
+import { ConnectionPool } from '../duck/ConnectionPool';
 
 const duckdb = DuckDBBrowser as unknown as typeof import('@duckdb/duckdb-wasm') & {};
 
