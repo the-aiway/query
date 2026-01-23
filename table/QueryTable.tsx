@@ -1,4 +1,4 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQueries } from '@tanstack/react-query';
 import {
   type ColumnDef,
   getCoreRowModel,
@@ -7,9 +7,9 @@ import {
   type ColumnSizingState,
   type ColumnPinningState,
   type VisibilityState,
-} from "@tanstack/react-table";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { tableFromJSON, type Vector, Table } from "apache-arrow";
+} from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { tableFromJSON, type Vector, Table } from 'apache-arrow';
 import {
   X,
   Settings2,
@@ -17,16 +17,13 @@ import {
   Database,
   AlertCircle,
   Download,
-} from "lucide-react";
-import React, {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  useEffect,
-} from "react";
+  Search,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 
-import { Cell } from "./components/Cell";
+import { Cell } from './Cell';
 import {
   type ColumnSummary,
   getTableDataPageQueryOptions,
@@ -35,43 +32,35 @@ import {
   useQueryParts,
   useTableCount,
   useTableSchema,
-} from "./components/Datasource";
-import { Headers } from "./components/Headers";
-import { SqlQueryEditorPopover } from "./components/SqlQueryEditorPopover";
-import { type FilterValue, type FiltersState } from "./components/sqlUtils";
+} from './Datasource';
+import { Headers } from './Headers';
+import { SqlQueryEditorPopover } from './SqlQueryEditorPopover';
+import { type FilterValue, type FiltersState } from './sqlUtils';
 
-import { Button } from "./ui/Button";
-import { Card, CardContent } from "./ui/Card";
-import { Checkbox } from "./ui/Checkbox";
-import { Input } from "./ui/Input";
-import { Label } from "./ui/Label";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/Popover";
-import { ScrollArea } from "./ui/ScrollArea";
-import { useDuckDB } from "../duck/DuckDBProvider";
+import { Button } from '#client/components/ui/Button';
+import { Card, CardContent } from '#client/components/ui/Card';
+import { Checkbox } from '#client/components/ui/Checkbox';
+import { Input } from '#client/components/ui/Input';
+import { Label } from '#client/components/ui/Label';
+import { Popover, PopoverContent, PopoverTrigger } from '#client/components/ui/Popover';
+import { ScrollArea } from '#client/components/ui/ScrollArea';
+import { useDuckDB } from '#client/lib/duckdb';
 
 // --- Types & Helpers ---
 
 export type DataTableSource =
-  | { type: "sql"; sql: string; params?: unknown[] }
-  | {
-      type: "data";
-      data: Record<string, unknown>[];
-      tableName?: string;
-      sql?: string;
-    }
-  | { type: "arrow"; table: Table; tableName?: string; sql?: string };
+  | { type: 'sql'; sql: string; params?: unknown[] }
+  | { type: 'data'; data: Record<string, unknown>[]; tableName?: string; sql?: string }
+  | { type: 'arrow'; table: Table; tableName?: string; sql?: string };
 
 /** Create a SQL data source */
 export function query(sql: string, params?: unknown[]): DataTableSource {
-  return { type: "sql", sql, params };
+  return { type: 'sql', sql, params };
 }
 
 /** Create a data source from in-memory objects */
-export function fromJSON(
-  data: Record<string, unknown>[],
-  tableName?: string
-): DataTableSource {
-  return { type: "data", data, tableName };
+export function fromJSON(data: Record<string, unknown>[], tableName?: string): DataTableSource {
+  return { type: 'data', data, tableName };
 }
 
 type QueryTableProps = {
@@ -84,10 +73,7 @@ type QueryTableProps = {
   height?: number;
   rowHeight?: number;
   overscan?: number;
-  getRowClassName?: (ctx: {
-    get: (col: string) => unknown;
-    rowIndex: number;
-  }) => string;
+  getRowClassName?: (ctx: { get: (col: string) => unknown; rowIndex: number }) => string;
   renderCell?: (ctx: {
     colName: string;
     type: string;
@@ -101,7 +87,7 @@ type QueryTableProps = {
   colMinWidth?: number;
   colMaxWidth?: number;
 
-  pool?: ReturnType<typeof useDuckDB>["pool"];
+  pool?: ReturnType<typeof useDuckDB>['pool'];
   /** Show a fixed row number column on the left */
   showRowNumbers?: boolean;
 };
@@ -123,18 +109,14 @@ function getNextTableName() {
 // --- Internal Components ---
 
 type VirtualizedViewportProps = {
-  pool: ReturnType<typeof useDuckDB>["pool"];
+  pool: ReturnType<typeof useDuckDB>['pool'];
   height?: number;
   rowHeight: number;
   overscan: number;
 
   rowCount: number;
   table: ReturnType<typeof useReactTable<Record<string, unknown>>>;
-  schema: {
-    name: string;
-    type: string;
-    fields?: { name: string; type: string }[];
-  }[];
+  schema: { name: string; type: string; fields?: { name: string; type: string }[] }[];
   summaryMap: Map<string, ColumnSummary>;
 
   setFilters: FiltersState;
@@ -154,13 +136,10 @@ type VirtualizedViewportProps = {
 
   queryParts: ReturnType<typeof useQueryParts>;
   sorting: SortingState;
-  getRowClassName?: (ctx: {
-    get: (col: string) => unknown;
-    rowIndex: number;
-  }) => string;
-  renderCell?: QueryTableProps["renderCell"];
+  getRowClassName?: (ctx: { get: (col: string) => unknown; rowIndex: number }) => string;
+  renderCell?: QueryTableProps['renderCell'];
 };
-console.log("qqqqqqqqqqqtable");
+
 const VirtualizedViewport = React.memo(function VirtualizedViewport({
   pool,
   height,
@@ -228,21 +207,12 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
 
   const pageQueries = useQueries({
     queries: neededPages.map((pageIndex) =>
-      getTableDataPageQueryOptions(
-        pool,
-        queryParts,
-        sorting,
-        PAGE_SIZE,
-        pageIndex * PAGE_SIZE
-      )
+      getTableDataPageQueryOptions(pool, queryParts, sorting, PAGE_SIZE, pageIndex * PAGE_SIZE)
     ),
   });
 
   const pageDataMap = useMemo(() => {
-    const map = new Map<
-      number,
-      { vectors: Map<string, Vector>; rowCount: number } | undefined
-    >();
+    const map = new Map<number, { vectors: Map<string, Vector>; rowCount: number } | undefined>();
     neededPages.forEach((pageIndex, i) => {
       const result = pageQueries[i];
       if (result?.data) map.set(pageIndex, result.data);
@@ -253,10 +223,10 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
   return (
     <div
       ref={parentRef}
-      className="overflow-auto flex-1 min-h-[300px] min-w-0 bg-background"
+      className="overflow-auto flex-1 min-h-0 min-w-0 bg-background w-full"
       style={{
-        height: typeof height === "number" ? height : undefined,
-        contain: "layout paint",
+        height: typeof height === 'number' ? height : undefined,
+        contain: 'layout paint',
       }}
     >
       <Headers
@@ -276,7 +246,7 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
         fieldNamesForGlobal={fieldNamesForGlobal}
       />
 
-      <div style={{ height: totalSize, position: "relative" }}>
+      <div style={{ height: totalSize, position: 'relative' }}>
         {virtualItems.map((vi) => {
           const rowIndex = vi.index;
           const pageIndex = Math.floor(rowIndex / PAGE_SIZE);
@@ -284,38 +254,34 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
           const pageData = pageDataMap.get(pageIndex);
           const zebra = rowIndex % 2 === 0;
           const get = (col: string) => {
-            if (col.includes(".")) {
-              const [parent, child] = col.split(".");
+            if (col.includes('.')) {
+              const [parent, child] = col.split('.');
               const val = pageData?.vectors?.get(parent!)?.get(pageRowIndex);
-              return val && typeof val === "object" ? val[child!] : undefined;
+              return val && typeof val === 'object' ? val[child!] : undefined;
             }
             return pageData?.vectors?.get(col)?.get(pageRowIndex);
           };
-          const extraRowClass = getRowClassName
-            ? getRowClassName({ get, rowIndex })
-            : "";
+          const extraRowClass = getRowClassName ? getRowClassName({ get, rowIndex }) : '';
 
           return (
             <div
               key={rowIndex}
-              className={`flex border-b ${
-                zebra ? "bg-background" : "bg-muted/10"
-              } hover:bg-muted/30 ${extraRowClass}`}
+              className={`flex border-b ${zebra ? 'bg-background' : 'bg-muted/10'} hover:bg-muted/30 ${extraRowClass}`}
               style={{
-                position: "absolute",
+                position: 'absolute',
                 top: 0,
                 left: 0,
                 transform: `translateY(${vi.start}px)`,
                 height: vi.size,
-                width: "fit-content",
-                minWidth: "100%",
+                width: 'fit-content',
+                minWidth: '100%',
               }}
             >
               {visibleColumns.map((col) => {
                 const colName = col.id;
-                const type = schemaTypeByName.get(colName) ?? "";
+                const type = schemaTypeByName.get(colName) ?? '';
                 const summary = summaryMap.get(colName);
-                const isRowIndex = colName === "_row_index";
+                const isRowIndex = colName === '_row_index';
 
                 return (
                   <Cell
@@ -375,17 +341,18 @@ export function QueryTable({
   showRowNumbers = false,
 }: QueryTableProps) {
   const { pool: contextPool } = useDuckDB();
+
+  // If a DQuery is provided via query prop, use its pool
   const pool = poolProp ?? contextPool;
 
   // 1. Resolve source from various inputs
   const source = useMemo<DataTableSource | null>(() => {
     if (tableInput) {
-      if (typeof tableInput === "string") return query(tableInput, paramsInput);
-      if (Array.isArray(tableInput))
-        return { type: "data", data: tableInput, sql: sqlInput };
+      if (typeof tableInput === 'string') return query(tableInput, paramsInput);
+      if (Array.isArray(tableInput)) return { type: 'data', data: tableInput, sql: sqlInput };
       if (tableInput instanceof Table) {
         return {
-          type: "arrow",
+          type: 'arrow',
           table: tableInput,
           sql: sqlInput,
         };
@@ -400,28 +367,24 @@ export function QueryTable({
   const [registered, setRegistered] = useState<{
     sql: string;
     params?: unknown[];
+    pool?: typeof pool;
   } | null>(null);
 
   useEffect(() => {
-    if (
-      !source ||
-      (source.type !== "data" && source.type !== "arrow") ||
-      !pool
-    ) {
+    if (!source || (source.type !== 'data' && source.type !== 'arrow') || !pool) {
       setRegistered(null);
       return;
     }
 
     let cancelled = false;
-    const tableName =
-      ("tableName" in source && source.tableName) || getNextTableName();
+    const tableName = ('tableName' in source && source.tableName) || getNextTableName();
 
     async function register() {
       try {
         let tableToInsert: Table | null = null;
-        if (source?.type === "arrow") {
+        if (source?.type === 'arrow') {
           tableToInsert = source.table;
-        } else if (source?.type === "data") {
+        } else if (source?.type === 'data') {
           tableToInsert = tableFromJSON(source.data);
         }
 
@@ -445,25 +408,23 @@ export function QueryTable({
 
         setRegistered({ sql });
       } catch (err) {
-        console.error("[DataTable] Failed to register data:", err);
+        console.error('[DataTable] Failed to register data:', err);
       }
     }
 
     void register();
     return () => {
       cancelled = true;
-      pool.query(`DROP TABLE IF EXISTS "${tableName}"`).catch((error) => {
-        console.error("[QueryTable] Failed to drop temp table:", error);
-      });
+      pool.query(`DROP TABLE IF EXISTS "${tableName}"`).catch(() => {});
     };
   }, [source, pool]);
 
   // 3. Get initial SQL and params
-  const initSql = source?.type === "sql" ? source.sql : registered?.sql;
-  const params = source?.type === "sql" ? source.params : registered?.params;
+  const initSql = source?.type === 'sql' ? source.sql : registered?.sql;
+  const params = source?.type === 'sql' ? source.params : registered?.params;
 
   // Show loading while registering data
-  if ((source?.type === "data" || source?.type === "arrow") && !registered) {
+  if ((source?.type === 'data' || source?.type === 'arrow') && !registered) {
     return (
       <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden items-center justify-center bg-muted/5 border-dashed">
         <div className="flex flex-col items-center gap-3">
@@ -515,9 +476,9 @@ function QueryTableInternal({
   colMaxWidth,
   pool,
   showRowNumbers = false,
-}: Omit<QueryTableProps, "table" | "sql"> & {
+}: Omit<QueryTableProps, 'table' | 'sql'> & {
   initSql: string;
-  pool: ReturnType<typeof useDuckDB>["pool"];
+  pool: ReturnType<typeof useDuckDB>['pool'];
 }) {
   const [sql, onSaveSql] = useState(initSql);
   const lastInitSqlRef = useRef(initSql);
@@ -535,23 +496,23 @@ function QueryTableInternal({
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({});
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [globalFilter, setGlobalFilter] = useState("");
+  const [globalFilter, setGlobalFilter] = useState('');
   const [setFilters, setSetFilters] = useState<FiltersState>({});
   const [openFilterCol, setOpenFilterCol] = useState<string | null>(null);
-  const [filterSearch, setFilterSearch] = useState("");
+  const [filterSearch, setFilterSearch] = useState('');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // When filters are disabled for a table (e.g. pricing grid pivot), automatically tighten widths.
   const effectiveColDefaultWidth = enableFilters
     ? colDefaultWidth!
     : Math.min(colDefaultWidth!, 72);
-  const effectiveColMinWidth = enableFilters
-    ? colMinWidth!
-    : Math.min(colMinWidth!, 44);
-  const effectiveColMaxWidth = enableFilters
-    ? colMaxWidth!
-    : Math.min(colMaxWidth!, 110);
+  const effectiveColMinWidth = enableFilters ? colMinWidth! : Math.min(colMinWidth!, 44);
+  const effectiveColMaxWidth = enableFilters ? colMaxWidth! : Math.min(colMaxWidth!, 110);
 
-  const lastSqlRef = useRef<string>("");
+  const lastSqlRef = useRef<string>('');
   // 3b. Sizes (for auto-sizing)
   const { data: columnSizes = [] } = useColumnSizes({
     sql,
@@ -612,10 +573,7 @@ function QueryTableInternal({
     [columnSummaries]
   );
 
-  const sizeMap = useMemo(
-    () => new Map(columnSizes.map((s) => [s.name, s])),
-    [columnSizes]
-  );
+  const sizeMap = useMemo(() => new Map(columnSizes.map((s) => [s.name, s])), [columnSizes]);
 
   // Construct columns
   const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
@@ -624,7 +582,7 @@ function QueryTableInternal({
       if (col.fields && col.fields.length > 0) {
         return col.fields.map((f: { name: string; type: string }) => {
           const subName = `${col.name}.${f.name}`;
-          const displayName = subName.replace(/^\d+_/, "");
+          const displayName = subName.replace(/^\d+_/, '');
           return {
             id: subName,
             accessorKey: subName,
@@ -637,7 +595,7 @@ function QueryTableInternal({
       }
 
       // Strip numeric prefix from column names (e.g., "001_0-5" -> "0-5")
-      const displayName = col.name.replace(/^\d+_/, "");
+      const displayName = col.name.replace(/^\d+_/, '');
       return [
         {
           id: col.name,
@@ -655,9 +613,9 @@ function QueryTableInternal({
     if (showRowNumbers) {
       return [
         {
-          id: "_row_index",
-          accessorKey: "_row_index",
-          header: "#",
+          id: '_row_index',
+          accessorKey: '_row_index',
+          header: '#',
           size: 60,
           minSize: 50,
           maxSize: 80,
@@ -680,7 +638,7 @@ function QueryTableInternal({
   ]);
 
   // Seed column widths from DB, once per schema
-  const initializedSchemaRef = useRef<string>("");
+  const initializedSchemaRef = useRef<string>('');
 
   useEffect(() => {
     if (!lastSqlRef.current) {
@@ -694,15 +652,15 @@ function QueryTableInternal({
     setSorting([]);
     setColumnSizing({});
     setColumnVisibility({});
-    setGlobalFilter("");
+    setGlobalFilter('');
     setSetFilters({});
     setOpenFilterCol(null);
-    setFilterSearch("");
-    initializedSchemaRef.current = "";
+    setFilterSearch('');
+    initializedSchemaRef.current = '';
   }, [sql]);
 
   useEffect(() => {
-    const nextSchemaKey = fieldNames.join(",");
+    const nextSchemaKey = fieldNames.join(',');
     if (
       !nextSchemaKey ||
       columnSizes.length === 0 ||
@@ -714,16 +672,14 @@ function QueryTableInternal({
     const newSizing: ColumnSizingState = {};
     // Row index column has fixed width
     if (showRowNumbers) {
-      newSizing["_row_index"] = 60;
+      newSizing['_row_index'] = 60;
     }
     for (const name of fieldNames) {
       const headerLen = name.length;
       const size = sizeMap.get(name);
       const p80 = size?.p80Len ?? 0;
       const maxLen = Math.max(headerLen, p80);
-      const estimatedWidth = Math.ceil(
-        maxLen * ESTIMATE_CHAR_PX + ESTIMATE_PADDING_PX
-      );
+      const estimatedWidth = Math.ceil(maxLen * ESTIMATE_CHAR_PX + ESTIMATE_PADDING_PX);
       const clampedWidth = Math.max(
         effectiveColMinWidth,
         Math.min(effectiveColMaxWidth, estimatedWidth)
@@ -743,9 +699,9 @@ function QueryTableInternal({
   ]);
 
   // Hide empty columns by default (still toggleable in UI)
-  const initializedVisibilityRef = useRef<string>("");
+  const initializedVisibilityRef = useRef<string>('');
   useEffect(() => {
-    const schemaKey = fieldNames.join(",");
+    const schemaKey = fieldNames.join(',');
     if (
       !schemaKey ||
       initializedVisibilityRef.current === schemaKey ||
@@ -758,7 +714,7 @@ function QueryTableInternal({
     const nextVisibility: VisibilityState = {};
     // Always show row index column if enabled
     if (showRowNumbers) {
-      nextVisibility["_row_index"] = true;
+      nextVisibility['_row_index'] = true;
     }
     const candidates: Array<{ name: string; visible: boolean }> = [];
     for (const name of fieldNames) {
@@ -778,13 +734,7 @@ function QueryTableInternal({
 
     setColumnVisibility(nextVisibility);
     initializedVisibilityRef.current = schemaKey;
-  }, [
-    columnSummaries,
-    fieldNames,
-    summaryMap,
-    columnVisibility,
-    showRowNumbers,
-  ]);
+  }, [columnSummaries, fieldNames, summaryMap, columnVisibility, showRowNumbers]);
 
   const table = useReactTable({
     data: [],
@@ -797,13 +747,11 @@ function QueryTableInternal({
     },
     onSortingChange: setSorting,
     onColumnSizingChange: (updater) => {
-      setColumnSizing((prev) =>
-        typeof updater === "function" ? updater(prev) : updater
-      );
+      setColumnSizing((prev) => (typeof updater === 'function' ? updater(prev) : updater));
     },
     onColumnPinningChange: setColumnPinning,
     onColumnVisibilityChange: setColumnVisibility,
-    columnResizeMode: "onChange",
+    columnResizeMode: 'onChange',
     getCoreRowModel: getCoreRowModel(),
     manualSorting: true,
   });
@@ -817,73 +765,83 @@ function QueryTableInternal({
     });
   }, []);
 
-  const onChangeFilter = useCallback(
-    (col: string, next: FilterValue | undefined) => {
-      setSetFilters((prev) => {
-        const nextState = { ...prev };
-        if (!next) delete nextState[col];
-        else nextState[col] = next;
-        return nextState;
-      });
-    },
-    []
-  );
+  const onChangeFilter = useCallback((col: string, next: FilterValue | undefined) => {
+    setSetFilters((prev) => {
+      const nextState = { ...prev };
+      if (!next) delete nextState[col];
+      else nextState[col] = next;
+      return nextState;
+    });
+  }, []);
 
   const clearAllFilters = useCallback(() => {
     setSetFilters({});
-    setGlobalFilter("");
+    setGlobalFilter('');
     setOpenFilterCol(null);
-    setFilterSearch("");
+    setFilterSearch('');
   }, []);
 
-  // Download handler - exports all filtered data as CSV
+  // Download handler - exports all filtered data as CSV using DuckDB's native COPY TO
   const handleDownload = useCallback(async () => {
-    if (!pool) return;
+    if (!pool || !queryParts.baseSql) {
+      console.warn('[QueryTable] Download skipped: pool or baseSql not ready');
+      return;
+    }
 
-    const fullSql = queryParts.fullSql;
-    const fullParams = queryParts.fullParams;
+    setIsDownloading(true);
 
-    const conn = await pool.acquire();
     try {
-      const result = await conn.query(fullSql, fullParams);
-      const rows = result.toArray();
+      // Build full SQL with filters applied
+      const fullSql = `
+        WITH base AS (${queryParts.baseSql})
+        SELECT * FROM base
+        ${queryParts.whereClause}
+      `;
 
-      if (rows.length === 0) return;
+      // Use pool's native CSV export (handles query hooks automatically)
+      const exportFileName = `export_${Date.now()}.csv`;
+      const conn = await pool.acquire();
+      let buffer: Uint8Array;
+      try {
+        // Register empty file buffer for export
+        await pool.db.registerEmptyFileBuffer(exportFileName);
 
-      // Get column names from schema
-      const cols = schema.map((c) => c.name);
+        // Use COPY TO for native CSV export
+        const copyQuery = `
+          COPY (${fullSql}) TO '${exportFileName}' (FORMAT CSV, HEADER true)
+        `;
 
-      // Build CSV content
-      const escapeCSV = (val: unknown): string => {
-        if (val === null || val === undefined) return "";
-        const str = String(val);
-        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-          return `"${str.replace(/"/g, '""')}"`;
+        await conn.query(copyQuery);
+
+        // Get the exported data as buffer
+        const fileBuffer = await pool.db.copyFileToBuffer(exportFileName);
+        buffer = new Uint8Array(fileBuffer);
+      } finally {
+        pool.release(conn);
+        // Clean up the temporary file
+        try {
+          await pool.db.dropFile(exportFileName);
+        } catch {
+          // Ignore cleanup errors
         }
-        return str;
-      };
+      }
 
-      const header = cols.map(escapeCSV).join(",");
-      const dataRows = rows.map((row) =>
-        cols.map((col) => escapeCSV(row[col])).join(",")
-      );
-
-      const csvContent = [header, ...dataRows].join("\n");
-
-      // Create and trigger download
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      // Create download in browser
+      const blob = new Blob([buffer as unknown as BlobPart], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
+      const link = document.createElement('a');
       link.href = url;
       link.download = `export_${new Date().toISOString().slice(0, 10)}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('[QueryTable] Download failed:', error);
     } finally {
-      pool.release(conn);
+      setIsDownloading(false);
     }
-  }, [pool, queryParts.fullSql, queryParts.fullParams, schema]);
+  }, [pool, queryParts.baseSql, queryParts.whereClause]);
 
   // --- Filters UI Logic ---
   const activeSetFilters = useMemo(() => {
@@ -900,19 +858,25 @@ function QueryTableInternal({
   const totalFilterCount = (globalFilter ? 1 : 0) + activeSetFilters.length;
   const globalFilterActive = !!globalFilter.trim();
 
-  return (
-    <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden">
+  const tableContent = (
+    <Card
+      className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full max-w-screen'} min-w-0 flex flex-col overflow-hidden`}
+    >
       <CardContent className="p-0 flex flex-col min-h-0 min-w-0">
         <div className="px-3 py-2 border-b bg-muted/30 flex items-center gap-3 min-w-0">
           <Button
             variant="ghost"
             size="sm"
             className="h-7 w-7 p-0 shrink-0"
-            onClick={handleDownload}
-            disabled={isInitialLoad || rowCount === 0}
+            onClick={() => void handleDownload()}
+            disabled={isInitialLoad || rowCount === 0 || isDownloading}
             title="Download as CSV"
           >
-            <Download className="h-3.5 w-3.5" />
+            {isDownloading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
           </Button>
 
           <div className="text-[11px] font-mono text-muted-foreground whitespace-nowrap flex items-center gap-2">
@@ -927,136 +891,128 @@ function QueryTableInternal({
           </div>
 
           {/* SQL preview (must never widen the table) */}
-          <div className="min-w-0 max-w-130 flex-[0_1_520px] overflow-hidden">
+          <div className="min-w-0 flex-1 overflow-hidden">
             {onSaveSql ? (
               <SqlQueryEditorPopover sql={sql} onSave={onSaveSql} />
             ) : (
               <div
                 className="text-[11px] font-mono text-muted-foreground truncate w-full"
-                title={sql.replace(/\s+/g, " ").trim()}
+                title={sql.replace(/\s+/g, ' ').trim()}
               >
-                {sql.replace(/\s+/g, " ").trim()}
+                {sql.replace(/\s+/g, ' ').trim()}
               </div>
             )}
           </div>
 
           {/* Active Filters Display */}
-          {enableFilters &&
-            (activeSetFilters.length > 0 || globalFilterActive) && (
-              <div className="hidden lg:flex items-center gap-2 max-w-[60%] overflow-hidden shrink-0">
-                <div className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
-                  filters:
-                </div>
+          {enableFilters && (activeSetFilters.length > 0 || globalFilterActive) && (
+            <div className="hidden lg:flex items-center gap-2 max-w-[60%] overflow-hidden shrink-0">
+              <div className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
+                filters:
+              </div>
 
-                {totalFilterCount === 1 ? (
-                  <div className="flex flex-wrap items-center gap-2 overflow-hidden max-h-7">
-                    {globalFilterActive && (
+              {totalFilterCount === 1 ? (
+                <div className="flex flex-wrap items-center gap-2 overflow-hidden max-h-7">
+                  {globalFilterActive && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 px-2 h-7 rounded border bg-background text-[11px] font-mono"
+                      title="Clear global filter"
+                      onClick={() => setGlobalFilter('')}
+                    >
+                      <span className="truncate max-w-35">global</span>
+                      <X className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                  )}
+
+                  {activeSetFilters.map(([col, val]) => {
+                    let label = '';
+                    if (val.type === 'set') label = `(${val.values.length})`;
+                    else if (val.type === 'range')
+                      label = `[${Math.round(val.min * 100) / 100}, ${Math.round(val.max * 100) / 100}]`;
+
+                    return (
                       <button
+                        key={col}
                         type="button"
                         className="inline-flex items-center gap-1 px-2 h-7 rounded border bg-background text-[11px] font-mono"
-                        title="Clear global filter"
-                        onClick={() => setGlobalFilter("")}
+                        title={`Clear ${col}`}
+                        onClick={() => onClearCol(col)}
                       >
-                        <span className="truncate max-w-35">global</span>
+                        <span className="truncate max-w-45">{col}</span>
+                        <span className="text-muted-foreground">{label}</span>
                         <X className="h-3.5 w-3.5 text-muted-foreground" />
                       </button>
-                    )}
-
-                    {activeSetFilters.map(([col, val]) => {
-                      let label = "";
-                      if (val.type === "set") label = `(${val.values.length})`;
-                      else if (val.type === "range")
-                        label = `[${Math.round(val.min * 100) / 100}, ${
-                          Math.round(val.max * 100) / 100
-                        }]`;
-
-                      return (
-                        <button
-                          key={col}
-                          type="button"
-                          className="inline-flex items-center gap-1 px-2 h-7 rounded border bg-background text-[11px] font-mono"
-                          title={`Clear ${col}`}
-                          onClick={() => onClearCol(col)}
-                        >
-                          <span className="truncate max-w-45">{col}</span>
-                          <span className="text-muted-foreground">{label}</span>
-                          <X className="h-3.5 w-3.5 text-muted-foreground" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <Popover>
-                    <PopoverTrigger asChild>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-[11px] font-mono text-muted-foreground hover:text-foreground inline-flex items-center"
+                      title="Show all active filters"
+                    >
+                      [{totalFilterCount} filters see more]
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-130 p-3" align="end">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="text-xs font-mono text-muted-foreground">
+                        active filters ({totalFilterCount})
+                      </div>
                       <button
                         type="button"
-                        className="text-[11px] font-mono text-muted-foreground hover:text-foreground inline-flex items-center"
-                        title="Show all active filters"
+                        className="text-xs font-mono text-muted-foreground hover:text-foreground underline"
+                        onClick={clearAllFilters}
                       >
-                        [{totalFilterCount} filters see more]
+                        clear all
                       </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-130 p-3" align="end">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="text-xs font-mono text-muted-foreground">
-                          active filters ({totalFilterCount})
-                        </div>
-                        <button
-                          type="button"
-                          className="text-xs font-mono text-muted-foreground hover:text-foreground underline"
-                          onClick={clearAllFilters}
-                        >
-                          clear all
-                        </button>
-                      </div>
+                    </div>
 
-                      <ScrollArea className="max-h-80 pr-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {globalFilterActive && (
+                    <ScrollArea className="max-h-80 pr-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {globalFilterActive && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 px-2 h-7 rounded border bg-background text-[11px] font-mono"
+                            title="Clear global filter"
+                            onClick={() => setGlobalFilter('')}
+                          >
+                            <span className="truncate max-w-60">global</span>
+                            <X className="h-3.5 w-3.5 text-muted-foreground" />
+                          </button>
+                        )}
+
+                        {activeSetFilters.map(([col, val]) => {
+                          let label = '';
+                          if (val.type === 'set') label = `(${val.values.length})`;
+                          else if (val.type === 'range') {
+                            label = `[${Math.round(val.min * 100) / 100}, ${Math.round(val.max * 100) / 100}]`;
+                          }
+
+                          return (
                             <button
+                              key={col}
                               type="button"
                               className="inline-flex items-center gap-1 px-2 h-7 rounded border bg-background text-[11px] font-mono"
-                              title="Clear global filter"
-                              onClick={() => setGlobalFilter("")}
+                              title={`Clear ${col}`}
+                              onClick={() => onClearCol(col)}
                             >
-                              <span className="truncate max-w-60">global</span>
+                              <span className="truncate max-w-65">{col}</span>
+                              <span className="text-muted-foreground">{label}</span>
                               <X className="h-3.5 w-3.5 text-muted-foreground" />
                             </button>
-                          )}
-
-                          {activeSetFilters.map(([col, val]) => {
-                            let label = "";
-                            if (val.type === "set")
-                              label = `(${val.values.length})`;
-                            else if (val.type === "range") {
-                              label = `[${Math.round(val.min * 100) / 100}, ${
-                                Math.round(val.max * 100) / 100
-                              }]`;
-                            }
-
-                            return (
-                              <button
-                                key={col}
-                                type="button"
-                                className="inline-flex items-center gap-1 px-2 h-7 rounded border bg-background text-[11px] font-mono"
-                                title={`Clear ${col}`}
-                                onClick={() => onClearCol(col)}
-                              >
-                                <span className="truncate max-w-65">{col}</span>
-                                <span className="text-muted-foreground">
-                                  {label}
-                                </span>
-                                <X className="h-3.5 w-3.5 text-muted-foreground" />
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </ScrollArea>
-                    </PopoverContent>
-                  </Popover>
-                )}
-              </div>
-            )}
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <Popover>
@@ -1072,25 +1028,18 @@ function QueryTableInternal({
                 <ScrollArea className="h-50">
                   <div className="flex flex-col gap-1.5">
                     {table.getAllLeafColumns().map((column) => {
-                      const isRowIndex = column.id === "_row_index";
+                      const isRowIndex = column.id === '_row_index';
                       return (
-                        <div
-                          key={column.id}
-                          className="flex items-center gap-2"
-                        >
+                        <div key={column.id} className="flex items-center gap-2">
                           <Checkbox
                             id={`col-toggle-${column.id}`}
                             checked={column.getIsVisible()}
-                            onCheckedChange={(val) =>
-                              column.toggleVisibility(!!val)
-                            }
+                            onCheckedChange={(val) => column.toggleVisibility(!!val)}
                             disabled={isRowIndex}
                           />
                           <Label
                             htmlFor={`col-toggle-${column.id}`}
-                            className={`text-xs font-mono font-normal truncate ${
-                              isRowIndex ? "text-muted-foreground" : ""
-                            }`}
+                            className={`text-xs font-mono font-normal truncate ${isRowIndex ? 'text-muted-foreground' : ''}`}
                           >
                             {column.id}
                           </Label>
@@ -1102,14 +1051,68 @@ function QueryTableInternal({
               </PopoverContent>
             </Popover>
 
-            {enableFilters && (
-              <Input
-                value={globalFilter}
-                onChange={(e) => setGlobalFilter(e.target.value)}
-                placeholder="global filter"
-                className="max-w-50 h-7 text-xs font-mono shrink-0"
-              />
-            )}
+            {enableFilters &&
+              (isSearchExpanded ? (
+                <div className="flex items-center gap-1">
+                  <Input
+                    ref={searchInputRef}
+                    value={globalFilter}
+                    onChange={(e) => setGlobalFilter(e.target.value)}
+                    onBlur={() => {
+                      if (!globalFilter.trim()) {
+                        setIsSearchExpanded(false);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setGlobalFilter('');
+                        setIsSearchExpanded(false);
+                      }
+                    }}
+                    placeholder="global filter"
+                    className="w-40 h-7 text-xs font-mono shrink-0"
+                    autoFocus
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => {
+                      setGlobalFilter('');
+                      setIsSearchExpanded(false);
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={() => {
+                    setIsSearchExpanded(true);
+                    setTimeout(() => searchInputRef.current?.focus(), 0);
+                  }}
+                  title="Search"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                </Button>
+              ))}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            >
+              {isFullscreen ? (
+                <Minimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" />
+              )}
+            </Button>
           </div>
         </div>
 
@@ -1128,7 +1131,7 @@ function QueryTableInternal({
             setFilters={setFilters}
             openFilterCol={openFilterCol}
             onOpenFilterCol={(col) => {
-              setFilterSearch("");
+              setFilterSearch('');
               setOpenFilterCol(col);
             }}
             filterSearch={filterSearch}
@@ -1150,6 +1153,12 @@ function QueryTableInternal({
       </CardContent>
     </Card>
   );
+
+  if (isFullscreen) {
+    return <div className="fixed inset-0 z-50 bg-background">{tableContent}</div>;
+  }
+
+  return tableContent;
 }
 
 export const DataTable = QueryTable;
