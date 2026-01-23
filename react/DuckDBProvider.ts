@@ -123,7 +123,7 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
 
     const database = await createInstance();
     const pool = new ConnectionPool(database, maxConnections);
-
+    await config?.onInit?.(pool);
     const resource = {
       instance: database,
       pool,
