@@ -3,7 +3,7 @@ import type { Vector } from 'apache-arrow';
 
 import { normalizeSelectSql, buildWhereClause, quoteIdent, type FiltersState } from './sqlUtils';
 
-import { useDuckDB } from '../../duck/DuckDBProvider';
+import { useDuckDB } from '../../react/DuckDBProvider';
 
 export type SortingState = Array<{ id: string; desc: boolean }>;
 

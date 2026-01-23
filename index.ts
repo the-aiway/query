@@ -1,19 +1,19 @@
 // import '../demo/styles/globals.css';
 export { ConnectionPool, type InferredArrowTable } from './duck/ConnectionPool';
 export {
-  DuckDBProvider,
+  DuckQueryProvider,
   DuckDBContext,
   useDuckDB,
-  type DuckDBConfig,
+  type DuckQueryConfig,
   type DBResource,
-} from './duck/DuckDBProvider';
+} from './react/DuckDBProvider';
 import QueryTable from './table/QueryTable';
 export { QueryTable };
 export { DataTable, query, fromJSON, type DataTableSource } from './table/QueryTable';
 export type { InferSQL, Materialize, InferSQLStrict } from './duck/inferSqlReturntype';
 
 export default QueryTable;
-export * from './duck/DuckQueryContext';
-export * from './duck/useFile';
-export * from './duck/useTable';
-export * from './duck/useSql';
+export * from './react/DuckQueryContext';
+export * from './react/useFile';
+export * from './react/useTable';
+export * from './react/useSql';

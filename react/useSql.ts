@@ -1,8 +1,8 @@
 
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Md5 } from 'ts-md5';
-import { useDuckDB } from '../duck/DuckDBProvider';
+import { useDuckDB } from './DuckDBProvider';
 import type { InferSQL } from '../duck/inferSqlReturntype';
+import { fnv1a32Hex } from '../sqlUtils';
 
 function quoteIdent(name: string) {
   return `"${name.replaceAll('"', '""')}"`;
@@ -64,8 +64,8 @@ export function useSql<SQL extends string, Params extends Record<string, any> = 
     const { pool } = useDuckDB();
 
     const depHashes = deps.map((d) => d?.hash || 'null').join('|');
-    const paramHash = params ? Md5.hashStr(stableStringify(params)) : 'null';
-    const sqlHash = Md5.hashStr(sql);
+    const paramHash = params ? fnv1a32Hex(stableStringify(params)) : 'null';
+    const sqlHash = fnv1a32Hex(sql);
 
     const query = useSuspenseQuery({
         queryKey: ['duck', 'sql', sqlHash, paramHash, depHashes],

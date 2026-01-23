@@ -1,16 +1,18 @@
-import type { AsyncDuckDB } from '@duckdb/duckdb-wasm';
-import * as DuckDBBrowser from '@duckdb/duckdb-wasm';
-import React, { createContext, useContext, type ReactNode } from 'react';
+import type { AsyncDuckDB } from "@duckdb/duckdb-wasm";
+import * as DuckDBBrowser from "@duckdb/duckdb-wasm";
+import React, { createContext, useContext, type ReactNode } from "react";
 
-import { ConnectionPool } from '../duck/ConnectionPool';
+import { ConnectionPool } from "../duck/ConnectionPool";
 
-const duckdb = DuckDBBrowser as unknown as typeof import('@duckdb/duckdb-wasm') & {};
+const duckdb =
+  DuckDBBrowser as unknown as typeof import("@duckdb/duckdb-wasm") & {};
 
 export interface DuckDBConfig {
   bundlePath?: string;
+  debug?: boolean;
   maxConnections?: number;
   onInit?: (pool: ConnectionPool) => Promise<void>;
-  getAuthToken?: () => string | null;
+  customHttpHeaders?: Record<string, string>;
 }
 
 export interface DBResource {
@@ -21,14 +23,14 @@ export interface DBResource {
 }
 
 const DEFAULT_MAX_CONNECTIONS =
-  typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+  typeof navigator !== "undefined" ? navigator.hardwareConcurrency || 4 : 4;
 
 function resolveBundleBasePath(bundlePath: string) {
-  if (bundlePath.startsWith('http://') || bundlePath.startsWith('https://')) {
-    return bundlePath.replace(/\/$/, '');
+  if (bundlePath.startsWith("http://") || bundlePath.startsWith("https://")) {
+    return bundlePath.replace(/\/$/, "");
   }
-  const path = bundlePath.startsWith('/') ? bundlePath : `/${bundlePath}`;
-  return `${location.origin}${path}`.replace(/\/$/, '');
+  const path = bundlePath.startsWith("/") ? bundlePath : `/${bundlePath}`;
+  return `${location.origin}${path}`.replace(/\/$/, "");
 }
 
 function getRelevantBundle(bundlePath: string) {
@@ -63,39 +65,41 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
   }
 
   dbResourcePromise = (async () => {
-    console.log('[DuckDB] Initializing...');
-    const bundlePath = config?.bundlePath ?? '/static/duckdb';
-    console.log('[DuckDB] Using bundle path:', bundlePath);
+    const debug = config?.debug ? console.log : () => {};
+    debug("[DuckDB] Initializing...");
+    const bundlePath = config?.bundlePath ?? "/static/duckdb";
+    debug("[DuckDB] Using bundle path:", bundlePath);
     const bundle = await getRelevantBundle(bundlePath);
-    console.log('[DuckDB] Bundle resolved:', bundle);
+    debug("[DuckDB] Bundle resolved:", bundle);
     const match = bundle.mainModule.match(/duckdb-(\w+).wasm/);
-    const selectedBundle = (match && match[1]) || 'unknown';
+    const selectedBundle = (match && match[1]) || "unknown";
 
     // Create worker URL for the main worker
     const workerUrl = URL.createObjectURL(
       new Blob([`importScripts("${bundle.mainWorker}");`], {
-        type: 'text/javascript',
-      })
+        type: "text/javascript",
+      }),
     );
-    console.log('[DuckDB] Worker URL created:', workerUrl);
+    debug("[DuckDB] Worker URL created:", workerUrl);
 
     const maxConnections = config?.maxConnections ?? DEFAULT_MAX_CONNECTIONS;
 
     const createInstance = async () => {
-      console.log('[DuckDB] Creating instance...');
+      debug("[DuckDB] Creating instance...");
       const worker = new Worker(workerUrl);
       const logger = new duckdb.VoidLogger();
       const database = new duckdb.AsyncDuckDB(logger, worker);
 
       // Instantiate with the bundle (pthreadWorker enables multi-threading)
-      console.log('[DuckDB] Instantiating...', bundle.mainModule);
+      debug("[DuckDB] Instantiating...", bundle.mainModule);
       await database.instantiate(bundle.mainModule, bundle.pthreadWorker);
-      console.log('[DuckDB] Instantiated.');
-      
-      const maximumThreads = bundle.pthreadWorker ? maxConnections : 1;
-      const authToken = config?.getAuthToken?.() ?? undefined;
+      debug("[DuckDB] Instantiated.");
 
-      console.log('[DuckDB] Opening database...');
+      const maximumThreads = bundle.pthreadWorker ? maxConnections : 1;
+      const authToken =
+        config?.customHttpHeaders?.["Authorization"] ?? undefined;
+
+      debug("[DuckDB] Opening database...");
       await database.open({
         // @ts-expect-error - added in fork of duckdb-wasm
         authToken,
@@ -106,29 +110,30 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
           allowFullHTTPReads: true,
           forceFullHTTPReads: true,
         },
-        query: { castBigIntToDouble: true, castTimestampToDate: true, castDecimalToDouble: true },
+        query: {
+          castBigIntToDouble: true,
+          castTimestampToDate: true,
+          castDecimalToDouble: true,
+        },
       });
-      console.log('[DuckDB] Database opened.');
+      debug("[DuckDB] Database opened.");
       URL.revokeObjectURL(workerUrl);
       return database;
     };
 
     const database = await createInstance();
     const pool = new ConnectionPool(database, maxConnections);
-    if (typeof globalThis !== 'undefined') {
-      // @ts-expect-error - globalThis is not typed
-      globalThis.pool = pool;
-    }
 
-    if (config?.onInit) {
-      await config.onInit(pool);
-    }
-
-    const resource = { instance: database, pool, selectedBundle, createInstance };
+    const resource = {
+      instance: database,
+      pool,
+      selectedBundle,
+      createInstance,
+    };
 
     // Cache the resolved value
     dbResourceCache = resource;
-    console.log('[DuckDB] Ready.');
+    debug("[DuckDB] Ready.");
     return resource;
   })();
 
@@ -153,19 +158,18 @@ export const DuckDBContext = createContext<DBResource | null>(null);
 export function useDuckDB() {
   const context = useContext(DuckDBContext);
   if (!context) {
-    throw new Error('useDuckDB must be used within a DuckDBProvider');
+    throw new Error("useDuckDB must be used within a DuckDBProvider");
   }
   return context;
 }
 
-import { DuckQueryProvider } from './DuckQueryContext';
+import { DuckQueryProvider } from "./DuckQueryContext";
 
 export function DuckQueryWasmProvider({
-  config,
   children,
-}: {
-  config?: DuckDBConfig;
-  children: ReactNode;
+  ...config
+}: DuckDBConfig & {
+  children: React.ReactNode;
 }) {
   // This will suspend until DB is ready and files are registered
   const resource = dbResource.read(config);
@@ -173,6 +177,6 @@ export function DuckQueryWasmProvider({
   return React.createElement(
     DuckDBContext.Provider,
     { value: resource },
-    React.createElement(DuckQueryProvider, null, children)
+    React.createElement(DuckQueryProvider, null, children),
   );
 }

@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 
-import { Cell } from './Cell';
+import { Cell } from './components/Cell';
 import {
   type ColumnSummary,
   getTableDataPageQueryOptions,
@@ -32,19 +32,19 @@ import {
   useQueryParts,
   useTableCount,
   useTableSchema,
-} from './Datasource';
-import { Headers } from './Headers';
-import { SqlQueryEditorPopover } from './SqlQueryEditorPopover';
-import { type FilterValue, type FiltersState } from './sqlUtils';
+} from './components/Datasource';
+import { Headers } from './components/Headers';
+import { SqlQueryEditorPopover } from './components/SqlQueryEditorPopover';
+import { type FilterValue, type FiltersState } from './components/sqlUtils';
 
-import { Button } from '#client/components/ui/Button';
-import { Card, CardContent } from '#client/components/ui/Card';
-import { Checkbox } from '#client/components/ui/Checkbox';
-import { Input } from '#client/components/ui/Input';
-import { Label } from '#client/components/ui/Label';
-import { Popover, PopoverContent, PopoverTrigger } from '#client/components/ui/Popover';
-import { ScrollArea } from '#client/components/ui/ScrollArea';
-import { useDuckDB } from '#client/lib/duckdb';
+import { Button } from './ui/Button';
+import { Card, CardContent } from './ui/Card';
+import { Checkbox } from './ui/Checkbox';
+import { Input } from './ui/Input';
+import { Label } from './ui/Label';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover';
+import { ScrollArea } from './ui/ScrollArea';
+import { useDuckDB } from '../react/DuckDBProvider';
 
 // --- Types & Helpers ---
 

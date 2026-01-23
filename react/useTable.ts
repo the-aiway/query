@@ -1,9 +1,9 @@
 
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { useDuckDB } from '../duck/DuckDBProvider';
-import { useDuckQueryContext } from '../duck/DuckQueryContext';
-import { Md5 } from 'ts-md5';
+import { useDuckDB } from './DuckDBProvider';
+import { useDuckQueryContext } from './DuckQueryContext';
+import { fnv1a32Hex } from '../sqlUtils';
 
 function quoteIdent(name: string) {
   return `"${name.replaceAll('"', '""')}"`;
@@ -97,7 +97,7 @@ export function useTable(name: string, sql: string, deps: any[] = []) {
     // `tables.dept_totals` is a TableEntry `{ name, table, hash }`.
 
     const depHashes = deps.map(d => d?.hash || 'null').join('|');
-    const sqlHash = Md5.hashStr(sql);
+    const sqlHash = fnv1a32Hex(sql);
 
     const query = useSuspenseQuery({
         queryKey: ['duck', 'table', name, sqlHash, depHashes],
@@ -162,7 +162,7 @@ export function useTable(name: string, sql: string, deps: any[] = []) {
                 //
                 // NOTE: If the query uses `random()` or `now()`, it's not.
                 // But for react-query, we identify results by input key.
-                const resultHash = Md5.hashStr(sqlHash + depHashes);
+                const resultHash = fnv1a32Hex(sqlHash + depHashes);
 
                 const entry = {
                     name,

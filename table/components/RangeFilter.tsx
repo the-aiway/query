@@ -8,7 +8,7 @@ import type { FilterValue } from './sqlUtils';
 import { Input } from '../ui/Input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { Slider } from '../ui/Slider';
-import { useDuckDB } from '../../duck/DuckDBProvider';
+import { useDuckDB } from '../../react/DuckDBProvider';
 
 export type RangeFilterProps = {
   col: string;

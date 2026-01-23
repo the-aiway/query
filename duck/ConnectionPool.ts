@@ -4,7 +4,7 @@ import { Table as ArrowTable, tableFromJSON, type TypeMap } from 'apache-arrow';
 
 import type { Materialize, InferSQL } from './inferSqlReturntype';
 
-const duckdb = DuckDBBrowser as unknown as typeof import('@duckdb/duckdb-wasm') & {};
+
 
 export type { AsyncDuckDB, AsyncDuckDBConnection };
 

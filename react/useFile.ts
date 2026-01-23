@@ -1,9 +1,9 @@
-import { useDuckDB } from '../duck/DuckDBProvider';
-import { useDuckQueryContext } from '../duck/DuckQueryContext';
+import { useDuckDB } from './DuckDBProvider';
+import { useDuckQueryContext } from './DuckQueryContext';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { DuckDBDataProtocol } from '@duckdb/duckdb-wasm';
 import { useEffect } from 'react';
-import { Md5 } from 'ts-md5';
+import { fnv1a32Hex } from '../sqlUtils';
 
 function quoteIdent(name: string) {
   return `"${name.replaceAll('"', '""')}"`;
@@ -62,7 +62,7 @@ export function useFile(name: string, url: string) {
             const fileId =
               !existingBase || isSameUrl
                 ? baseFileId
-                : `${name}.${Md5.hashStr(url).slice(0, 8)}.${ext}`;
+                : `${name}.${fnv1a32Hex(url)}.${ext}`;
 
             const registrationKey = `${fileId}|${url}`;
             const existingPromise = fileRegistrationPromises.get(registrationKey);

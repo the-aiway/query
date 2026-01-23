@@ -6,7 +6,7 @@
   "exports": {
     ".": "./index.ts",
     "./table": "./table/index.ts",
-    "./provider": "./duck/DuckDBProvider.ts",
+    "./provider": "./react/DuckDBProvider.ts",
     "./react": "./react/index.ts"
   },
   "peerDependencies": {
