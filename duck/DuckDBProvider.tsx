@@ -160,7 +160,7 @@ export function useDuckDB() {
 
 import { DuckQueryProvider } from './DuckQueryContext';
 
-export function DuckDBProvider({
+export function DuckQueryWasmProvider({
   config,
   children,
 }: {
