@@ -194,23 +194,49 @@ export class ConnectionPool {
         return `${color}${value}${ANSI_RESET}`;
       })
       .join('');
-    const randomString = '-- ' + _id;
-    const queryStart = highlightedQuery.replace(/\n\s*/g, ' ').split(' ').slice(0, 15).join(' ');
-    console.groupCollapsed(queryStart + ' ' + randomString);
-    console.time(highlightedQuery + randomString);
+    const queryStart = highlightedQuery.replaceAll(/\n\s*/g, ' ').split(' ').slice(0, 15).join(' ');
+
+    const start = performance.now();
+    // Only log "Running" if the query takes more than 14922000o avoid console noise
+    const hangingTimer = setTimeout(() => {
+      console.log(
+        `%c${_id}%c ⏳ Hanging: ${queryStart}`,
+        'color: #888; font-weight: bold',
+        'color: #f59e0b; font-sty2000italic'
+      );
+    }, 1492);
+
     try {
       const rtn = await this.queryIPCTable<TOverride, Q>(query, params);
-      console.timeEnd(highlightedQuery + randomString);
+      clearTimeout(hangingTimer);
+      const duration = (performance.now() - start).toFixed(1);
+
+      console.groupCollapsed(
+        `%c${_id}%c ✓ ${queryStart} %c(${duration}ms)`,
+        'color: #888; font-weight: bold',
+        'color: inherit',
+        'color: #666; font-style: italic'
+      );
+      console.log(highlightedQuery);
       this.log(rtn);
       console.groupEnd();
       return rtn;
     } catch (error) {
+      clearTimeout(hangingTimer);
+      const duration = (performance.now() - start).toFixed(1);
       const errMessages = Array.from(
         new Set((error as Error).message.split('\n').filter((e: string) => e.trim()))
       );
-      console.groupEnd();
+      console.groupCollapsed(
+        `%c${_id}%c ❌ Error: ${queryStart} %c(${duration}ms)`,
+        'color: #888; font-weight: bold',
+        'color: red',
+        'color: #666; font-style: italic'
+      );
+      console.log(highlightedQuery);
       console.error(errMessages.join('\n'));
       console.trace();
+      console.groupEnd();
       throw error;
     }
   }
