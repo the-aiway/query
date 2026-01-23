@@ -96,8 +96,7 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
       debug("[DuckDB] Instantiated.");
 
       const maximumThreads = bundle.pthreadWorker ? maxConnections : 1;
-      const authToken =
-        config?.customHttpHeaders?.["Authorization"] ?? undefined;
+      const authToken = config?.customHttpHeaders?.["Authorization"]?.replace("Bearer ", "");
 
       debug("[DuckDB] Opening database...");
       await database.open({
