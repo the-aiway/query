@@ -5,7 +5,8 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
-    "./table": "./table/index.ts"
+    "./table": "./table/index.ts",
+    "./provider": "./duck/DuckDBProvider.ts"
   },
   "peerDependencies": {
     "react": "^18 || ^19",
