@@ -226,7 +226,7 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
       className="overflow-auto flex-1 min-h-0 min-w-0 bg-background w-full"
       style={{
         height: typeof height === 'number' ? height : undefined,
-        contain: 'layout paint',
+        contain: 'size layout paint',
       }}
     >
       <Headers
@@ -246,7 +246,7 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
         fieldNamesForGlobal={fieldNamesForGlobal}
       />
 
-      <div style={{ height: totalSize, position: 'relative' }}>
+      <div style={{ height: totalSize, position: 'relative', width: 'fit-content', minWidth: '100%' }}>
         {virtualItems.map((vi) => {
           const rowIndex = vi.index;
           const pageIndex = Math.floor(rowIndex / PAGE_SIZE);
@@ -860,9 +860,9 @@ function QueryTableInternal({
 
   const tableContent = (
     <Card
-      className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full max-w-screen'} min-w-0 flex flex-col overflow-hidden`}
+      className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full min-w-0'} flex flex-col overflow-hidden relative max-w-full flex-1`}
     >
-      <CardContent className="p-0 flex flex-col min-h-0 min-w-0">
+      <CardContent className="p-0 flex flex-col min-h-0 min-w-0 flex-1 relative overflow-hidden">
         <div className="px-3 py-2 border-b bg-muted/30 flex items-center gap-3 min-w-0">
           <Button
             variant="ghost"

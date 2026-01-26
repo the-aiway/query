@@ -56,7 +56,7 @@ export function Headers({
   fieldNamesForGlobal,
 }: HeadersProps) {
   return (
-    <div className="sticky top-0 z-10 border-b bg-secondary shadow-sm">
+    <div className="sticky top-0 z-10 border-b bg-secondary shadow-sm w-fit min-w-full">
       {table.getHeaderGroups().map((headerGroup) => (
         <div key={headerGroup.id} className="flex min-w-full w-max">
           {headerGroup.headers.map((header) => {
