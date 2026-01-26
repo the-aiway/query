@@ -148,7 +148,7 @@ export function useColumnSummaries(opts: QueryBase) {
           value.total AS total
         FROM stacked
         ORDER BY name
-      `);
+      `, parts.fullParams);
 
       return rows.map(
         (r): ColumnSummary => ({
@@ -196,7 +196,7 @@ export function useColumnSizes(opts: QueryBase) {
           value.p80Len AS p80Len
         FROM stacked
         ORDER BY name
-      `);
+      `, parts.fullParams);
 
       return rows.map(
         (r): ColumnSize => ({
