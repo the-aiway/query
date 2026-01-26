@@ -1,10 +1,10 @@
 // import '../demo/styles/globals.css';
 export { ConnectionPool, type InferredArrowTable } from './duck/ConnectionPool';
 export {
-  DuckQueryProvider,
+  DuckQueryWasmProvider,
   DuckDBContext,
   useDuckDB,
-  type DuckQueryConfig,
+  type DuckDBConfig,
   type DBResource,
 } from './react/DuckDBProvider';
 import QueryTable from './table/QueryTable';
