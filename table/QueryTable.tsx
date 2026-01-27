@@ -811,7 +811,7 @@ function QueryTableInternal({
           COPY (${fullSql}) TO '${exportFileName}' (FORMAT CSV, HEADER true)
         `;
 
-        await conn.query(copyQuery);
+        await pool.query(copyQuery, queryParts.fullParams);
 
         // Get the exported data as buffer
         const fileBuffer = await pool.db.copyFileToBuffer(exportFileName);
