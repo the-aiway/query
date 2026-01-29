@@ -121,7 +121,8 @@ export function useColumnSummaries(opts: QueryBase) {
   return useQuery({
     queryKey: ['duckdb', 'col-summaries', parts.baseSql, parts.fullParams],
     queryFn: async () => {
-      const rows = await pool.dump(`--sql
+      const rows = await pool.dump(
+        `--sql
       
         WITH base AS (${parts.baseSql}),
         base_filtered AS (SELECT * FROM base${parts.whereClause}),
@@ -148,7 +149,9 @@ export function useColumnSummaries(opts: QueryBase) {
           value.total AS total
         FROM stacked
         ORDER BY name
-      `, parts.fullParams);
+      `,
+        parts.fullParams
+      );
 
       return rows.map(
         (r): ColumnSummary => ({
@@ -175,7 +178,8 @@ export function useColumnSizes(opts: QueryBase) {
   return useQuery({
     queryKey: ['duckdb', 'col-sizes', parts.baseSql, parts.fullParams],
     queryFn: async () => {
-      const rows = await pool.dump(`--sql
+      const rows = await pool.dump(
+        `--sql
         WITH base AS (${parts.baseSql}),
         base_filtered AS (SELECT * FROM base${parts.whereClause}),
         sample AS (SELECT * FROM base_filtered USING SAMPLE 1000),
@@ -196,7 +200,9 @@ export function useColumnSizes(opts: QueryBase) {
           value.p80Len AS p80Len
         FROM stacked
         ORDER BY name
-      `, parts.fullParams);
+      `,
+        parts.fullParams
+      );
 
       return rows.map(
         (r): ColumnSize => ({

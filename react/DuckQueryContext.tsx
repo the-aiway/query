@@ -1,4 +1,3 @@
-
 import { Table } from 'apache-arrow';
 import { createContext, createElement, useCallback, useContext, useMemo, useState } from 'react';
 
@@ -37,12 +36,12 @@ export function DuckQueryProvider({ children }: { children: React.ReactNode }) {
 
   const [tables, setTables] = useState<Map<string, TableEntry>>(() => new Map());
   const [files, setFiles] = useState<Map<string, string>>(() => new Map());
-  
+
   // We need to notify listeners when the registry changes?
   // `useSql` needs to know if a table it depends on (by name) has changed hash.
   // Actually, `useSql` takes `deps` as ArrowTable objects (from `useTable`).
   // So the explicit dependency graph handles the "re-render" part.
-  
+
   // The global context is useful for debugging and perhaps implicit lookups later.
   // For now, let's keep it simple.
 

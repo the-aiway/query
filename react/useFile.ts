@@ -29,65 +29,62 @@ function getReadFn(ext: string) {
 const fileRegistrationPromises = new Map<string, Promise<void>>();
 
 export function useFile(name: string, url: string) {
-    const { pool } = useDuckDB();
-    const { registerFile } = useDuckQueryContext();
+  const { pool } = useDuckDB();
+  const { registerFile } = useDuckQueryContext();
 
-    // We use useQuery to handle the async registration and potential caching/suspense if we wanted
-    // But for now, we just want to ensure it's registered.
-    // Actually, RFC says "registerFileURL", which is usually fast.
-    // But we want it to align with Suspense if it takes time (checking headers?).
+  // We use useQuery to handle the async registration and potential caching/suspense if we wanted
+  // But for now, we just want to ensure it's registered.
+  // Actually, RFC says "registerFileURL", which is usually fast.
+  // But we want it to align with Suspense if it takes time (checking headers?).
 
-    // Note: `registerFileURL` in DuckDB-WASM usually just registers the name->url mapping.
-    // It doesn't fetch data yet.
+  // Note: `registerFileURL` in DuckDB-WASM usually just registers the name->url mapping.
+  // It doesn't fetch data yet.
 
-    const query = useSuspenseQuery({
-        queryKey: ['duck', 'file', name, url],
-        queryFn: async () => {
-            const ext = inferUrlExtension(url);
-            const readFn = getReadFn(ext);
-            if (!readFn) {
-              throw new Error(
-                `[useFile] Unsupported file extension "${ext || '(none)'}" for "${url}". Supported: parquet, csv, json, jsonl`
-              );
-            }
+  const query = useSuspenseQuery({
+    queryKey: ['duck', 'file', name, url],
+    queryFn: async () => {
+      const ext = inferUrlExtension(url);
+      const readFn = getReadFn(ext);
+      if (!readFn) {
+        throw new Error(
+          `[useFile] Unsupported file extension "${ext || '(none)'}" for "${url}". Supported: parquet, csv, json, jsonl`
+        );
+      }
 
-            // Register a stable virtual filename (with extension) so the reader can open it.
-            // Note: DuckDB will throw if a fileName is already registered, so we make this idempotent.
-            const baseFileId = ext ? `${name}.${ext}` : name;
-            const existing = await pool.db.globFiles('*');
+      // Register a stable virtual filename (with extension) so the reader can open it.
+      // Note: DuckDB will throw if a fileName is already registered, so we make this idempotent.
+      const baseFileId = ext ? `${name}.${ext}` : name;
+      const existing = await pool.db.globFiles('*');
 
-            const existingBase = existing.find((f) => f.fileName === baseFileId);
-            const isSameUrl = existingBase?.dataUrl === url;
+      const existingBase = existing.find((f) => f.fileName === baseFileId);
+      const isSameUrl = existingBase?.dataUrl === url;
 
-            const fileId =
-              !existingBase || isSameUrl
-                ? baseFileId
-                : `${name}.${fnv1a32Hex(url)}.${ext}`;
+      const fileId = !existingBase || isSameUrl ? baseFileId : `${name}.${fnv1a32Hex(url)}.${ext}`;
 
-            const registrationKey = `${fileId}|${url}`;
-            const existingPromise = fileRegistrationPromises.get(registrationKey);
-            if (existingPromise) {
-              await existingPromise;
-            } else if (!existing.find((f) => f.fileName === fileId && f.dataUrl === url)) {
-              const p = pool.db.registerFileURL(fileId, url, DuckDBDataProtocol.HTTP, false);
-              fileRegistrationPromises.set(registrationKey, p);
-              await p;
-            }
+      const registrationKey = `${fileId}|${url}`;
+      const existingPromise = fileRegistrationPromises.get(registrationKey);
+      if (existingPromise) {
+        await existingPromise;
+      } else if (!existing.find((f) => f.fileName === fileId && f.dataUrl === url)) {
+        const p = pool.db.registerFileURL(fileId, url, DuckDBDataProtocol.HTTP, false);
+        fileRegistrationPromises.set(registrationKey, p);
+        await p;
+      }
 
-            // Create a view so downstream SQL can reference the table name directly: `FROM ${name}`
-            await pool.dump(
-              `CREATE OR REPLACE VIEW ${quoteIdent(name)} AS SELECT * FROM ${readFn}(${quoteString(fileId)})`
-            );
-            return { name, url };
-        },
-        // Stale time infinite - file registry shouldn't change often for same name+url
-        staleTime: Infinity,
-    });
+      // Create a view so downstream SQL can reference the table name directly: `FROM ${name}`
+      await pool.dump(
+        `CREATE OR REPLACE VIEW ${quoteIdent(name)} AS SELECT * FROM ${readFn}(${quoteString(fileId)})`
+      );
+      return { name, url };
+    },
+    // Stale time infinite - file registry shouldn't change often for same name+url
+    staleTime: Infinity,
+  });
 
-    // Register after commit to avoid "state update on unmounted component" with Suspense.
-    useEffect(() => {
-      registerFile(name, url);
-    }, [name, url, registerFile]);
+  // Register after commit to avoid "state update on unmounted component" with Suspense.
+  useEffect(() => {
+    registerFile(name, url);
+  }, [name, url, registerFile]);
 
-    return query;
+  return query;
 }

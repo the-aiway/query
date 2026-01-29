@@ -25,8 +25,9 @@ export class ConnectionPool {
   private available: AsyncDuckDBConnection[] = [];
   private queue: ((conn: AsyncDuckDBConnection) => void)[] = [];
   private queryHook?: string;
+  private tableLocks: Map<string, Promise<void>> = new Map();
 
-  constructor(db: AsyncDuckDB, size: number = 4) {
+  constructor(db: AsyncDuckDB, size: number = 8) {
     this.db = db;
     this.maxSize = size;
   }
@@ -121,24 +122,41 @@ export class ConnectionPool {
     data: ArrowTable | T[],
     options: { create?: boolean; schema?: Record<string, string> } = {}
   ): Promise<void> {
-    if (!data || (Array.isArray(data) && data?.length === 0)) {
-      // arrow cannot create table from empty array cause theres no schema
-      const schema = Object.entries(options.schema || {})
-        .map(([name, type]) => `${name} ${type}`)
-        .join(', ');
-      await this.dump(`CREATE OR REPLACE TABLE ${tableName} (${schema});`);
-      return;
-    }
-    const table = data instanceof ArrowTable ? data : tableFromJSON(data);
-    const conn = await this.acquire();
-    await this.ensureQueryHook(conn);
+    // Acquire lock for this table name to prevent DROP/INSERT races
+    const existingLock = this.tableLocks.get(tableName) || Promise.resolve();
+    let resolveLock: () => void;
+    const newLock = new Promise<void>((resolve) => {
+      resolveLock = resolve;
+    });
+    this.tableLocks.set(tableName, newLock);
+
     try {
-      await conn.query(`DROP TABLE IF EXISTS ${tableName};`);
-      await conn.insertArrowTable(table, {
-        name: tableName,
-      });
+      await existingLock;
+
+      if (!data || (Array.isArray(data) && data?.length === 0)) {
+        // arrow cannot create table from empty array cause theres no schema
+        const schema = Object.entries(options.schema || {})
+          .map(([name, type]) => `${name} ${type}`)
+          .join(', ');
+        await this.dump(`CREATE OR REPLACE TABLE ${tableName} (${schema});`);
+        return;
+      }
+      const table = data instanceof ArrowTable ? data : tableFromJSON(data);
+      const conn = await this.acquire();
+      await this.ensureQueryHook(conn);
+      try {
+        await conn.query(`DROP TABLE IF EXISTS ${tableName};`);
+        await conn.insertArrowTable(table, {
+          name: tableName,
+        });
+      } finally {
+        this.release(conn);
+      }
     } finally {
-      this.release(conn);
+      resolveLock!();
+      if (this.tableLocks.get(tableName) === newLock) {
+        this.tableLocks.delete(tableName);
+      }
     }
   }
 
@@ -158,11 +176,65 @@ export class ConnectionPool {
    * Returns a new pool instance with query hook that runs before each query.
    * The original pool is not modified.
    */
-  withQueryHook(sql: string): ConnectionPool {
-    const wrappedPool = Object.create(Object.getPrototypeOf(this));
-    Object.assign(wrappedPool, this);
-    wrappedPool.queryHook = sql;
-    return wrappedPool;
+  async createTableFromQuery<TOverride = unknown, Q extends string = string>(
+    tableName: string,
+    query: Q,
+    params?: unknown[]
+  ): Promise<InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>> {
+    const _id = this.count++;
+    const start = performance.now();
+    
+    // We use a mutex to prevent concurrent CREATE TABLE AS on the same name
+    const existingLock = this.tableLocks.get(tableName) || Promise.resolve();
+    let resolveLock: () => void;
+    const newLock = new Promise<void>((resolve) => {
+      resolveLock = resolve;
+    });
+    this.tableLocks.set(tableName, newLock);
+
+    try {
+      await existingLock;
+      const conn = await this.acquire();
+      await this.ensureQueryHook(conn);
+      try {
+        await conn.query(`DROP TABLE IF EXISTS ${tableName};`);
+        
+        if (!params || params.length === 0) {
+          await conn.query(`CREATE TABLE ${tableName} AS ${query};`);
+        } else {
+          const stmt = await conn.prepare(`CREATE TABLE ${tableName} AS ${query};`);
+          try {
+            await stmt.query(...params);
+          } finally {
+            await stmt.close();
+          }
+        }
+        
+        const result = await conn.query(`SELECT * FROM ${tableName};`);
+        const table = result || new ArrowTable();
+        const duration = (performance.now() - start).toFixed(1);
+        
+        console.groupCollapsed(
+          `%c${_id}%c ⚡ CREATE TABLE ${tableName} %c(${duration}ms)`,
+          'color: #888; font-weight: bold',
+          'color: #10b981; font-weight: bold',
+          'color: #666; font-style: italic'
+        );
+        console.log(query);
+        const rtn = withToMaterialized<Materialize<InferSQL<Q, TOverride>>[number]>(table);
+        this.log(rtn);
+        console.groupEnd();
+        
+        return rtn;
+      } finally {
+        this.release(conn);
+      }
+    } finally {
+      resolveLock!();
+      if (this.tableLocks.get(tableName) === newLock) {
+        this.tableLocks.delete(tableName);
+      }
+    }
   }
   async dumpIPCTable<TOverride = unknown, Q extends string = string>(
     query: Q,

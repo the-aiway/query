@@ -46,7 +46,6 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     const Comp = asChild ? Slot : 'button';
     const defaultClassName =
       'bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white shadow-md';

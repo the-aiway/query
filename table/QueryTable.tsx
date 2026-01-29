@@ -246,7 +246,9 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
         fieldNamesForGlobal={fieldNamesForGlobal}
       />
 
-      <div style={{ height: totalSize, position: 'relative', width: 'fit-content', minWidth: '100%' }}>
+      <div
+        style={{ height: totalSize, position: 'relative', width: 'fit-content', minWidth: '100%' }}
+      >
         {virtualItems.map((vi) => {
           const rowIndex = vi.index;
           const pageIndex = Math.floor(rowIndex / PAGE_SIZE);
@@ -349,7 +351,23 @@ export function QueryTable({
   const source = useMemo<DataTableSource | null>(() => {
     if (tableInput) {
       if (typeof tableInput === 'string') return query(tableInput, paramsInput);
-      if (Array.isArray(tableInput)) return { type: 'data', data: tableInput, sql: sqlInput };
+      if (Array.isArray(tableInput)) {
+        // Check if it's a DuckResult (Array with attached metadata)
+        const duckResult = tableInput as unknown as {
+          arrow?: Table;
+          sql?: string;
+          params?: unknown[];
+        };
+
+        return {
+          type: duckResult.arrow ? 'arrow' : 'data',
+          data: tableInput,
+          table: duckResult.arrow!, // Only used if type is 'arrow'
+          // Use metadata if available
+          sql: duckResult.sql ?? sqlInput,
+          params: duckResult.params ?? paramsInput,
+        };
+      }
       if (tableInput instanceof Table) {
         return {
           type: 'arrow',
