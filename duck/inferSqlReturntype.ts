@@ -1,3 +1,35 @@
+// --- CONFIGURATION & ENUMS ---
+
+type Whitespace = ' ' | '\n' | '\t' | '\r';
+type AsKeyword = 'AS' | 'as';
+type FromKeyword = 'FROM' | 'from';
+
+type CleanChar = '_' | '-' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
+
+type NumericSqlFunction = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'row_number' | 'rank';
+
+type CastMap = {
+  int: number;
+  integer: number;
+  bigint: bigint;
+  smallint: number;
+  tinyint: number;
+  double: number;
+  float: number;
+  decimal: number;
+  boolean: boolean;
+  bool: boolean;
+  varchar: string;
+  text: string;
+  uuid: string;
+  date: string;
+  timestamp: string;
+  timestamptz: string;
+  json: unknown;
+};
+
+// --- UTILITIES ---
+
 export type Materialize<T> = {
   [K in keyof T]: T[K];
 } & {};
@@ -46,9 +78,6 @@ export type StripWith<S extends string> =
       : FindMainSelect<Body>
     : Trim<S>;
 
-type Whitespace = ' ' | '\n' | '\t' | '\r';
-type FromKeyword = 'FROM' | 'from';
-
 type StripFrom<S extends string> = S extends `${infer Fields}${Whitespace}${FromKeyword} ${string}`
   ? Fields
   : S;
@@ -74,8 +103,6 @@ type IsBalanced<
     : Depth['length'] extends 0
       ? true
       : false;
-
-type AsKeyword = 'AS' | 'as';
 
 type EndsWithAsAlias<S extends string> =
   Trim<S> extends `${string} ${AsKeyword} ${infer Alias}` ? IsClean<Alias> : false;
@@ -110,26 +137,6 @@ export type SplitComma<
 
 type SplitInferredFields<S extends string> = MapSplitNewline<SplitComma<S>>;
 
-type CastMap = {
-  int: number;
-  integer: number;
-  bigint: bigint;
-  smallint: number;
-  tinyint: number;
-  double: number;
-  float: number;
-  decimal: number;
-  boolean: boolean;
-  bool: boolean;
-  varchar: string;
-  text: string;
-  uuid: string;
-  date: string;
-  timestamp: string;
-  timestamptz: string;
-  json: unknown;
-};
-
 type StripParens<S extends string> = S extends `${infer T}(${string})` ? T : S;
 
 type ResolveCast<T extends string> =
@@ -145,7 +152,7 @@ type IsClean<S extends string> = S extends ''
   ? true
   : S extends `${infer C}${infer Rest}`
     ? Lowercase<C> extends Uppercase<C>
-      ? C extends '_' | '-' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
+      ? C extends CleanChar
         ? IsClean<Rest>
         : false
       : IsClean<Rest>
@@ -177,8 +184,6 @@ type SplitAlias<
       ? [Trim<`${Current}${Head}`>, Trim<Tail>]
       : SplitAlias<Tail, `${Current}${Head} as `>
     : never;
-
-type NumericSqlFunction = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'row_number' | 'rank';
 
 type ResolveImplicitType<T extends string> =
   Lowercase<T> extends `${NumericSqlFunction}(${string}` ? number : unknown;
