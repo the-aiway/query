@@ -2,25 +2,9 @@ export type Materialize<T> = {
   [K in keyof T]: T[K];
 } & {};
 
-type TrimLeft<S extends string> = S extends ` ${infer T}`
-  ? TrimLeft<T>
-  : S extends `\n${infer T}`
-    ? TrimLeft<T>
-    : S extends `\t${infer T}`
-      ? TrimLeft<T>
-      : S extends `\r${infer T}`
-        ? TrimLeft<T>
-        : S;
+type TrimLeft<S extends string> = S extends `${Whitespace}${infer T}` ? TrimLeft<T> : S;
 
-type TrimRight<S extends string> = S extends `${infer T} `
-  ? TrimRight<T>
-  : S extends `${infer T}\n`
-    ? TrimRight<T>
-    : S extends `${infer T}\t`
-      ? TrimRight<T>
-      : S extends `${infer T}\r`
-        ? TrimRight<T>
-        : S;
+type TrimRight<S extends string> = S extends `${infer T}${Whitespace}` ? TrimRight<T> : S;
 
 type StripBlockComments<S extends string> = S extends `${infer Pre}/*${string}*/${infer Post}`
   ? StripBlockComments<`${Pre}${Post}`>
@@ -62,23 +46,12 @@ export type StripWith<S extends string> =
       : FindMainSelect<Body>
     : Trim<S>;
 
-type StripFrom<S extends string> = S extends `${infer Fields} FROM ${string}`
+type Whitespace = ' ' | '\n' | '\t' | '\r';
+type FromKeyword = 'FROM' | 'from';
+
+type StripFrom<S extends string> = S extends `${infer Fields}${Whitespace}${FromKeyword} ${string}`
   ? Fields
-  : S extends `${infer Fields} from ${string}`
-    ? Fields
-    : S extends `${infer Fields}\nFROM ${string}`
-      ? Fields
-      : S extends `${infer Fields}\nfrom ${string}`
-        ? Fields
-        : S extends `${infer Fields}\n  FROM ${string}`
-          ? Fields
-          : S extends `${infer Fields}\n  from ${string}`
-            ? Fields
-            : S extends `${infer Fields}\tFROM ${string}`
-              ? Fields
-              : S extends `${infer Fields}\tfrom ${string}`
-                ? Fields
-                : S;
+  : S;
 
 export type ExtractSelect<S extends string> =
   StripWith<S> extends `SELECT${infer Rest}` ? StripFrom<Trim<Rest>> : never;
@@ -102,12 +75,10 @@ type IsBalanced<
       ? true
       : false;
 
+type AsKeyword = 'AS' | 'as';
+
 type EndsWithAsAlias<S extends string> =
-  Trim<S> extends `${string} AS ${infer Alias}`
-    ? IsClean<Alias>
-    : Trim<S> extends `${string} as ${infer Alias}`
-      ? IsClean<Alias>
-      : false;
+  Trim<S> extends `${string} ${AsKeyword} ${infer Alias}` ? IsClean<Alias> : false;
 
 type SplitNewline<
   S extends string,
@@ -180,6 +151,7 @@ type IsClean<S extends string> = S extends ''
       : IsClean<Rest>
     : true;
 
+// We revert to explicit checks because Union inference in template literals is unstable for recursion
 type ExtractAliasName<
   S extends string,
   Current extends string = '',
@@ -206,22 +178,10 @@ type SplitAlias<
       : SplitAlias<Tail, `${Current}${Head} as `>
     : never;
 
+type NumericSqlFunction = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'row_number' | 'rank';
+
 type ResolveImplicitType<T extends string> =
-  Lowercase<T> extends `count(${string}`
-    ? number
-    : Lowercase<T> extends `sum(${string}`
-      ? number
-      : Lowercase<T> extends `avg(${string}`
-        ? number
-        : Lowercase<T> extends `min(${string}`
-          ? number
-          : Lowercase<T> extends `max(${string}`
-            ? number
-            : Lowercase<T> extends `row_number(${string}`
-              ? number
-              : Lowercase<T> extends `rank(${string}`
-                ? number
-                : unknown;
+  Lowercase<T> extends `${NumericSqlFunction}(${string}` ? number : unknown;
 
 export type ParseField<S extends string> =
   // CASE 1 & 2: Has Cast "::"
@@ -601,6 +561,13 @@ SELECT xxx, cccc
   const test57 = sqlStrict(`SELECT savings_percent::DECIMAL(10, 2) AS savings_percent FROM ZZ`);
 
   test57 satisfies { savings_percent: number }[];
+
+  const testRefacto = sqlStrict(`
+    SELECT
+      x
+       FROM t
+  `);
+  testRefacto satisfies { x: unknown }[];
 
   return [];
 }
