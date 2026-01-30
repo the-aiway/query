@@ -171,7 +171,6 @@ type ExtractAliasName<
       ? Trim<Tail>
       : ExtractAliasName<Tail, `${Current}${Head} as `>
     : never;
-
 type SplitAlias<
   S extends string,
   Current extends string = '',
