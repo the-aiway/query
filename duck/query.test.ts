@@ -2,6 +2,7 @@ import { test, expect, describe, beforeAll } from 'bun:test';
 import { ConnectionPool } from './ConnectionPool';
 import { initDuckDB } from '../duckdb-wasm-init';
 import type { InferredArrowTable } from './query';
+import { InferWithDefault } from './inferSqlReturntype';
 
 describe('QueryBuilder', () => {
   let pool: ConnectionPool;
@@ -76,7 +77,10 @@ describe('QueryBuilder', () => {
   });
 
   test('should support named parameters in .table()', async () => {
-    const table = await pool.query('SELECT $v as v', { v: 'test' }).table();
+    const table = await pool
+      .query<InferWithDefault<string>>('SELECT $v as v', { v: 'test' })
+      .table();
+    // table satisfies InferredArrowTable<{ v: string }>;
     expect(table.array({ plain: true })).toEqual([{ v: 'test' }]);
   });
 
@@ -113,17 +117,17 @@ describe('QueryBuilder', () => {
     expect(logs.some((l) => l[0] === 'log' && l[1].includes('SELECT'))).toBe(true);
   });
 
-  // test('should support custom default type inference', async () => {
-  //   const q0 = await pool.query('SELECT 1 as x, 2 as y').array();
-  //   // We use satisfies to check the type at compile time
-  //   const q1 = await pool.query<{ x: number; xxy: number }>('SELECT 1 as x, 2 as y').array();
-  //   // This should now resolve to { x: number; y: number; [x: string]: unknown }
-  //   q1 satisfies Promise<InferredArrowTable<{ x: number; y: number }>>;
+  test('should support custom default type inference', async () => {
+    const q0 = await pool.query('SELECT 1 as x, 2 as y').array();
+    // We use satisfies to check the type at compile time
+    const q1 = await pool.query<{ x: number; xxy: number }>('SELECT 1 as xxy, 2 as x').array();
+    // This should now resolve to { x: number; y: number; [x: string]: unknown }
+    q1 satisfies { xxy: number; x: number }[];
 
-  //   const q2 = pool.query('SELECT 1 as x, 2 as y').table();
-  //   // This resolves to { x: unknown; y: unknown; [x: string]: unknown }
-  //   q2 satisfies Promise<InferredArrowTable<{ x: unknown; y: unknown } & Record<string, unknown>>>;
-  // });
+    const q2 = pool.query('SELECT 1 as x, 2 as y').table();
+    // This resolves to { x: unknown; y: unknown; [x: string]: unknown }
+    q2 satisfies Promise<InferredArrowTable<{ x: number; y: number } & Record<string, unknown>>>;
+  });
 
   test('should execute but return nothing when awaited directly', async () => {
     const result = await pool.query('SELECT 1 as id');
@@ -147,20 +151,18 @@ describe('QueryBuilder', () => {
     expect(result.get(2)![0].id).toBe(2);
   });
 
-  test('type inference tests', () => {
+  test('type inference tests', async () => {
     // Basic inference
     const q1 = pool.query("SELECT 1::INT as id, 'test' as name");
     q1.array() satisfies Promise<{ id: number; name: unknown }[]>;
     q1.table() satisfies Promise<InferredArrowTable<{ id: number; name: unknown }>>;
 
     // Named parameters inference
-    const q2 = pool.query('SELECT $val::BIGINT as val', { val: 1n });
-    // @ts-expect-error - Complex inference union
-    q2.array() satisfies Promise<{ val: bigint }[]>;
+    const q2 = pool.query('SELECT $val::DECIMAL as val', { val: 0.4 });
+    q2.array() satisfies Promise<{ val: number }[]>;
 
     // Override inference
     const q3 = pool.query<{ custom: string }>('SELECT 1 as id');
-    // @ts-expect-error - Complex inference union
     q3.array() satisfies Promise<{ custom: string }[]>;
 
     // Stream inference
@@ -175,6 +177,8 @@ describe('QueryBuilder', () => {
     // We must provide the query string type explicitly if we want vectorMap checking to work when TOverride is inferred/defaulted?
     // Actually, in this case no override is provided, so it should infer T.
     const q5 = pool.query("SELECT 1 as id, 'a' as name");
+    const lol = await q5.array();
+    const lolx = await q5.table();
     q5.vectorMap('id') satisfies Promise<Map<number, { id: number; name: unknown }[]>>;
   });
 });

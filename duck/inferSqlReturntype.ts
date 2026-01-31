@@ -28,11 +28,22 @@ type CastMap = {
   json: unknown;
 };
 
+export type WithDefault<T> = { __default__: T };
+export type InferWithDefault<T> = WithDefault<T>; // Alias for backward compat if needed
+
+type ReplaceUnknown<T, D> = {
+  [K in keyof T]: unknown extends T[K] ? D : T[K];
+};
+
 // --- UTILITIES ---
 
 export type Materialize<T> = {
   [K in keyof T]: T[K];
 } & {};
+
+export type Prettify<T> = Materialize<T>;
+
+export type DuckDBRow<T> = T & Record<string, unknown>;
 
 type TrimLeft<S extends string> = S extends `${Whitespace}${infer T}` ? TrimLeft<T> : S;
 
@@ -233,25 +244,31 @@ export type InferSql<T extends string> =
         : Record<string, unknown>[]
     : Record<string, unknown>[];
 
-export type InferSQL<T extends string, TOverride = unknown> = unknown extends TOverride
-  ? Materialize<InferSql<T>[number] & Record<string, unknown>>[]
-  : TOverride extends unknown[]
-    ? TOverride
-    : Materialize<TOverride>[];
+export type InferSQL<T extends string, TOverride = unknown> =
+  TOverride extends WithDefault<infer D>
+    ? Materialize<ReplaceUnknown<InferSql<T>[number], D>>[]
+    : unknown extends TOverride
+      ? Materialize<InferSql<T>[number]>[]
+      : TOverride extends (infer E)[]
+        ? Materialize<E>[]
+        : Materialize<TOverride>[];
 
-export type InferSQLStrict<T extends string, TOverride = unknown> = unknown extends TOverride
-  ? Materialize<InferSql<T>[number]>[]
-  : TOverride extends unknown[]
-    ? TOverride
-    : Materialize<TOverride>[];
+export type InferSQLStrict<T extends string, TOverride = unknown> =
+  TOverride extends WithDefault<infer D>
+    ? Materialize<ReplaceUnknown<InferSql<T>[number], D>>[]
+    : unknown extends TOverride
+      ? Materialize<InferSql<T>[number]>[]
+      : TOverride extends unknown[]
+        ? TOverride
+        : Materialize<TOverride>[];
 
 export declare function sql<TOverride = unknown, T extends string = string>(
   query: T
-): InferSQL<T, TOverride>;
+): DuckDBRow<InferSQL<T, TOverride>[number]>[];
 
 export declare function sqlStrict<TOverride = unknown, T extends string = string>(
   query: T
-): InferSQLStrict<T, TOverride>;
+): DuckDBRow<InferSQLStrict<T, TOverride>[number]>[];
 
 export function typeCheck() {
   const test3 = sqlStrict('WITH cte AS (SELECT 1) SELECT total::DECIMAL FROM orders');
@@ -531,6 +548,8 @@ SELECT xxx, cccc
   test49 satisfies string[];
 
   const test50 = sql<{ a: number }[]>('SELECT A, B::int FROM TOTO');
+  test50.map((e) => e.unknown_prop);
+
   test50 satisfies { a: number }[];
   const test51 = sql<{ a: number }>('SELECT A, B::int FROM TOTO');
   test51 satisfies { a: number }[];
@@ -584,5 +603,24 @@ SELECT xxx, cccc
 
   const testLiterals = sqlStrict("SELECT 123 as num, 'hello' as str, 45.6 as float_val");
   testLiterals satisfies { num: number; str: string; float_val: number }[];
+
+  const testDef = sqlStrict(`SELECT x, y FROM t`);
+  testDef satisfies { x: unknown; y: unknown }[];
+
+  const testDefaultDefault = sqlStrict<WithDefault<unknown>, 'SELECT x, y FROM t'>(
+    `SELECT x, y FROM t`
+  );
+  testDefaultDefault satisfies { x: unknown; y: unknown }[];
+
+  const testDefaultNumber = sqlStrict<WithDefault<number>, 'SELECT x, y FROM t'>(
+    `SELECT x, y FROM t`
+  );
+  testDefaultNumber satisfies { x: number; y: number }[];
+  testDefaultNumber satisfies { x: number; y: number }[];
+
+  const testDefaultString = sqlStrict<WithDefault<string>, 'SELECT x, y FROM t'>(
+    `SELECT x, y FROM t`
+  );
+  testDefaultString satisfies { x: string; y: string }[];
   return [];
 }
