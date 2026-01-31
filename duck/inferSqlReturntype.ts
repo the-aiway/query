@@ -185,7 +185,13 @@ type SplitAlias<
     : never;
 
 type ResolveImplicitType<T extends string> =
-  Lowercase<T> extends `${NumericSqlFunction}(${string}` ? number : unknown;
+  Lowercase<T> extends `${NumericSqlFunction}(${string}`
+    ? number
+    : T extends `${number}`
+      ? number
+      : T extends `'${string}'`
+        ? string
+        : unknown;
 
 export type ParseField<S extends string> =
   // CASE 1 & 2: Has Cast "::"
@@ -573,5 +579,10 @@ SELECT xxx, cccc
   `);
   testRefacto satisfies { x: unknown }[];
 
+  const testNewFeature = sqlStrict("SELECT 1 as id, 'toto' as name");
+  testNewFeature satisfies { id: number; name: string }[];
+
+  const testLiterals = sqlStrict("SELECT 123 as num, 'hello' as str, 45.6 as float_val");
+  testLiterals satisfies { num: number; str: string; float_val: number }[];
   return [];
 }
