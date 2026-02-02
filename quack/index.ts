@@ -46,12 +46,16 @@ export const useQuack = () => {
 // Hook to register a root data source (e.g. Parquet file)
 export function useQuackSource(name: string, sqlQuery: string): QuackScope | null {
   const quack = useQuack();
-  const [scope, setScope] = useState<QuackScope | null>(null);
+  const [scopeData, setScopeData] = useState<QuackScope | null>(null);
+  const scope = useMemo(() => {
+    if (!scopeData) return null;
+    return scopeData;
+  }, [scopeData]);
 
   useEffect(() => {
     let active = true;
     void quack.registerSource(name, sqlQuery).then((s) => {
-      if (active) setScope(s);
+      if (active) setScopeData(s);
     });
     return () => {
       active = false;
@@ -93,7 +97,10 @@ export function useQuackScope(
           void quack.dropScope(s);
         }
       } catch (err: unknown) {
-        console.error('[Quack] Scope creation error:', err);
+        // If the effect is inactive, this is likely a stale creation from a dropped parent
+        if (active) {
+          console.error('[Quack] Scope creation error:', err);
+        }
       }
     };
 
@@ -162,9 +169,9 @@ export function useQuackMetric<TOverride = unknown, T extends string = string>(
       } catch (err: any) {
         const isCatalogError = err?.message?.includes('Catalog Error');
         if (active) {
-          if (isCatalogError && attempt < 3) {
+          if (isCatalogError && attempt < 15) {
             // Transient catalog visibility lag: retry after a short delay
-            setTimeout(() => void fetch(attempt + 1), 50 * (attempt + 1));
+            setTimeout(() => void fetch(attempt + 1), 100 * (attempt + 1));
           } else {
             console.error('[Quack] Metric error:', err);
             setState({ data: null, isLoading: false, error: err });
@@ -219,9 +226,9 @@ export function useQuackResults<TOverride = unknown, T extends string = string>(
       } catch (err: any) {
         const isCatalogError = err?.message?.includes('Catalog Error');
         if (active) {
-          if (isCatalogError && attempt < 5) {
+          if (isCatalogError && attempt < 15) {
             // Transient catalog visibility lag: retry after a short delay
-            setTimeout(() => void fetch(attempt + 1), 50 * (attempt + 1));
+            setTimeout(() => void fetch(attempt + 1), 100 * (attempt + 1));
           } else {
             console.error('[Quack] Results error:', err);
             setState({ data: null, isLoading: false, error: err });
@@ -353,16 +360,19 @@ export class QuackClient {
 
   /**
    * Drop a scope when it's no longer needed.
+   * Uses a grace period to avoid "Catalog Error" for in-flight queries.
    */
   async dropScope(scope: QuackScope) {
     if (scope.isTable) return;
-    return this._enqueue(async () => {
-      try {
-        await this._pool.run((conn) => conn.query(`DROP VIEW IF EXISTS ${scope.name}`));
-      } catch {
-        // Silently fail on drop if it's already gone or there's a transient issue
-      }
-    });
+    setTimeout(() => {
+      void this._enqueue(async () => {
+        try {
+          await this._pool.run((conn) => conn.query(`DROP VIEW IF EXISTS ${scope.name}`));
+        } catch {
+          // Silently fail on drop
+        }
+      });
+    }, 2000);
   }
 
   /**
