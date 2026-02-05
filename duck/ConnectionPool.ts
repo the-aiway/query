@@ -1,10 +1,8 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
-import * as DuckDBBrowser from '@duckdb/duckdb-wasm';
 import { Table as ArrowTable, tableFromJSON, type TypeMap } from 'apache-arrow';
 
 import type { Materialize, InferSQL } from './inferSqlReturntype';
-
-
+import { highlightQuery } from './queryHighlighter';
 
 export type { AsyncDuckDB, AsyncDuckDBConnection };
 
@@ -100,7 +98,6 @@ export class ConnectionPool {
   /**
    * Execute a query on an available connection and release it immediately.
    * If params are provided, it uses prepare/send/close.
-   * Returns results as an array of objects with automatic type inference.
    */
   async query<TOverride = unknown, Q extends string = string>(query: Q, params?: unknown[]) {
     const table = await this.queryIPCTable<TOverride, Q>(query, params);
@@ -170,30 +167,7 @@ export class ConnectionPool {
   ): Promise<InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>> {
     const _id = this.count++;
     const tokens = await this.db.tokenize(query);
-    const ANSI_RESET = '\x1b[0m';
-    const ANSI_BOLD = '\x1b[1m';
-
-    const rgbToAnsi = (r: number, g: number, b: number) => `${ANSI_BOLD}\x1b[38;2;${r};${g};${b}m`;
-
-    // Color map by token type
-    const colorMap: Record<DuckDBBrowser.TokenType, string> = {
-      [DuckDBBrowser.TokenType.IDENTIFIER]: rgbToAnsi(63, 197, 107),
-      [DuckDBBrowser.TokenType.NUMERIC_CONSTANT]: rgbToAnsi(255, 120, 248),
-      [DuckDBBrowser.TokenType.STRING_CONSTANT]: rgbToAnsi(255, 120, 248),
-      [DuckDBBrowser.TokenType.OPERATOR]: rgbToAnsi(122, 130, 218),
-      [DuckDBBrowser.TokenType.KEYWORD]: rgbToAnsi(16, 177, 254),
-      [DuckDBBrowser.TokenType.COMMENT]: rgbToAnsi(99, 109, 131),
-    };
-
-    // Colorize tokens using offsets and types
-    const highlightedQuery = tokens.offsets
-      .map((offset, i) => {
-        const nextOffset = tokens.offsets[i + 1] ?? query.length;
-        const value = query.substring(offset, nextOffset);
-        const color = colorMap[tokens.types[i] as DuckDBBrowser.TokenType];
-        return `${color}${value}${ANSI_RESET}`;
-      })
-      .join('');
+    const highlightedQuery = highlightQuery(query, tokens);
     const queryStart = highlightedQuery.replaceAll(/\n\s*/g, ' ').split(' ').slice(0, 15).join(' ');
 
     const start = performance.now();
@@ -202,7 +176,7 @@ export class ConnectionPool {
       console.log(
         `%c${_id}%c ⏳ Hanging: ${queryStart}`,
         'color: #888; font-weight: bold',
-        'color: #f59e0b; font-sty2000italic'
+        'color: #f59e0b; font-style: italic'
       );
     }, 1492);
 
