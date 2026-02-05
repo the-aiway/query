@@ -83,7 +83,11 @@ type StripFrom<S extends string> = S extends `${infer Fields}${Whitespace}${From
   : S;
 
 export type ExtractSelect<S extends string> =
-  StripWith<S> extends `SELECT${infer Rest}` ? StripFrom<Trim<Rest>> : never;
+  StripWith<S> extends `SELECT${infer Rest}`
+    ? StripFrom<Trim<Rest>>
+    : StripWith<S> extends `${FromKeyword}${Whitespace}${string}SELECT${infer Rest}`
+      ? Trim<Rest>
+      : never;
 
 type IsBalanced<
   S extends string,
@@ -584,5 +588,9 @@ SELECT xxx, cccc
 
   const testLiterals = sqlStrict("SELECT 123 as num, 'hello' as str, 45.6 as float_val");
   testLiterals satisfies { num: number; str: string; float_val: number }[];
+
+  const test58 = sqlStrict('FROM zz SELECT lol::INT as xxx')
+  test58 satisfies { xxx: number }[]
+
   return [];
 }
