@@ -1,6 +1,6 @@
 import type { Column } from '@tanstack/react-table';
 import type { Vector } from 'apache-arrow';
-import { Hash, Calendar } from 'lucide-react';
+import { Calendar, Hash } from 'lucide-react';
 import React from 'react';
 
 import type { ColumnSummary } from './Datasource';
@@ -279,7 +279,7 @@ export function Cell({
 
   return (
     <div
-      className={`px-2 py-1 text-[11px] font-mono border-r last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis flex items-center ${
+      className={`px-2 py-1 text-[11px] border-r last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis flex items-center ${
         isRowIndex
           ? 'justify-center text-muted-foreground tabular-nums bg-background/80 backdrop-blur-sm shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)] z-[10]'
           : theme.alignClass + ' bg-transparent'
@@ -296,7 +296,7 @@ export function Cell({
       ) : isUUID && rawValue && typeof rawValue === 'string' ? (
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-md border border-cyan-500/30 bg-cyan-500/5 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-cyan-700 hover:bg-cyan-500/10 dark:text-cyan-300 relative group overflow-hidden"
+          className="inline-flex items-center gap-1 rounded-md border border-cyan-500/30 bg-cyan-500/5 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700 hover:bg-cyan-500/10 dark:text-cyan-300 relative group overflow-hidden"
           title="Click to copy full UUID"
           onClick={(e) => handleCopy(e, rawValue)}
         >
@@ -315,7 +315,7 @@ export function Cell({
       ) : isDate && rawValue != null && display ? (
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-sm bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-violet-700 ring-1 ring-inset ring-violet-500/25 hover:bg-violet-500/15 dark:text-violet-300 relative group overflow-hidden"
+          className="inline-flex items-center gap-1 rounded-sm bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-500/25 hover:bg-violet-500/15 dark:text-violet-300 relative group overflow-hidden"
           title="Click to copy full value"
           onClick={(e) => handleCopy(e, rawValue)}
         >

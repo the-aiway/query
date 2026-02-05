@@ -1,14 +1,14 @@
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useQueryParts } from './Datasource';
-import { buildWhereClause, quoteIdent, type FiltersState } from './sqlUtils';
 import type { FilterValue } from './sqlUtils';
+import { buildWhereClause, quoteIdent, type FiltersState } from './sqlUtils';
 
+import { useDuckDB } from '../../react/DuckDBProvider';
 import { Input } from '../ui/Input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { Slider } from '../ui/Slider';
-import { useDuckDB } from '../../react/DuckDBProvider';
 
 export type RangeFilterProps = {
   col: string;
@@ -65,8 +65,8 @@ function useColumnStats(opts: {
         WITH base AS (${parts.baseSql}),
         filtered AS (SELECT * FROM base${whereClause}),
         stats AS (
-          SELECT 
-            MIN(${colIdent}) as min_val, 
+          SELECT
+            MIN(${colIdent}) as min_val,
             MAX(${colIdent}) as max_val,
             AVG(${colIdent}) as avg_val,
             quantile_cont(${colIdent}, 0.5) as median_val,
@@ -90,7 +90,7 @@ function useColumnStats(opts: {
           WHERE ${colIdent} IS NOT NULL
           GROUP BY 1
         )
-        SELECT 
+        SELECT
           (SELECT min_val FROM stats) as min_val,
           (SELECT max_val FROM stats) as max_val,
           (SELECT avg_val FROM stats) as avg_val,
@@ -377,7 +377,7 @@ export function RangeFilter({
         >
           {icon}
           {filterValue && (
-            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-mono leading-4 text-center">
+            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] leading-4 text-center">
               R
             </span>
           )}
@@ -392,8 +392,8 @@ export function RangeFilter({
       >
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
-            <div className="text-xs font-mono font-semibold truncate">{col}</div>
-            <div className="mt-1 text-[10px] font-mono text-muted-foreground">
+            <div className="text-xs font-semibold truncate">{col}</div>
+            <div className="mt-1 text-[10px] text-muted-foreground">
               {committedRange
                 ? `${fmtNum(committedRange[0])} → ${fmtNum(committedRange[1])}`
                 : 'no range filter'}
@@ -402,7 +402,7 @@ export function RangeFilter({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono text-muted-foreground hover:text-foreground"
+              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] text-muted-foreground hover:text-foreground"
               onClick={onClear}
               title="Clear filter"
             >
@@ -410,7 +410,7 @@ export function RangeFilter({
             </button>
             <button
               type="button"
-              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono text-muted-foreground hover:text-foreground"
+              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] text-muted-foreground hover:text-foreground"
               onClick={() => onOpenChange(false)}
               title="Close"
             >
@@ -422,7 +422,7 @@ export function RangeFilter({
         {isLoading ? (
           <div className="text-xs text-muted-foreground font-mono">loading…</div>
         ) : error ? (
-          <div className="text-xs text-destructive font-mono whitespace-pre-wrap">
+          <div className="text-xs text-destructive whitespace-pre-wrap">
             {String(error)}
           </div>
         ) : stats ? (
@@ -439,8 +439,8 @@ export function RangeFilter({
                 ] as const
               ).map(([k, v]) => (
                 <div key={k} className="rounded-md border bg-background/40 px-2 py-1">
-                  <div className="text-[10px] font-mono text-muted-foreground uppercase">{k}</div>
-                  <div className="text-[11px] font-mono font-semibold tabular-nums">
+                  <div className="text-[10px] text-muted-foreground uppercase">{k}</div>
+                  <div className="text-[11px] font-semibold tabular-nums">
                     {fmtNum(v)}
                   </div>
                 </div>
@@ -450,10 +450,10 @@ export function RangeFilter({
             {/* Custom histogram (no recharts) */}
             <div className="rounded-lg border bg-background/40 p-2 relative">
               <div className="flex items-center justify-between mb-2">
-                <div className="text-[10px] font-mono text-muted-foreground uppercase">
+                <div className="text-[10px] text-muted-foreground uppercase">
                   distribution (log)
                 </div>
-                <div className="text-[10px] font-mono text-muted-foreground">
+                <div className="text-[10px] text-muted-foreground">
                   non-null: {stats.total.toLocaleString()}
                 </div>
               </div>
@@ -680,11 +680,11 @@ export function RangeFilter({
                           top: 8,
                         }}
                       >
-                        <div className="text-[10px] font-mono text-muted-foreground">count</div>
-                        <div className="text-[11px] font-mono font-semibold">
+                        <div className="text-[10px] text-muted-foreground">count</div>
+                        <div className="text-[11px] font-semibold">
                           {hoveredBin.count.toLocaleString()}
                         </div>
-                        <div className="mt-1 text-[10px] font-mono text-muted-foreground">
+                        <div className="mt-1 text-[10px] text-muted-foreground">
                           {fmtNum(hoveredBin.start)} → {fmtNum(hoveredBin.end)}
                         </div>
                       </div>
@@ -697,8 +697,8 @@ export function RangeFilter({
             {/* Controls */}
             <div className="rounded-lg border bg-background/40 p-2 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-[10px] font-mono text-muted-foreground uppercase">range</div>
-                <div className="text-[10px] font-mono text-muted-foreground">
+                <div className="text-[10px] text-muted-foreground uppercase">range</div>
+                <div className="text-[10px] text-muted-foreground">
                   avg: {fmtNum(stats.avg)} · total: {stats.total.toLocaleString()}
                 </div>
               </div>
@@ -714,7 +714,7 @@ export function RangeFilter({
                 />
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <div className="text-[10px] text-muted-foreground font-mono uppercase">
+                    <div className="text-[10px] text-muted-foreground uppercase">
                       from
                     </div>
                     <Input
@@ -740,7 +740,7 @@ export function RangeFilter({
                     />
                   </div>
                   <div className="space-y-1">
-                    <div className="text-[10px] text-muted-foreground font-mono uppercase text-right">
+                    <div className="text-[10px] text-muted-foreground uppercase text-right">
                       to
                     </div>
                     <Input
@@ -762,7 +762,7 @@ export function RangeFilter({
                           handleRangeCommit(newPos);
                         }
                       }}
-                      className="h-8 text-xs font-mono text-right"
+                      className="h-8 text-xs text-right"
                     />
                   </div>
                 </div>

@@ -1,42 +1,43 @@
 import { useQueries } from '@tanstack/react-query';
 import {
-  type ColumnDef,
-  getCoreRowModel,
-  useReactTable,
-  type SortingState,
-  type ColumnSizingState,
-  type ColumnPinningState,
-  type VisibilityState,
+    type ColumnDef,
+    type ColumnPinningState,
+    type ColumnSizingState,
+    type SortingState,
+    type VisibilityState,
+    getCoreRowModel,
+    useReactTable,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { tableFromJSON, type Vector, Table } from 'apache-arrow';
+import { type Vector, Table, tableFromJSON } from 'apache-arrow';
 import {
-  X,
-  Settings2,
-  Loader2,
-  Database,
-  AlertCircle,
-  Download,
-  Search,
-  Maximize2,
-  Minimize2,
+    AlertCircle,
+    Database,
+    Download,
+    Loader2,
+    Maximize2,
+    Minimize2,
+    Search,
+    Settings2,
+    X,
 } from 'lucide-react';
-import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Cell } from './components/Cell';
 import {
-  type ColumnSummary,
-  getTableDataPageQueryOptions,
-  useColumnSummaries,
-  useColumnSizes,
-  useQueryParts,
-  useTableCount,
-  useTableSchema,
+    type ColumnSummary,
+    getTableDataPageQueryOptions,
+    useColumnSizes,
+    useColumnSummaries,
+    useQueryParts,
+    useTableCount,
+    useTableSchema,
 } from './components/Datasource';
 import { Headers } from './components/Headers';
 import { SqlQueryEditorPopover } from './components/SqlQueryEditorPopover';
 import { type FilterValue, type FiltersState } from './components/sqlUtils';
 
+import { useDuckDB } from '../react/DuckDBProvider';
 import { Button } from './ui/Button';
 import { Card, CardContent } from './ui/Card';
 import { Checkbox } from './ui/Checkbox';
@@ -44,7 +45,6 @@ import { Input } from './ui/Input';
 import { Label } from './ui/Label';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover';
 import { ScrollArea } from './ui/ScrollArea';
-import { useDuckDB } from '../react/DuckDBProvider';
 
 // --- Types & Helpers ---
 
@@ -315,7 +315,7 @@ const QueryError = ({ error }: { error: unknown }) => (
       <h3 className="text-lg font-semibold tracking-tight">Query Error</h3>
     </div>
     <div className="max-w-2xl w-full min-h-0">
-      <pre className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 font-mono text-[11px] overflow-auto whitespace-pre-wrap break-all shadow-inner max-h-[30vh]">
+      <pre className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-[11px] overflow-auto whitespace-pre-wrap break-all shadow-inner max-h-[30vh]">
         {String((error as Error)?.message || error)}
       </pre>
     </div>
@@ -432,7 +432,7 @@ export function QueryTable({
             <Database className="h-8 w-8 text-muted-foreground/20" />
             <Loader2 className="h-4 w-4 animate-spin text-primary absolute -bottom-1 -right-1" />
           </div>
-          <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-widest">
+          <div className="text-[11px] text-muted-foreground uppercase tracking-widest">
             registering data...
           </div>
         </div>
@@ -879,7 +879,7 @@ function QueryTableInternal({
             )}
           </Button>
 
-          <div className="text-[11px] font-mono text-muted-foreground whitespace-nowrap flex items-center gap-2">
+          <div className="text-[11px] text-muted-foreground whitespace-nowrap flex items-center gap-2">
             {isInitialLoad ? (
               <>
                 <Loader2 className="h-3 w-3 animate-spin text-primary" />
@@ -896,7 +896,7 @@ function QueryTableInternal({
               <SqlQueryEditorPopover sql={sql} onSave={onSaveSql} />
             ) : (
               <div
-                className="text-[11px] font-mono text-muted-foreground truncate w-full"
+                className="text-[11px] text-muted-foreground truncate w-full"
                 title={sql.replace(/\s+/g, ' ').trim()}
               >
                 {sql.replace(/\s+/g, ' ').trim()}
@@ -907,7 +907,7 @@ function QueryTableInternal({
           {/* Active Filters Display */}
           {enableFilters && (activeSetFilters.length > 0 || globalFilterActive) && (
             <div className="hidden lg:flex items-center gap-2 max-w-[60%] overflow-hidden shrink-0">
-              <div className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
+              <div className="text-[11px] text-muted-foreground whitespace-nowrap">
                 filters:
               </div>
 
@@ -951,7 +951,7 @@ function QueryTableInternal({
                   <PopoverTrigger asChild>
                     <button
                       type="button"
-                      className="text-[11px] font-mono text-muted-foreground hover:text-foreground inline-flex items-center"
+                      className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center"
                       title="Show all active filters"
                     >
                       [{totalFilterCount} filters see more]
@@ -959,12 +959,12 @@ function QueryTableInternal({
                   </PopoverTrigger>
                   <PopoverContent className="w-130 p-3" align="end">
                     <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="text-xs font-mono text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         active filters ({totalFilterCount})
                       </div>
                       <button
                         type="button"
-                        className="text-xs font-mono text-muted-foreground hover:text-foreground underline"
+                        className="text-xs text-muted-foreground hover:text-foreground underline"
                         onClick={clearAllFilters}
                       >
                         clear all
@@ -1039,7 +1039,7 @@ function QueryTableInternal({
                           />
                           <Label
                             htmlFor={`col-toggle-${column.id}`}
-                            className={`text-xs font-mono font-normal truncate ${isRowIndex ? 'text-muted-foreground' : ''}`}
+                            className={`text-xs font-normal truncate ${isRowIndex ? 'text-muted-foreground' : ''}`}
                           >
                             {column.id}
                           </Label>
@@ -1070,7 +1070,7 @@ function QueryTableInternal({
                       }
                     }}
                     placeholder="global filter"
-                    className="w-40 h-7 text-xs font-mono shrink-0"
+                    className="w-40 h-7 text-xs shrink-0"
                     autoFocus
                   />
                   <Button

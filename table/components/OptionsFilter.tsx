@@ -1,15 +1,15 @@
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import React, { useMemo } from 'react';
 
-import { useQueryParts } from './Datasource';
 import type { ColumnOption } from './Datasource';
-import { buildWhereClause, quoteIdent, type FiltersState } from './sqlUtils';
+import { useQueryParts } from './Datasource';
 import type { FilterValue } from './sqlUtils';
+import { buildWhereClause, quoteIdent, type FiltersState } from './sqlUtils';
 
+import { useDuckDB } from '../../react/DuckDBProvider';
 import { Input } from '../ui/Input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { ScrollArea } from '../ui/ScrollArea';
-import { useDuckDB } from '../../react/DuckDBProvider';
 
 export type OptionsFilterProps = {
   col: string;
@@ -152,7 +152,7 @@ export function OptionsFilter({
         >
           {icon}
           {filterValue && (
-            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-mono leading-4 text-center">
+            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] leading-4 text-center">
               {filterValue.type === 'set' ? filterValue.values.length : 'R'}
             </span>
           )}
@@ -167,8 +167,8 @@ export function OptionsFilter({
       >
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
-            <div className="text-xs font-mono font-semibold truncate">{col}</div>
-            <div className="mt-1 text-[10px] font-mono text-muted-foreground">
+            <div className="text-xs font-semibold truncate">{col}</div>
+            <div className="mt-1 text-[10px] text-muted-foreground">
               {filterValue?.type === 'set' ? `${filterValue.values.length} selected` : 'no filter'}
             </div>
           </div>
@@ -193,7 +193,7 @@ export function OptionsFilter({
             </button>
             <button
               type="button"
-              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono text-muted-foreground hover:text-foreground"
+              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] text-muted-foreground hover:text-foreground"
               onClick={onClear}
               title="Clear filter"
             >
@@ -205,7 +205,7 @@ export function OptionsFilter({
         {isLoading ? (
           <div className="text-xs text-muted-foreground font-mono">loading…</div>
         ) : error ? (
-          <div className="text-xs text-destructive font-mono whitespace-pre-wrap">
+          <div className="text-xs text-destructive whitespace-pre-wrap">
             {String(error)}
           </div>
         ) : (
@@ -258,8 +258,8 @@ export function OptionsFilter({
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start gap-2">
-                          <div className="text-xs font-mono truncate leading-5">{opt.label}</div>
-                          <div className="ml-auto text-[10px] font-mono text-muted-foreground whitespace-nowrap leading-5">
+                          <div className="text-xs truncate leading-5">{opt.label}</div>
+                          <div className="ml-auto text-[10px] text-muted-foreground whitespace-nowrap leading-5">
                             {opt.count.toLocaleString()} · {pct}%
                           </div>
                         </div>

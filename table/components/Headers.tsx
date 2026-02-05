@@ -8,11 +8,11 @@ import { RangeFilter } from './RangeFilter';
 import type { FiltersState, FilterValue } from './sqlUtils';
 
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-  ContextMenuSeparator,
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuSeparator,
+    ContextMenuTrigger,
 } from '../ui/ContextMenu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 
@@ -106,7 +106,7 @@ export function Headers({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div
-                            className={`flex-1 min-w-0 text-[11px] font-mono font-semibold tracking-tight flex items-center gap-1 text-foreground ${isRowIndex ? 'justify-center' : ''}`}
+                            className={`flex-1 min-w-0 text-[11px] font-semibold tracking-tight flex items-center gap-1 text-foreground ${isRowIndex ? 'justify-center' : ''}`}
                           >
                             <span className="min-w-0 truncate">
                               {flexRender(header.column.columnDef.header, header.getContext())}

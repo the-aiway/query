@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 
@@ -47,14 +47,14 @@ export function SqlQueryEditorPopover({
     >
       <PopoverTrigger asChild>
         <div
-          className="text-[11px] font-mono text-muted-foreground truncate cursor-pointer hover:text-foreground w-full min-w-0"
+          className="text-[11px] text-muted-foreground truncate cursor-pointer hover:text-foreground w-full min-w-0"
           title={title}
         >
           {display}
         </div>
       </PopoverTrigger>
       <PopoverContent className={`${widthClassName} p-2`} align="start">
-        <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words">
+        <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
           {draft}
         </pre>
         {/* TODO: fix Monaco Editor */}
