@@ -38,28 +38,17 @@ type TrimLeft<S extends string> = S extends `${Whitespace}${infer T}` ? TrimLeft
 
 type TrimRight<S extends string> = S extends `${infer T}${Whitespace}` ? TrimRight<T> : S;
 
-type StripBlockComments<S extends string> = S extends `${infer Pre}/*${string}*/${infer Post}`
-  ? StripBlockComments<`${Pre}${Post}`>
-  : S;
+type StripBlockComments<S extends string> = S extends `${infer Pre}/*${string}*/${infer Post}` ? StripBlockComments<`${Pre}${Post}`> : S;
 
-type StripLineComments<S extends string> = S extends `${infer Pre}--${infer Rest}`
-  ? Rest extends `${string}\n${infer Post}`
-    ? StripLineComments<`${Pre}\n${Post}`>
-    : Pre
-  : S;
+type StripLineComments<S extends string> = S extends `${infer Pre}--${infer Rest}` ? (Rest extends `${string}\n${infer Post}` ? StripLineComments<`${Pre}\n${Post}`> : Pre) : S;
 
 type StripComments<S extends string> = StripLineComments<StripBlockComments<S>>;
 
 export type Trim<S extends string> = TrimLeft<TrimRight<StripComments<S>>>;
 
-type CountOpen<S extends string, Acc extends unknown[] = []> = S extends `${string}(${infer Tail}`
-  ? CountOpen<Tail, [...Acc, unknown]>
-  : Acc;
+type CountOpen<S extends string, Acc extends unknown[] = []> = S extends `${string}(${infer Tail}` ? CountOpen<Tail, [...Acc, unknown]> : Acc;
 
-type FindMainSelect<
-  S extends string,
-  Depth extends unknown[] = [],
-> = S extends `${infer Pre})${infer Post}`
+type FindMainSelect<S extends string, Depth extends unknown[] = []> = S extends `${infer Pre})${infer Post}`
   ? CountOpen<Pre> extends infer NewOpens extends unknown[]
     ? [...Depth, ...NewOpens] extends [unknown, ...infer NewDepth]
       ? NewDepth['length'] extends 0
@@ -78,21 +67,11 @@ export type StripWith<S extends string> =
       : FindMainSelect<Body>
     : Trim<S>;
 
-type StripFrom<S extends string> = S extends `${infer Fields}${Whitespace}${FromKeyword} ${string}`
-  ? Fields
-  : S;
+type StripFrom<S extends string> = S extends `${infer Fields}${Whitespace}${FromKeyword} ${string}` ? Fields : S;
 
-export type ExtractSelect<S extends string> =
-  StripWith<S> extends `SELECT${infer Rest}`
-    ? StripFrom<Trim<Rest>>
-    : StripWith<S> extends `${FromKeyword}${Whitespace}${string}SELECT${infer Rest}`
-      ? Trim<Rest>
-      : never;
+export type ExtractSelect<S extends string> = StripWith<S> extends `SELECT${infer Rest}` ? StripFrom<Trim<Rest>> : StripWith<S> extends `${FromKeyword}${Whitespace}${string}SELECT${infer Rest}` ? Trim<Rest> : never;
 
-type IsBalanced<
-  S extends string,
-  Depth extends unknown[] = [],
-> = S extends `${infer PreOpen}(${infer PostOpen}`
+type IsBalanced<S extends string, Depth extends unknown[] = []> = S extends `${infer PreOpen}(${infer PostOpen}`
   ? S extends `${infer PreClose})${infer PostClose}`
     ? PreOpen extends `${PreClose}${string}`
       ? Depth extends [unknown, ...infer NewDepth]
@@ -108,13 +87,9 @@ type IsBalanced<
       ? true
       : false;
 
-type EndsWithAsAlias<S extends string> =
-  Trim<S> extends `${string} ${AsKeyword} ${infer Alias}` ? IsClean<Alias> : false;
+type EndsWithAsAlias<S extends string> = Trim<S> extends `${string} ${AsKeyword} ${infer Alias}` ? IsClean<Alias> : false;
 
-type SplitNewline<
-  S extends string,
-  Current extends string = '',
-> = S extends `${infer Head}\n${infer Tail}`
+type SplitNewline<S extends string, Current extends string = ''> = S extends `${infer Head}\n${infer Tail}`
   ? IsBalanced<`${Current}${Head}`> extends true
     ? EndsWithAsAlias<`${Current}${Head}`> extends true
       ? [Trim<`${Current}${Head}`>, ...SplitNewline<Tail, ''>]
@@ -122,51 +97,22 @@ type SplitNewline<
     : SplitNewline<Tail, `${Current}${Head}\n`>
   : [Trim<`${Current}${S}`>];
 
-type MapSplitNewline<T extends unknown[]> = T extends [infer Head, ...infer Tail]
-  ? Head extends string
-    ? Tail extends string[]
-      ? [...SplitNewline<Head>, ...MapSplitNewline<Tail>]
-      : [...SplitNewline<Head>]
-    : MapSplitNewline<Tail>
-  : [];
+type MapSplitNewline<T extends unknown[]> = T extends [infer Head, ...infer Tail] ? (Head extends string ? (Tail extends string[] ? [...SplitNewline<Head>, ...MapSplitNewline<Tail>] : [...SplitNewline<Head>]) : MapSplitNewline<Tail>) : [];
 
-export type SplitComma<
-  S extends string,
-  Current extends string = '',
-> = S extends `${infer Head},${infer Tail}`
-  ? IsBalanced<`${Current}${Head}`> extends true
-    ? [Trim<`${Current}${Head}`>, ...SplitComma<Tail, ''>]
-    : SplitComma<Tail, `${Current}${Head},`>
-  : [Trim<`${Current}${S}`>];
+export type SplitComma<S extends string, Current extends string = ''> = S extends `${infer Head},${infer Tail}` ? (IsBalanced<`${Current}${Head}`> extends true ? [Trim<`${Current}${Head}`>, ...SplitComma<Tail, ''>] : SplitComma<Tail, `${Current}${Head},`>) : [Trim<`${Current}${S}`>];
 
 type SplitInferredFields<S extends string> = MapSplitNewline<SplitComma<S>>;
 
 type StripParens<S extends string> = S extends `${infer T}(${string})` ? T : S;
 
-type ResolveCast<T extends string> =
-  Lowercase<StripParens<T>> extends keyof CastMap ? CastMap[Lowercase<StripParens<T>>] : unknown;
+type ResolveCast<T extends string> = Lowercase<StripParens<T>> extends keyof CastMap ? CastMap[Lowercase<StripParens<T>>] : unknown;
 
-type GetColName<S extends string> = S extends `${string}(${string}`
-  ? S
-  : S extends `${string}.${infer Rest}`
-    ? GetColName<Rest>
-    : S;
+type GetColName<S extends string> = S extends `${string}(${string}` ? S : S extends `${string}.${infer Rest}` ? GetColName<Rest> : S;
 
-type IsClean<S extends string> = S extends ''
-  ? true
-  : S extends `${infer C}${infer Rest}`
-    ? Lowercase<C> extends Uppercase<C>
-      ? C extends CleanChar
-        ? IsClean<Rest>
-        : false
-      : IsClean<Rest>
-    : true;
+type IsClean<S extends string> = S extends '' ? true : S extends `${infer C}${infer Rest}` ? (Lowercase<C> extends Uppercase<C> ? (C extends CleanChar ? IsClean<Rest> : false) : IsClean<Rest>) : true;
 
 // We revert to explicit checks because Union inference in template literals is unstable for recursion
-type ExtractAliasName<
-  S extends string,
-  Current extends string = '',
-> = S extends `${infer Head} AS ${infer Tail}`
+type ExtractAliasName<S extends string, Current extends string = ''> = S extends `${infer Head} AS ${infer Tail}`
   ? IsBalanced<`${Current}${Head}`> extends true
     ? Trim<Tail>
     : ExtractAliasName<Tail, `${Current}${Head} AS `>
@@ -175,10 +121,7 @@ type ExtractAliasName<
       ? Trim<Tail>
       : ExtractAliasName<Tail, `${Current}${Head} as `>
     : never;
-type SplitAlias<
-  S extends string,
-  Current extends string = '',
-> = S extends `${infer Head} AS ${infer Tail}`
+type SplitAlias<S extends string, Current extends string = ''> = S extends `${infer Head} AS ${infer Tail}`
   ? IsBalanced<`${Current}${Head}`> extends true
     ? [Trim<`${Current}${Head}`>, Trim<Tail>]
     : SplitAlias<Tail, `${Current}${Head} AS `>
@@ -188,14 +131,7 @@ type SplitAlias<
       : SplitAlias<Tail, `${Current}${Head} as `>
     : never;
 
-type ResolveImplicitType<T extends string> =
-  Lowercase<T> extends `${NumericSqlFunction}(${string}`
-    ? number
-    : T extends `${number}`
-      ? number
-      : T extends `'${string}'`
-        ? string
-        : unknown;
+type ResolveImplicitType<T extends string> = Lowercase<T> extends `${NumericSqlFunction}(${string}` ? number : T extends `${number}` ? number : T extends `'${string}'` ? string : unknown;
 
 export type ParseField<S extends string> =
   // CASE 1 & 2: Has Cast "::"
@@ -237,25 +173,13 @@ export type InferSql<T extends string> =
         : Record<string, unknown>[]
     : Record<string, unknown>[];
 
-export type InferSQL<T extends string, TOverride = unknown> = unknown extends TOverride
-  ? Materialize<InferSql<T>[number] & Record<string, unknown>>[]
-  : TOverride extends unknown[]
-    ? TOverride
-    : Materialize<TOverride>[];
+export type InferSQL<T extends string, TOverride = unknown> = unknown extends TOverride ? Materialize<InferSql<T>[number] & Record<string, unknown>>[] : TOverride extends unknown[] ? TOverride : Materialize<TOverride>[];
 
-export type InferSQLStrict<T extends string, TOverride = unknown> = unknown extends TOverride
-  ? Materialize<InferSql<T>[number]>[]
-  : TOverride extends unknown[]
-    ? TOverride
-    : Materialize<TOverride>[];
+export type InferSQLStrict<T extends string, TOverride = unknown> = unknown extends TOverride ? Materialize<InferSql<T>[number]>[] : TOverride extends unknown[] ? TOverride : Materialize<TOverride>[];
 
-export declare function sql<TOverride = unknown, T extends string = string>(
-  query: T
-): InferSQL<T, TOverride>;
+export declare function sql<TOverride = unknown, T extends string = string>(query: T): InferSQL<T, TOverride>;
 
-export declare function sqlStrict<TOverride = unknown, T extends string = string>(
-  query: T
-): InferSQLStrict<T, TOverride>;
+export declare function sqlStrict<TOverride = unknown, T extends string = string>(query: T): InferSQLStrict<T, TOverride>;
 
 export function typeCheck() {
   const test3 = sqlStrict('WITH cte AS (SELECT 1) SELECT total::DECIMAL FROM orders');
@@ -589,8 +513,11 @@ SELECT xxx, cccc
   const testLiterals = sqlStrict("SELECT 123 as num, 'hello' as str, 45.6 as float_val");
   testLiterals satisfies { num: number; str: string; float_val: number }[];
 
-  const test58 = sqlStrict('FROM zz SELECT lol::INT as xxx')
-  test58 satisfies { xxx: number }[]
+  const test58 = sqlStrict('FROM zz SELECT lol::INT as xxx');
+  test58 satisfies { xxx: number }[];
+
+  const test59 = sqlStrict(`SELECT count(*)::int as total, lol::INT as xxx WHERE id=$id FROM ${t.table_1}`);
+  test59 satisfies { total: number; xxx: number }[];
 
   return [];
 }
