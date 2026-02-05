@@ -67,9 +67,19 @@ export type StripWith<S extends string> =
       : FindMainSelect<Body>
     : Trim<S>;
 
-type StripFrom<S extends string> = S extends `${infer Fields}${Whitespace}${FromKeyword} ${string}` ? Fields : S;
+type ClauseKeywords = ['FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT', 'OFFSET', 'WINDOW', 'QUALIFY'];
 
-export type ExtractSelect<S extends string> = StripWith<S> extends `SELECT${infer Rest}` ? StripFrom<Trim<Rest>> : StripWith<S> extends `${FromKeyword}${Whitespace}${string}SELECT${infer Rest}` ? Trim<Rest> : never;
+type StripKeyword<S, K extends string> = S extends `${infer Fields}${Whitespace}${K} ${string}`
+  ? Fields
+  : S extends `${infer Fields}${Whitespace}${Lowercase<K>} ${string}`
+  ? Fields
+  : S;
+
+type StripClauses<S extends string, K extends string[] = ClauseKeywords> = K extends [infer Head extends string, ...infer Tail extends string[]]
+  ? StripClauses<StripKeyword<S, Head>, Tail>
+  : S;
+
+export type ExtractSelect<S extends string> = StripWith<S> extends `SELECT${infer Rest}` ? StripClauses<Trim<Rest>> : StripWith<S> extends `${FromKeyword}${Whitespace}${string}SELECT${infer Rest}` ? StripClauses<Trim<Rest>> : never;
 
 type IsBalanced<S extends string, Depth extends unknown[] = []> = S extends `${infer PreOpen}(${infer PostOpen}`
   ? S extends `${infer PreClose})${infer PostClose}`
