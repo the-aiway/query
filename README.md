@@ -1,4 +1,4 @@
-# Query - DuckDB-Powered Data Table for React
+# Query - DuckDB-Powered Data Table for React (EXPERIMENTAL)
 
 A high-performance, feature-rich React data table component that brings SQL analytics directly to the browser using DuckDB WebAssembly. Query enables interactive data exploration with virtual scrolling, dynamic filtering, and real-time SQL execution—all without backend infrastructure.
 
@@ -32,12 +32,12 @@ A high-performance, feature-rich React data table component that brings SQL anal
 ## Installation
 
 ```bash
-npm install query
+npm install the-aiway/query#main # or better: the sha1 of the commit
 ```
 
 ### Peer Dependencies
 
-You'll need to install these peer dependencies:
+You'll need to install these peer dependencies in your project:
 
 ```bash
 npm install react @duckdb/duckdb-wasm @tanstack/react-query @tanstack/react-table @tanstack/react-virtual apache-arrow
@@ -190,7 +190,7 @@ Apply conditional styling to rows:
 
 ## Advanced Usage
 
-### Using SQL Hooks
+### Using SQL Hooks (EXPERIMENTAL)
 
 Query data directly in your components with type inference:
 
@@ -216,7 +216,7 @@ function UserList() {
 }
 ```
 
-### Creating Derived Tables
+### Creating Derived Tables (EXPERIMENTAL)
 
 Create reusable, cached table views:
 
@@ -248,10 +248,14 @@ Load CSV, Parquet, or JSON files:
 import { useFile } from 'query';
 
 function FileAnalyzer() {
-  const { tableName, isLoading } = useFile({
-    url: 'https://example.com/data.csv',
-    tableName: 'sales_data',
-  });
+  
+  const {
+    data: { name: tableName },
+    isLoading
+  } = useFile(
+    'sales_data',
+    'https://example.com/data.csv'
+  );
 
   if (isLoading) return <div>Loading file...</div>;
 
