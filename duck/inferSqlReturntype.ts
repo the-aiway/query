@@ -515,8 +515,8 @@ SELECT xxx, cccc
 
   const test58 = sqlStrict('FROM zz SELECT lol::INT as xxx');
   test58 satisfies { xxx: number }[];
-
-  const test59 = sqlStrict(`SELECT count(*)::int as total, lol::INT as xxx WHERE id=$id FROM ${t.table_1}`);
+  let t = { table_1: 'SQD' };
+  const test59 = sqlStrict(`SELECT count(*)::int as total, lol::INT as xxx WHERE id=$id FROM ${t.table_1} xx`);
   test59 satisfies { total: number; xxx: number }[];
 
   return [];
