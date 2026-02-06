@@ -279,7 +279,7 @@ export function Cell({
 
   return (
     <div
-      className={`px-2 py-1 text-[11px] border-r last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis flex items-center ${
+      className={`px-2 py-1 font-mono text-[11px] border-r last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis flex items-center ${
         isRowIndex
           ? 'justify-center text-muted-foreground tabular-nums bg-background/80 backdrop-blur-sm shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)] z-[10]'
           : theme.alignClass + ' bg-transparent'
