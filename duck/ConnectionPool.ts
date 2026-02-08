@@ -2,7 +2,7 @@ import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
 import { Table as ArrowTable, tableFromJSON, type TypeMap } from 'apache-arrow';
 
 import type { Materialize, InferSQL } from './inferSqlReturntype';
-import { highlightQuery } from './queryHighlighter';
+import { DumpLogger } from './DumpLogger';
 
 export type { AsyncDuckDB, AsyncDuckDBConnection };
 
@@ -23,6 +23,7 @@ export class ConnectionPool {
   private available: AsyncDuckDBConnection[] = [];
   private queue: ((conn: AsyncDuckDBConnection) => void)[] = [];
   private queryHook?: string;
+  private logger = new DumpLogger();
 
   constructor(db: AsyncDuckDB, size: number = 4) {
     this.db = db;
@@ -139,18 +140,6 @@ export class ConnectionPool {
     }
   }
 
-  count = 0;
-
-  log(rtn: ArrowTable) {
-    const resultsProxy = { clickToSeeMore: true };
-    Object.defineProperty(resultsProxy, 'results', {
-      get: () => Array.from(rtn).map((e) => e?.toJSON()),
-      enumerable: true,
-      configurable: true,
-    });
-    console.dir(resultsProxy, { showHidden: true, depth: 4 });
-  }
-
   /**
    * Returns a new pool instance with query hook that runs before each query.
    * The original pool is not modified.
@@ -165,53 +154,10 @@ export class ConnectionPool {
     query: Q,
     params?: unknown[]
   ): Promise<InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>> {
-    const _id = this.count++;
-    const tokens = await this.db.tokenize(query);
-    const highlightedQuery = highlightQuery(query, tokens);
-    const queryStart = highlightedQuery.replaceAll(/\n\s*/g, ' ').split(' ').slice(0, 15).join(' ');
-
-    const start = performance.now();
-    // Only log "Running" if the query takes more than 14922000o avoid console noise
-    const hangingTimer = setTimeout(() => {
-      console.log(
-        `%c${_id}%c ⏳ Hanging: ${queryStart}`,
-        'color: #888; font-weight: bold',
-        'color: #f59e0b; font-style: italic'
-      );
-    }, 1492);
-
-    try {
-      const rtn = await this.queryIPCTable<TOverride, Q>(query, params);
-      clearTimeout(hangingTimer);
-      const duration = (performance.now() - start).toFixed(1);
-
-      console.groupCollapsed(
-        `%c${_id}%c ✓ ${queryStart} %c(${duration}ms)`,
-        'color: #888; font-weight: bold',
-        'color: inherit',
-        'color: #666; font-style: italic'
-      );
-      console.log(highlightedQuery);
-      this.log(rtn);
-      console.groupEnd();
-      return rtn;
-    } catch (error) {
-      clearTimeout(hangingTimer);
-      const duration = (performance.now() - start).toFixed(1);
-      const errMessages = Array.from(
-        new Set((error as Error).message.split('\n').filter((e: string) => e.trim()))
-      );
-      console.groupCollapsed(
-        `%c${_id}%c ❌ Error: ${queryStart} %c(${duration}ms)`,
-        'color: #888; font-weight: bold',
-        'color: red',
-        'color: #666; font-style: italic'
-      );
-      console.log(highlightedQuery);
-      console.error(errMessages.join('\n'));
-      console.trace();
-      console.groupEnd();
-      throw error;
-    }
+    return (await this.logger.logQuery(
+        query,
+        () => this.queryIPCTable<TOverride, Q>(query, params),
+        this.db
+    )) as InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>;
   }
 }

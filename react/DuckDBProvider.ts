@@ -3,6 +3,9 @@ import * as DuckDBBrowser from "@duckdb/duckdb-wasm";
 import React, { createContext, useContext, type ReactNode } from "react";
 
 import { ConnectionPool } from "../duck/ConnectionPool";
+import { DataCoordinator } from "./DataCoordinator";
+import { DumpLogger } from "../duck/DumpLogger";
+
 
 const duckdb =
   DuckDBBrowser as unknown as typeof import("@duckdb/duckdb-wasm") & {};
@@ -85,9 +88,10 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
     const maxConnections = config?.maxConnections ?? DEFAULT_MAX_CONNECTIONS;
 
     const createInstance = async () => {
+      console.log("%c[DuckDB] 🛠️ createInstance() started", "color: #3b82f6; font-weight: bold");
       debug("[DuckDB] Creating instance...");
       const worker = new Worker(workerUrl);
-      const logger = new duckdb.VoidLogger();
+      const logger = new DumpLogger();
       const database = new duckdb.AsyncDuckDB(logger, worker);
 
       // Instantiate with the bundle (pthreadWorker enables multi-threading)
