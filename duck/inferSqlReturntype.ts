@@ -6,7 +6,7 @@ type FromKeyword = 'FROM' | 'from';
 
 type CleanChar = '_' | '-' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
 
-type NumericSqlFunction = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'row_number' | 'rank';
+type NumericSqlFunction = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'row_number' | 'rank' | 'round';
 
 type CastMap = {
   int: number;
