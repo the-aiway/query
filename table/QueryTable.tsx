@@ -20,6 +20,7 @@ import {
   Search,
   Maximize2,
   Minimize2,
+  BarChart3,
 } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 
@@ -45,13 +46,16 @@ import { Label } from './ui/Label';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover';
 import { ScrollArea } from './ui/ScrollArea';
 import { useDuckDB } from '../react/DuckDBProvider';
+import { type CacheEntry } from '../react/DataCoordinator';
+import { getCoordinator } from '../react/reducks';
 
 // --- Types & Helpers ---
 
 export type DataTableSource =
   | { type: 'sql'; sql: string; params?: unknown[] }
   | { type: 'data'; data: Record<string, unknown>[]; tableName?: string; sql?: string }
-  | { type: 'arrow'; table: Table; tableName?: string; sql?: string };
+  | { type: 'arrow'; table: Table; tableName?: string; sql?: string }
+  | { type: 'entry'; entry: CacheEntry };
 
 /** Create a SQL data source */
 export function query(sql: string, params?: unknown[]): DataTableSource {
@@ -63,9 +67,14 @@ export function fromJSON(data: Record<string, unknown>[], tableName?: string): D
   return { type: 'data', data, tableName };
 }
 
+/** Create a data source from a Reducks CacheEntry */
+export function fromEntry(entry: CacheEntry): DataTableSource {
+  return { type: 'entry', entry };
+}
+
 type QueryTableProps = {
-  /** The table data source. Can be a SQL string, an array of objects, or a DataTableSource object. */
-  table?: string | Record<string, unknown>[] | Table | DataTableSource | null;
+  /** The table data source. Can be a SQL string, an array of objects, a CacheEntry, or a DataTableSource object. */
+  table?: string | Record<string, unknown>[] | Table | CacheEntry | DataTableSource | null;
   /** SQL query (legacy prop) */
   sql?: string;
   /** SQL parameters (legacy prop) */
@@ -90,6 +99,8 @@ type QueryTableProps = {
   pool?: ReturnType<typeof useDuckDB>['pool'];
   /** Show a fixed row number column on the left */
   showRowNumbers?: boolean;
+  /** Called when the user clicks the close/back button. When provided, a close button is shown in the toolbar. */
+  onClose?: () => void;
 };
 
 const PAGE_SIZE = 1000;
@@ -339,11 +350,16 @@ export function QueryTable({
   colMaxWidth = COL_MAX_WIDTH,
   pool: poolProp,
   showRowNumbers = false,
+  onClose,
 }: QueryTableProps) {
   const { pool: contextPool } = useDuckDB();
 
   // If a DQuery is provided via query prop, use its pool
   const pool = poolProp ?? contextPool;
+
+  // Helper to detect a CacheEntry (has slug + status + type fields)
+  const isCacheEntry = (v: unknown): v is CacheEntry =>
+    !!v && typeof v === 'object' && 'slug' in v && 'status' in v && 'id' in v;
 
   // 1. Resolve source from various inputs
   const source = useMemo<DataTableSource | null>(() => {
@@ -357,13 +373,28 @@ export function QueryTable({
           sql: sqlInput,
         };
       }
+      if (isCacheEntry(tableInput)) return { type: 'entry', entry: tableInput };
       return tableInput;
     }
     if (sqlInput) return query(sqlInput, paramsInput);
     return null;
   }, [tableInput, sqlInput, paramsInput]);
 
-  // 2. Handle data registration if it's in-memory data
+  // 2. Resolve entry sources to SQL
+  // Builds a single query with CTEs for all dependencies (including fragments)
+  // so the user sees clean, editable SQL like `WITH dep1 AS (...), dep2 AS (...) SELECT * FROM entry_id`
+  const entryResolved = useMemo<{ sql: string } | null>(() => {
+    if (!source || source.type !== 'entry' || !pool) return null;
+    const { entry } = source;
+    if (entry.status !== 'ready') return null;
+
+    const coordinator = getCoordinator(pool);
+    const sql = coordinator.resolveEntryAsSql(entry);
+
+    return { sql };
+  }, [source, pool]);
+
+  // 3. Handle data registration if it's in-memory data
   const [registered, setRegistered] = useState<{
     sql: string;
     params?: unknown[];
@@ -419,9 +450,28 @@ export function QueryTable({
     };
   }, [source, pool]);
 
-  // 3. Get initial SQL and params
-  const initSql = source?.type === 'sql' ? source.sql : registered?.sql;
+  // 4. Get initial SQL and params
+  const initSql = source?.type === 'sql' ? source.sql
+    : source?.type === 'entry' ? entryResolved?.sql
+    : registered?.sql;
   const params = source?.type === 'sql' ? source.params : registered?.params;
+
+  // Show loading while entry is not ready
+  if (source?.type === 'entry' && !entryResolved) {
+    return (
+      <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden items-center justify-center bg-muted/5 border-dashed">
+        <div className="flex flex-col items-center gap-3">
+          <div className="relative">
+            <Database className="h-8 w-8 text-muted-foreground/20" />
+            <Loader2 className="h-4 w-4 animate-spin text-primary absolute -bottom-1 -right-1" />
+          </div>
+          <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-widest">
+            waiting for data...
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   // Show loading while registering data
   if ((source?.type === 'data' || source?.type === 'arrow') && !registered) {
@@ -458,6 +508,7 @@ export function QueryTable({
       colMaxWidth={colMaxWidth}
       pool={pool}
       showRowNumbers={showRowNumbers}
+      onClose={onClose}
     />
   );
 }
@@ -476,9 +527,11 @@ function QueryTableInternal({
   colMaxWidth,
   pool,
   showRowNumbers = false,
+  onClose,
 }: Omit<QueryTableProps, 'table' | 'sql'> & {
   initSql: string;
   pool: ReturnType<typeof useDuckDB>['pool'];
+  onClose?: () => void;
 }) {
   const [sql, onSaveSql] = useState(initSql);
   const lastInitSqlRef = useRef(initSql);
@@ -1099,6 +1152,18 @@ function QueryTableInternal({
                   <Search className="h-3.5 w-3.5" />
                 </Button>
               ))}
+
+            {onClose && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={onClose}
+                title="Back to chart view"
+              >
+                <BarChart3 className="h-3.5 w-3.5" />
+              </Button>
+            )}
 
             <Button
               variant="ghost"
