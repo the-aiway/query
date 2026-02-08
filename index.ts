@@ -14,6 +14,3 @@ export type { InferSQL, Materialize, InferSQLStrict } from './duck/inferSqlRetur
 
 export default QueryTable;
 export * from './react/DuckQueryContext';
-export * from './react/useFile';
-export * from './react/useTable';
-export * from './react/useSql';
