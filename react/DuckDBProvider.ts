@@ -1,14 +1,12 @@
-import type { AsyncDuckDB } from "@duckdb/duckdb-wasm";
-import * as DuckDBBrowser from "@duckdb/duckdb-wasm";
-import React, { createContext, useContext, type ReactNode } from "react";
+import type { AsyncDuckDB } from '@duckdb/duckdb-wasm';
+import * as DuckDBBrowser from '@duckdb/duckdb-wasm';
+import React, { createContext, useContext, type ReactNode } from 'react';
 
-import { ConnectionPool } from "../duck/ConnectionPool";
-import { DataCoordinator } from "./DataCoordinator";
-import { DumpLogger } from "../duck/DumpLogger";
+import { ConnectionPool } from '../duck/ConnectionPool';
+import { DataCoordinator } from './DataCoordinator';
+import { DumpLogger } from '../duck/DumpLogger';
 
-
-const duckdb =
-  DuckDBBrowser as unknown as typeof import("@duckdb/duckdb-wasm") & {};
+const duckdb = DuckDBBrowser as unknown as typeof import('@duckdb/duckdb-wasm') & {};
 
 export interface DuckDBConfig {
   bundlePath?: string;
@@ -25,15 +23,14 @@ export interface DBResource {
   selectedBundle: string;
 }
 
-const DEFAULT_MAX_CONNECTIONS =
-  typeof navigator !== "undefined" ? navigator.hardwareConcurrency || 4 : 4;
+const DEFAULT_MAX_CONNECTIONS = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
 
 function resolveBundleBasePath(bundlePath: string) {
-  if (bundlePath.startsWith("http://") || bundlePath.startsWith("https://")) {
-    return bundlePath.replace(/\/$/, "");
+  if (bundlePath.startsWith('http://') || bundlePath.startsWith('https://')) {
+    return bundlePath.replace(/\/$/, '');
   }
-  const path = bundlePath.startsWith("/") ? bundlePath : `/${bundlePath}`;
-  return `${location.origin}${path}`.replace(/\/$/, "");
+  const path = bundlePath.startsWith('/') ? bundlePath : `/${bundlePath}`;
+  return `${location.origin}${path}`.replace(/\/$/, '');
 }
 
 function getRelevantBundle(bundlePath: string) {
@@ -69,43 +66,41 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
 
   dbResourcePromise = (async () => {
     const debug = config?.debug ? console.log : () => {};
-    debug("[DuckDB] Initializing...");
-    const bundlePath = config?.bundlePath ?? "/static/duckdb";
-    debug("[DuckDB] Using bundle path:", bundlePath);
+    debug('[DuckDB] Initializing...');
+    const bundlePath = config?.bundlePath ?? '/static/duckdb';
+    debug('[DuckDB] Using bundle path:', bundlePath);
     const bundle = await getRelevantBundle(bundlePath);
-    debug("[DuckDB] Bundle resolved:", bundle);
+    debug('[DuckDB] Bundle resolved:', bundle);
     const match = bundle.mainModule.match(/duckdb-(\w+).wasm/);
-    const selectedBundle = (match && match[1]) || "unknown";
+    const selectedBundle = (match && match[1]) || 'unknown';
 
     // Create worker URL for the main worker
     const workerUrl = URL.createObjectURL(
       new Blob([`importScripts("${bundle.mainWorker}");`], {
-        type: "text/javascript",
-      }),
+        type: 'text/javascript',
+      })
     );
-    debug("[DuckDB] Worker URL created:", workerUrl);
+    debug('[DuckDB] Worker URL created:', workerUrl);
 
     const maxConnections = config?.maxConnections ?? DEFAULT_MAX_CONNECTIONS;
 
     const createInstance = async () => {
-      console.log("%c[DuckDB] 🛠️ createInstance() started", "color: #3b82f6; font-weight: bold");
-      debug("[DuckDB] Creating instance...");
+      console.log('%c[DuckDB] 🛠️ createInstance() started', 'color: #3b82f6; font-weight: bold');
+      debug('[DuckDB] Creating instance...');
       const worker = new Worker(workerUrl);
       const logger = new DumpLogger();
       const database = new duckdb.AsyncDuckDB(logger, worker);
 
       // Instantiate with the bundle (pthreadWorker enables multi-threading)
-      debug("[DuckDB] Instantiating...", bundle.mainModule);
+      debug('[DuckDB] Instantiating...', bundle.mainModule);
       await database.instantiate(bundle.mainModule, bundle.pthreadWorker);
-      debug("[DuckDB] Instantiated.");
+      debug('[DuckDB] Instantiated.');
 
       const maximumThreads = bundle.pthreadWorker ? maxConnections : 1;
-      const authToken = config?.customHttpHeaders?.["Authorization"]
-        ?.split(" ")
-        .pop();
-      debug("[DuckDB] Auth token:", authToken);
+      const authToken = config?.customHttpHeaders?.['Authorization']?.split(' ').pop();
+      debug('[DuckDB] Auth token:', authToken);
 
-      debug("[DuckDB] Opening database...");
+      debug('[DuckDB] Opening database...');
       await database.open({
         // @ts-expect-error - added in fork of duckdb-wasm
         authToken,
@@ -122,7 +117,7 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
           castDecimalToDouble: true,
         },
       });
-      debug("[DuckDB] Database opened.");
+      debug('[DuckDB] Database opened.');
       URL.revokeObjectURL(workerUrl);
       return database;
     };
@@ -139,7 +134,7 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
 
     // Cache the resolved value
     dbResourceCache = resource;
-    debug("[DuckDB] Ready.");
+    debug('[DuckDB] Ready.');
     return resource;
   })();
 
@@ -164,12 +159,12 @@ export const DuckDBContext = createContext<DBResource | null>(null);
 export function useDuckDB() {
   const context = useContext(DuckDBContext);
   if (!context) {
-    throw new Error("useDuckDB must be used within a DuckDBProvider");
+    throw new Error('useDuckDB must be used within a DuckDBProvider');
   }
   return context;
 }
 
-import { DuckQueryProvider } from "./DuckQueryContext";
+import { DuckQueryProvider } from './DuckQueryContext';
 
 export function DuckQueryWasmProvider({
   children,
@@ -180,9 +175,5 @@ export function DuckQueryWasmProvider({
   // This will suspend until DB is ready and files are registered
   const resource = dbResource.read(config);
 
-  return React.createElement(
-    DuckDBContext.Provider,
-    { value: resource },
-    React.createElement(DuckQueryProvider, null, children),
-  );
+  return React.createElement(DuckDBContext.Provider, { value: resource }, React.createElement(DuckQueryProvider, null, children));
 }

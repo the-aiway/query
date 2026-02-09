@@ -20,7 +20,13 @@ import {
   Search,
   Maximize2,
   Minimize2,
+  Maximize2,
+  Minimize2,
   BarChart3,
+  Copy,
+  FileJson,
+  FileSpreadsheet,
+  FileType,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -46,6 +52,14 @@ import { Input } from './ui/Input';
 import { Label } from './ui/Label';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover';
 import { ScrollArea } from './ui/ScrollArea';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSeparator,
+  ContextMenuLabel,
+} from './ui/ContextMenu';
 import { useDuckDB } from '../react/DuckDBProvider';
 import { type CacheEntry } from '../react/DataCoordinator';
 import { getCoordinator } from '../react/reducks';
@@ -384,15 +398,23 @@ export function QueryTable({
   // 2. Resolve entry sources to SQL
   // Builds a single query with CTEs for all dependencies (including fragments)
   // so the user sees clean, editable SQL like `WITH dep1 AS (...), dep2 AS (...) SELECT * FROM entry_id`
-  const entryResolved = useMemo<{ sql: string } | null>(() => {
+  const entryResolved = useMemo<{ sql: string; chain: { entry: CacheEntry; sql: string }[] } | null>(() => {
     if (!source || source.type !== 'entry' || !pool) return null;
     const { entry } = source;
     if (entry.status !== 'ready') return null;
 
     const coordinator = getCoordinator(pool);
     const sql = coordinator.resolveEntryAsSql(entry);
+    const chain = coordinator.getDependencyChain(entry).map((dep) => ({
+      entry: dep,
+      sql: coordinator.resolveEntryAsSql(dep),
+    }));
 
-    return { sql };
+    // Add self to chain for completeness? Or keep separate?
+    // User wants "show initially the query... but show a list with all the dependency chain"
+    // Let's pass chain separately.
+
+    return { sql, chain };
   }, [source, pool]);
 
   // 3. Handle data registration if it's in-memory data
@@ -497,6 +519,8 @@ export function QueryTable({
     <QueryTableInternal
       key={initSql} // Reset state when the fundamental SQL changes
       initSql={initSql}
+      chain={entryResolved?.chain}
+      entry={source?.type === 'entry' ? source.entry : undefined}
       params={params}
       height={height}
       rowHeight={rowHeight}
@@ -516,6 +540,8 @@ export function QueryTable({
 
 function QueryTableInternal({
   initSql,
+  chain,
+  entry,
   params,
   height,
   rowHeight,
@@ -531,6 +557,8 @@ function QueryTableInternal({
   onClose,
 }: Omit<QueryTableProps, 'table' | 'sql'> & {
   initSql: string;
+  chain?: { entry: CacheEntry; sql: string }[];
+  entry?: CacheEntry;
   pool: ReturnType<typeof useDuckDB>['pool'];
   onClose?: () => void;
 }) {
@@ -835,67 +863,74 @@ function QueryTableInternal({
     setFilterSearch('');
   }, []);
 
-  // Download handler - exports all filtered data as CSV using DuckDB's native COPY TO
-  const handleDownload = useCallback(async () => {
-    if (!pool || !queryParts.baseSql) {
-      console.warn('[QueryTable] Download skipped: pool or baseSql not ready');
-      return;
-    }
+  // --- Export Handler ---
+  const handleExport = useCallback(
+    async (
+      format: 'csv' | 'json' | 'parquet' | 'tsv',
+      mode: 'download' | 'clipboard' = 'download'
+    ) => {
+      if (!pool || !queryParts.baseSql) return;
 
-    setIsDownloading(true);
-
-    try {
-      // Build full SQL with filters applied
-      const fullSql = `
-        WITH base AS (${queryParts.baseSql})
-        SELECT * FROM base
-        ${queryParts.whereClause}
-      `;
-
-      // Use pool's native CSV export (handles query hooks automatically)
-      const exportFileName = `export_${Date.now()}.csv`;
-      const conn = await pool.acquire();
-      let buffer: Uint8Array;
+      setIsDownloading(true);
       try {
-        // Register empty file buffer for export
-        await pool.db.registerEmptyFileBuffer(exportFileName);
-
-        // Use COPY TO for native CSV export
-        const copyQuery = `
-          COPY (${fullSql}) TO '${exportFileName}' (FORMAT CSV, HEADER true)
+        const fullSql = `
+          WITH base AS (${queryParts.baseSql})
+          SELECT * FROM base
+          ${queryParts.whereClause}
         `;
 
-        await pool.query(copyQuery, queryParts.fullParams);
+        const extension = format;
+        let copyOptions = '(FORMAT CSV, HEADER true)';
+        if (format === 'json') copyOptions = '(FORMAT JSON, ARRAY true)';
+        else if (format === 'parquet') copyOptions = '(FORMAT PARQUET)';
+        else if (format === 'tsv') copyOptions = "(FORMAT CSV, DELIMITER '\t', HEADER true)";
 
-        // Get the exported data as buffer
-        const fileBuffer = await pool.db.copyFileToBuffer(exportFileName);
-        buffer = new Uint8Array(fileBuffer);
-      } finally {
-        pool.release(conn);
-        // Clean up the temporary file
+        const exportFileName = `export_${Date.now()}_${Math.random().toString(36).slice(2)}.${extension}`;
+        const conn = await pool.acquire();
+
         try {
-          await pool.db.dropFile(exportFileName);
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
+          await pool.db.registerEmptyFileBuffer(exportFileName);
+          await pool.query(
+            `COPY (${fullSql}) TO '${exportFileName}' ${copyOptions}`,
+            queryParts.fullParams
+          );
+          const fileBuffer = await pool.db.copyFileToBuffer(exportFileName);
 
-      // Create download in browser
-      const blob = new Blob([buffer as unknown as BlobPart], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `export_${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('[QueryTable] Download failed:', error);
-    } finally {
-      setIsDownloading(false);
-    }
-  }, [pool, queryParts.baseSql, queryParts.whereClause]);
+          if (mode === 'clipboard') {
+            const text = new TextDecoder().decode(fileBuffer);
+            await navigator.clipboard.writeText(text);
+          } else {
+            const mimeType =
+              format === 'csv' || format === 'tsv'
+                ? 'text/csv;charset=utf-8;'
+                : format === 'json'
+                  ? 'application/json;charset=utf-8;'
+                  : 'application/octet-stream';
+
+            const blob = new Blob([fileBuffer as unknown as BlobPart], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${extension}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          }
+        } finally {
+          pool.release(conn);
+          try {
+            await pool.db.dropFile(exportFileName);
+          } catch {}
+        }
+      } catch (error) {
+        console.error(`[QueryTable] Export failed (${format}, ${mode}):`, error);
+      } finally {
+        setIsDownloading(false);
+      }
+    },
+    [pool, queryParts.baseSql, queryParts.whereClause, queryParts.fullParams]
+  );
 
   // --- Filters UI Logic ---
   const activeSetFilters = useMemo(() => {
@@ -922,18 +957,67 @@ function QueryTableInternal({
             variant="ghost"
             size="sm"
             className="h-7 w-7 p-0 shrink-0"
-            onClick={() => void handleDownload()}
-            disabled={isInitialLoad || rowCount === 0 || isDownloading}
-            title="Download as CSV"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >
-            {isDownloading ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {isFullscreen ? (
+              <Minimize2 className="h-3.5 w-3.5" />
             ) : (
-              <Download className="h-3.5 w-3.5" />
+              <Maximize2 className="h-3.5 w-3.5" />
             )}
           </Button>
 
-          <div className="text-[11px] text-muted-foreground whitespace-nowrap flex items-center gap-2">
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 shrink-0"
+                onClick={() => void handleExport('csv')}
+                disabled={isInitialLoad || rowCount === 0 || isDownloading}
+                title="Download (Right-click for options)"
+              >
+                {isDownloading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </ContextMenuTrigger>
+            <ContextMenuContent alignOffset={-5}>
+              <ContextMenuLabel>Copy to Clipboard</ContextMenuLabel>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => void handleExport('csv', 'clipboard')}>
+                <Copy className="mr-2 h-4 w-4" />
+                Copy as CSV
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => void handleExport('json', 'clipboard')}>
+                <Copy className="mr-2 h-4 w-4" />
+                Copy as JSON
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => void handleExport('tsv', 'clipboard')}>
+                <Copy className="mr-2 h-4 w-4" />
+                Copy as TSV (for Excel)
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuLabel>Download</ContextMenuLabel>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => void handleExport('csv')}>
+                <FileType className="mr-2 h-4 w-4" />
+                Download as CSV
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => void handleExport('json')}>
+                <FileJson className="mr-2 h-4 w-4" />
+                Download as JSON
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => void handleExport('parquet')}>
+                <FileType className="mr-2 h-4 w-4" />
+                Download as Parquet
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+
+          <div className="text-[11px] font-mono text-muted-foreground whitespace-nowrap flex items-center gap-2">
             {isInitialLoad ? (
               <>
                 <Loader2 className="h-3 w-3 animate-spin text-primary" />
@@ -947,7 +1031,15 @@ function QueryTableInternal({
           {/* SQL preview (must never widen the table) */}
           <div className="min-w-0 flex-1 overflow-hidden">
             {onSaveSql ? (
-              <SqlQueryEditorPopover sql={sql} onSave={onSaveSql} />
+              <SqlQueryEditorPopover
+                sql={sql}
+                onSave={onSaveSql}
+                chain={chain}
+                entry={entry}
+                onReplay={(replaySql: string) => {
+                  onSaveSql(replaySql);
+                }}
+              />
             ) : (
               <div
                 className="text-[11px] text-muted-foreground truncate w-full"
@@ -1165,20 +1257,6 @@ function QueryTableInternal({
                 <BarChart3 className="h-3.5 w-3.5" />
               </Button>
             )}
-
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0"
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            >
-              {isFullscreen ? (
-                <Minimize2 className="h-3.5 w-3.5" />
-              ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
-              )}
-            </Button>
           </div>
         </div>
 

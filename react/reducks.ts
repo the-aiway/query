@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 
 function escapeSQLString(value: string): string {
-  return value.replace(/'/g, "''").replace(/\\/g, "\\\\");
+  return value.replace(/'/g, "''").replace(/\\/g, '\\\\');
 }
 
 import { DataCoordinator, type CacheEntry, substituteParams } from './DataCoordinator';
+import { buildSubstitutionMap } from './resolveDependencies';
 import { useDuckDB } from './DuckDBProvider';
 import type { InferSQLStrict } from '../duck/inferSqlReturntype';
 
@@ -27,9 +28,11 @@ type DepsToMap<T extends (CacheEntry | null)[]> = {
 
 export type ReducksParams = Record<string, unknown>;
 
-export type ReducksQueryFn<TDeps extends (CacheEntry | null)[], TQuery extends string> = (
-  t: DepsToMap<TDeps>
-) => TQuery;
+export type ReducksQueryFn<TDeps extends (CacheEntry | null)[], TQuery extends string> = (t: DepsToMap<TDeps>) => TQuery;
+
+type NoCTE<T extends string> = Uppercase<T> extends `${string}WITH${string}` ? 'ERROR: CTEs (WITH clause) are NOT allowed in useFragment. Use useDerivedTable instead for complex queries.' : T;
+
+export type ReducksFragmentFn<TDeps extends (CacheEntry | null)[], TQuery extends string> = (t: DepsToMap<TDeps>) => NoCTE<TQuery>;
 
 /**
  * Interface for hooks that derive a new view or table from existing dependencies.
@@ -45,12 +48,7 @@ export interface ReducksDerivedHook {
    * @param params - Parameters to be substituted into the query (e.g. $id).
    * @param dependencies - List of dependent CacheEntries (views or parquets).
    */
-  <TSlug extends string, TDeps extends (CacheEntry | null)[], TQuery extends string>(
-    slug: TSlug,
-    queryFn: ReducksQueryFn<TDeps, TQuery>,
-    params: ReducksParams,
-    dependencies?: TDeps
-  ): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
+  <TSlug extends string, TDeps extends (CacheEntry | null)[], TQuery extends string>(slug: TSlug, queryFn: ReducksQueryFn<TDeps, TQuery>, params: ReducksParams, dependencies?: TDeps): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
 
   /**
    * Registers a derived view/table using object syntax with dependencies.
@@ -58,29 +56,45 @@ export interface ReducksDerivedHook {
    * @param dependencies - List of dependent CacheEntries (views or parquets).
    * @param params - Parameters to be substituted into the query (e.g. $id).
    */
-  <TSlug extends string, TDeps extends (CacheEntry | null)[], TQuery extends string>(
-    views: Record<TSlug, ReducksQueryFn<TDeps, TQuery> | TQuery>,
-    dependencies: TDeps,
-    params?: ReducksParams
-  ): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
+  <TSlug extends string, TDeps extends (CacheEntry | null)[], TQuery extends string>(views: Record<TSlug, ReducksQueryFn<TDeps, TQuery> | TQuery>, dependencies: TDeps, params?: ReducksParams): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
 
   /**
    * Registers a derived view/table using object syntax with params but no dependencies.
    * @param views - Object with a single key (slug) and value (queryFn or SQL string).
    * @param params - Parameters to be substituted into the query (e.g. $id).
    */
-  <TSlug extends string, TQuery extends string>(
-    views: Record<TSlug, ReducksQueryFn<[], TQuery> | TQuery>,
-    params: ReducksParams
-  ): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
+  <TSlug extends string, TQuery extends string>(views: Record<TSlug, ReducksQueryFn<[], TQuery> | TQuery>, params: ReducksParams): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
 
   /**
    * Registers a derived view/table using object syntax with no dependencies or params.
    * @param views - Object with a single key (slug) and value (queryFn or SQL string).
    */
-  <TSlug extends string, TQuery extends string>(
-    views: Record<TSlug, ReducksQueryFn<[], TQuery> | TQuery>,
-  ): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
+  <TSlug extends string, TQuery extends string>(views: Record<TSlug, ReducksQueryFn<[], TQuery> | TQuery>): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
+}
+
+/**
+ * Interface specialized for useFragment, forbidding CTEs (WITH clause).
+ */
+export interface ReducksFragmentHook {
+  /**
+   * Registers a reactive SQL fragment using standard syntax.
+   */
+  <TSlug extends string, TDeps extends (CacheEntry | null)[], TQuery extends string>(slug: TSlug, queryFn: ReducksFragmentFn<TDeps, TQuery>, params: ReducksParams, dependencies?: TDeps): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
+
+  /**
+   * Registers a reactive SQL fragment using object syntax with dependencies.
+   */
+  <TSlug extends string, TDeps extends (CacheEntry | null)[], TQuery extends string>(views: Record<TSlug, ReducksFragmentFn<TDeps, TQuery> | NoCTE<TQuery>>, dependencies: TDeps, params?: ReducksParams): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
+
+  /**
+   * Registers a reactive SQL fragment using object syntax with params but no dependencies.
+   */
+  <TSlug extends string, TQuery extends string>(views: Record<TSlug, ReducksFragmentFn<[], TQuery> | NoCTE<TQuery>>, params: ReducksParams): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
+
+  /**
+   * Registers a reactive SQL fragment using object syntax with no dependencies or params.
+   */
+  <TSlug extends string, TQuery extends string>(views: Record<TSlug, ReducksFragmentFn<[], TQuery> | NoCTE<TQuery>>): CacheEntry<TSlug, InferSQLStrict<TQuery>[number]> | null;
 }
 
 /**
@@ -94,21 +108,14 @@ export interface ReducksAggregateHook<TReturnMode extends 'single' | 'slice'> {
    * @param params - Parameters to be substituted into the query.
    * @param dependencies - List of dependent CacheEntries.
    */
-  <TDeps extends (CacheEntry | null)[], TQuery extends string>(
-    queryFn: ReducksQueryFn<TDeps, TQuery>,
-    params: ReducksParams,
-    dependencies?: TDeps
-  ): (TReturnMode extends 'single' ? InferSQLStrict<TQuery>[number] : InferSQLStrict<TQuery>) | null;
+  <TDeps extends (CacheEntry | null)[], TQuery extends string>(queryFn: ReducksQueryFn<TDeps, TQuery>, params: ReducksParams, dependencies?: TDeps): (TReturnMode extends 'single' ? InferSQLStrict<TQuery>[number] : InferSQLStrict<TQuery>) | null;
 
   /**
    * Runs an aggregate query without parameters.
    * @param queryFn - Function that returns the SQL query.
    * @param dependencies - List of dependent CacheEntries.
    */
-  <TDeps extends (CacheEntry | null)[], TQuery extends string>(
-    queryFn: ReducksQueryFn<TDeps, TQuery>,
-    dependencies: TDeps
-  ): (TReturnMode extends 'single' ? InferSQLStrict<TQuery>[number] : InferSQLStrict<TQuery>) | null;
+  <TDeps extends (CacheEntry | null)[], TQuery extends string>(queryFn: ReducksQueryFn<TDeps, TQuery>, dependencies: TDeps): (TReturnMode extends 'single' ? InferSQLStrict<TQuery>[number] : InferSQLStrict<TQuery>) | null;
 }
 
 function normalizeArgs(arg1: any, arg2: any, arg3: any, arg4: any) {
@@ -155,24 +162,14 @@ function useDependencyCheck(dependencies: (CacheEntry | null)[]) {
 
 function useQueryBuilder<TDeps extends (CacheEntry | null)[], TQuery extends string>(queryFn: ReducksQueryFn<TDeps, TQuery>, dependencies: TDeps) {
   return useMemo(() => {
-    const t: Record<string, string> = {};
-    dependencies.forEach((dep) => {
-      if (dep) {
-        if (dep.type === 'fragment') {
-          t[dep.slug] = `(${substituteParams(dep.query || '', dep.params || {})})`;
-        } else {
-          t[dep.slug] = dep.type === 'view' ? dep.id : `read_parquet('${dep.path}')`;
-        }
-      }
-    });
+    const readyDeps = dependencies.filter((d): d is CacheEntry => d !== null);
+    const depIds = readyDeps.map((d) => d.id);
+    const t = buildSubstitutionMap(readyDeps, depIds);
     return queryFn(t as DepsToMap<TDeps>);
   }, [queryFn, dependencies]);
 }
 
-function useReducksBase<TDeps extends (CacheEntry | null)[], TQuery extends string>(
-  queryFn: ReducksQueryFn<TDeps, TQuery>,
-  dependencies: TDeps
-) {
+function useReducksBase<TDeps extends (CacheEntry | null)[], TQuery extends string>(queryFn: ReducksQueryFn<TDeps, TQuery>, dependencies: TDeps) {
   const { pool } = useDuckDB();
   const coordinator = getCoordinator(pool);
   const allDepsReady = useDependencyCheck(dependencies);
@@ -181,11 +178,7 @@ function useReducksBase<TDeps extends (CacheEntry | null)[], TQuery extends stri
   return { pool, coordinator, allDepsReady, query };
 }
 
-function useDuckDBQuery(
-  queryFn: any,
-  arg2: any,
-  arg3: any
-) {
+function useDuckDBQuery(queryFn: any, arg2: any, arg3: any) {
   // Normalize args for aggregate (slightly different than views)
   let params: Record<string, unknown> = {};
   let dependencies: any[] = [];
@@ -244,9 +237,13 @@ function useDuckDBQuery(
  * Creates a reactive DuckDB view from a SQL query.
  * Use Case: Creates a lightweight, virtual view in DuckDB. Ideal for intermediate transformations, filtering, or joining data without materialization costs.
  *
+ * @deprecated Use `useFragment` instead. Views are connection-local (TEMP VIEW),
+ * which causes "table not found" errors across pooled connections. Fragments are
+ * inlined directly and avoid this class of bugs entirely.
+ *
  * @example
  * ```ts
- * const adults = useDerivedView({ adults: (t) => `SELECT * FROM ${t.users} WHERE age >= 18` }, [users]);
+ * const adults = useFragment({ adults: (t) => `SELECT * FROM ${t.users} WHERE age >= 18` }, [users]);
  * ```
  */
 export const useDerivedView: ReducksDerivedHook = (arg1: any, arg2?: any, arg3: any = {}, arg4: any = []): any => {
@@ -342,7 +339,7 @@ export const useSlice: ReducksAggregateHook<'slice'> = (queryFn: any, arg2: any 
  * // Becomes: SELECT count(*) FROM (SELECT * FROM users_... WHERE last_login > ...)
  * ```
  */
-export const useFragment: ReducksDerivedHook = (arg1: any, arg2?: any, arg3: any = {}, arg4: any = []): any => {
+export const useFragment: ReducksFragmentHook = (arg1: any, arg2?: any, arg3: any = {}, arg4: any = []): any => {
   const { slug, queryFn, params, dependencies } = normalizeArgs(arg1, arg2, arg3, arg4);
   const { coordinator, allDepsReady, query } = useReducksBase(queryFn, dependencies);
 
@@ -367,7 +364,7 @@ export function buildFromExpression(entry: CacheEntry): string {
   if (entry.type === 'view') {
     return entry.id;
   }
-  return `read_parquet('${entry.path}')`;
+  return `'${entry.path}'`;
 }
 
 /**
@@ -399,7 +396,9 @@ export function useMaterialize(source: CacheEntry | null): any[] | null {
       }
     });
 
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [isReady, source, coordinator, pool]);
 
   return data ?? lastData.current;
@@ -441,7 +440,9 @@ export function useMultiMaterialize(sources: Record<string, CacheEntry | null>):
       }
     });
 
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [allReady, sourceKey, coordinator, pool]);
 
   return results ?? lastResults.current;
@@ -518,11 +519,7 @@ export function _typeCheck() {
   const aggNoParams = useAggregateResults((t) => `SELECT 1::int as one`, []);
   aggNoParams satisfies { one: number } | null;
   const agg2 = useAggregateResults((t) => `SELECT count(*)::int as total FROM ${t.table_1}`, [t1]);
-  const agg3 = useAggregateResults(
-    (t) => `SELECT count(*)::int as total, lol::INT as xxx WHERE id=$id FROM ${t.table_1}`,
-    { id: 12 },
-    [t1]
-  );
+  const agg3 = useAggregateResults((t) => `SELECT count(*)::int as total, lol::INT as xxx WHERE id=$id FROM ${t.table_1}`, { id: 12 }, [t1]);
   agg3 satisfies { total: number; xxx: number } | null;
 
   // Test 9: Fragment Usage
@@ -535,7 +532,7 @@ export function _typeCheck() {
   fragment satisfies CacheEntry<'active_users'> | null;
 
   const aggFragment = useAggregateResults((t) => `SELECT count(*) as cnt FROM ${t.active_users}`, [fragment]);
-  
+
   // Should infer types correctly (assuming table_1 structure, but here we just check valid TS compilation)
 
   // Test 10: Object syntax with no dependencies or params (function value)
@@ -547,10 +544,7 @@ export function _typeCheck() {
   noDepsStr satisfies CacheEntry<'standalone_str'> | null;
 
   // Test 12: Object syntax with params but no dependencies (plain string value)
-  const withParamsStr = useDerivedTable(
-    { parameterized: `SELECT * FROM foo WHERE id = $id` },
-    { id: 42 }
-  );
+  const withParamsStr = useDerivedTable({ parameterized: `SELECT * FROM foo WHERE id = $id` }, { id: 42 });
   withParamsStr satisfies CacheEntry<'parameterized'> | null;
 
   // --- Phantom Row Type Tests ---
@@ -569,9 +563,12 @@ export function _typeCheck() {
   null as unknown as FragRow satisfies { total_cost: number; best: unknown };
 
   // Test 15: Phantom type works with dependencies (template literal interpolation)
-  const depFrag = useFragment({
-    dep_frag: (t) => `SELECT count(*)::int as cnt FROM ${t.typed_t}`,
-  }, [typed]);
+  const depFrag = useFragment(
+    {
+      dep_frag: (t) => `SELECT count(*)::int as cnt FROM ${t.typed_t}`,
+    },
+    [typed]
+  );
   type DepRow = ExtractRow<NonNullable<typeof depFrag>>;
   null as unknown as DepRow satisfies { cnt: number };
 

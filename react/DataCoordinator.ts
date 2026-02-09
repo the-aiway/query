@@ -1,4 +1,8 @@
 import type { ConnectionPool } from '../duck/ConnectionPool';
+import {
+  resolveViewDependencies as _resolveViewDependencies,
+  resolveEntryAsSql as _resolveEntryAsSql,
+} from './resolveDependencies';
 
 export type QueryStatus = 'pending' | 'writing' | 'ready' | 'error';
 
@@ -169,6 +173,8 @@ export class DataCoordinator {
       lastUsed: Date.now(),
       dependencies,
       type: 'table',
+      query,
+      params,
     };
 
     this.cache.set(key, entry);
@@ -254,147 +260,42 @@ export class DataCoordinator {
   }
 
   /**
-   * Resolves the full chain of dependencies for a set of IDs.
-   * Returns a list of SQL statements (CREATE TEMP VIEW ...) needed to reconstruct the context.
-   *
-   * @param depIds - The immediate dependencies of a query.
-   * @param opts.includeFragments - If true, also create views for fragments (default: false, fragments are inlined).
-   * @param opts.mode - 'view' (default) returns CREATE TEMP VIEW statements, 'cte' returns CTE clauses.
-   * @returns Array of SQL statements/clauses.
+   * Resolves the full chain of view dependencies for execution.
+   * Delegates to the pure `resolveViewDependencies` function.
    */
-  resolveViewDependencies(
-    depIds: string[],
-    opts?: { includeFragments?: boolean; mode?: 'view' | 'cte' }
-  ): string[] {
-    const includeFragments = opts?.includeFragments ?? false;
-    const mode = opts?.mode ?? 'view';
-    const results: string[] = [];
-    const visited = new Set<string>();
-
-    const visit = (id: string) => {
-      if (visited.has(id)) return;
-      visited.add(id);
-
-      const entry = Array.from(this.cache.values()).find((e) => e.id === id);
-      if (!entry) return;
-
-      // Depth-first traversal: Visit dependencies of dependencies first
-      entry.dependencies.forEach(visit);
-
-      const shouldInclude =
-        (entry.type === 'view' && entry.query) ||
-        (includeFragments && entry.type === 'fragment' && entry.query);
-
-      if (shouldInclude) {
-        // Prepare replacement map: slug -> actual ID or read_parquet call
-        const depSubstitutions: Record<string, string> = {};
-        entry.dependencies.forEach((depId) => {
-          const dep = Array.from(this.cache.values()).find((e) => e.id === depId);
-          if (dep) {
-            if (!includeFragments && dep.type === 'fragment') {
-              // For fragments, we inline the query directly recursively
-              const fragQuery = dep.query ? substituteParams(dep.query, dep.params || {}) : '';
-              depSubstitutions[dep.slug] = `(${fragQuery})`;
-            } else {
-              // Reference views/tables/fragments by their ID
-              depSubstitutions[dep.slug] = dep.type === 'table' ? `read_parquet('${dep.path}')` : dep.id;
-            }
-          }
-        });
-
-        // Reconstruct the query string with concrete IDs
-        let query = entry.query!;
-        // First substitute dependency references ($slug -> actual ID or inline)
-        query = substituteParams(query, depSubstitutions);
-        // Then substitute the entry's own params
-        if (entry.params) {
-          query = substituteParams(query, entry.params);
-        }
-
-        if (mode === 'cte') {
-          // CTE clause: "name AS (query)"
-          results.push(`${entry.id} AS (${query})`);
-        } else {
-          // Create the temporary view for the session
-          results.push(`CREATE OR REPLACE TEMP VIEW ${entry.id} AS ${query};`);
-        }
-      }
-    };
-
-    depIds.forEach(visit);
-    return results;
+  resolveViewDependencies(depIds: string[]): string[] {
+    return _resolveViewDependencies([...this.cache.values()], depIds);
   }
 
   /**
-   * Resolves an entry and all its dependencies into a single SQL query using CTEs.
-   * Returns a complete query like: `WITH dep1 AS (...), dep2 AS (...) SELECT ... FROM dep2`
-   * The entry's own query becomes the final SELECT (not wrapped in another CTE).
-   *
-   * @param entry - The CacheEntry to resolve.
-   * @returns A complete SQL query string.
+   * Resolves an entry into fully inlined, self-contained SQL for display.
+   * Delegates to the pure `resolveEntryAsSql` function.
    */
   resolveEntryAsSql(entry: CacheEntry): string {
-    const ctes: string[] = [];
+    return _resolveEntryAsSql([...this.cache.values()], entry);
+  }
+
+  /**
+   * Retrieves the full recursive dependency chain for an entry.
+   * Returns a list of dependencies ordered from leaves (deepest) to roots (direct).
+   */
+  getDependencyChain(entry: CacheEntry): CacheEntry[] {
+    const chain: CacheEntry[] = [];
     const visited = new Set<string>();
+    const entries = Array.from(this.cache.values());
 
     const visit = (id: string) => {
       if (visited.has(id)) return;
       visited.add(id);
 
-      const e = Array.from(this.cache.values()).find((c) => c.id === id);
-      if (!e) return;
-
-      // Depth-first traversal: Visit dependencies first
-      e.dependencies.forEach(visit);
-
-      // Only process entries with queries (views and fragments)
-      if (!e.query || (e.type !== 'view' && e.type !== 'fragment')) return;
-
-      // Build substitution map: slug -> CTE name or read_parquet
-      const depSubstitutions: Record<string, string> = {};
-      e.dependencies.forEach((depId) => {
-        const dep = Array.from(this.cache.values()).find((c) => c.id === depId);
-        if (dep) {
-          depSubstitutions[dep.slug] = dep.type === 'table' ? `read_parquet('${dep.path}')` : dep.id;
-        }
-      });
-
-      // Substitute dependency references and params
-      let query = e.query;
-      query = substituteParams(query, depSubstitutions);
-      if (e.params) {
-        query = substituteParams(query, e.params);
+      const dep = entries.find((e) => e.id === id);
+      if (dep) {
+        dep.dependencies.forEach(visit);
+        chain.push(dep);
       }
-
-      ctes.push(`${e.id} AS (${query})`);
     };
 
-    // Visit all dependencies (but NOT the entry itself - its query becomes the final SELECT)
     entry.dependencies.forEach(visit);
-
-    // Build the final SELECT from the entry
-    let finalSelect: string;
-    if (entry.query && (entry.type === 'fragment' || entry.type === 'view')) {
-      // Substitute dependency references in the entry's query
-      const depSubstitutions: Record<string, string> = {};
-      entry.dependencies.forEach((depId) => {
-        const dep = Array.from(this.cache.values()).find((c) => c.id === depId);
-        if (dep) {
-          depSubstitutions[dep.slug] = dep.type === 'table' ? `read_parquet('${dep.path}')` : dep.id;
-        }
-      });
-      finalSelect = substituteParams(entry.query, depSubstitutions);
-      if (entry.params) {
-        finalSelect = substituteParams(finalSelect, entry.params);
-      }
-    } else if (entry.type === 'table') {
-      finalSelect = `SELECT * FROM read_parquet('${entry.path}')`;
-    } else {
-      finalSelect = `SELECT * FROM ${entry.id}`;
-    }
-
-    return ctes.length > 0
-      ? `WITH ${ctes.join(',\n')}\n${finalSelect}`
-      : finalSelect;
+    return chain;
   }
 }
