@@ -1,4 +1,4 @@
-import { useState, createElement, type ReactNode } from 'react';
+import { useState, useRef, useLayoutEffect, createElement, type ReactNode } from 'react';
 import { Table2 } from 'lucide-react';
 
 import { type CacheEntry } from './DataCoordinator';
@@ -45,19 +45,35 @@ function DataCardSingle({ source, mode, fallback, children }: {
   children: (data: any) => ReactNode;
 }): ReactNode {
   const [view, setView] = useState<'chart' | 'table'>('chart');
+  const [contentHeight, setContentHeight] = useState<number | undefined>(undefined);
+  const contentRef = useRef<HTMLDivElement>(null);
   const data = useMaterialize(source);
+
+  // Measure height of the chart content so QueryTable can match it
+  useLayoutEffect(() => {
+    if (view === 'chart' && contentRef.current) {
+      const height = contentRef.current.offsetHeight;
+      if (height > 0) {
+        setContentHeight(height);
+      }
+    }
+  }, [view, data]);
 
   if (!data) return fallback ?? null;
   if (mode === 'single' && data.length === 0) return fallback ?? null;
 
   if (view === 'table') {
     return (
-      <QueryTable table={source} onClose={() => setView('chart')} />
+      <QueryTable 
+        table={source} 
+        onClose={() => setView('chart')} 
+        height={contentHeight}
+      />
     );
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={contentRef}>
       <button
         type="button"
         onClick={() => setView('table')}
