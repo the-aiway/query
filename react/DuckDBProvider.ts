@@ -102,8 +102,6 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
 
       debug('[DuckDB] Opening database...');
       await database.open({
-        // @ts-expect-error - added in fork of duckdb-wasm
-        authToken,
         maximumThreads,
         useDirectIO: true,
         filesystem: {

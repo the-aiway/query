@@ -397,21 +397,35 @@ export function QueryTable({
   // 2. Resolve entry sources to SQL
   // Builds a single query with CTEs for all dependencies (including fragments)
   // so the user sees clean, editable SQL like `WITH dep1 AS (...), dep2 AS (...) SELECT * FROM entry_id`
-  const entryResolved = useMemo<{ sql: string; chain: { entry: CacheEntry; sql: string }[] } | null>(() => {
+  const entryResolved = useMemo<{ sql: string; chain: { entry: CacheEntry; resolvedSql: string; originalSql: string }[] } | null>(() => {
     if (!source || source.type !== 'entry' || !pool) return null;
     const { entry } = source;
     if (entry.status !== 'ready') return null;
 
     const coordinator = getCoordinator(pool);
     const sql = coordinator.resolveEntryAsSql(entry);
-    const chain = coordinator.getDependencyChain(entry).map((dep) => ({
-      entry: dep,
-      sql: coordinator.resolveEntryAsSql(dep),
+    const dependencyChain = coordinator.getDependencyChain(entry);
+    const ladder = [...dependencyChain, entry];
+    const byId = new Map<string, CacheEntry>(ladder.map((item) => [item.id, item]));
+    const toOriginalSql = (item: CacheEntry) => {
+      if (!item.query) return item.type === 'table' ? `SELECT * FROM ${item.slug}` : '';
+      let restored = item.query;
+      for (const depId of item.dependencies) {
+        const dep = byId.get(depId);
+        if (!dep) continue;
+        restored = restored.split(dep.id).join(dep.slug);
+        if (dep.path) {
+          restored = restored.split(`'${dep.path}'`).join(dep.slug);
+          restored = restored.split(dep.path).join(dep.slug);
+        }
+      }
+      return restored;
+    };
+    const chain = ladder.map((item) => ({
+      entry: item,
+      resolvedSql: coordinator.resolveEntryAsSql(item),
+      originalSql: toOriginalSql(item),
     }));
-
-    // Add self to chain for completeness? Or keep separate?
-    // User wants "show initially the query... but show a list with all the dependency chain"
-    // Let's pass chain separately.
 
     return { sql, chain };
   }, [source, pool]);
@@ -556,7 +570,7 @@ function QueryTableInternal({
   onClose,
 }: Omit<QueryTableProps, 'table' | 'sql'> & {
   initSql: string;
-  chain?: { entry: CacheEntry; sql: string }[];
+  chain?: { entry: CacheEntry; resolvedSql: string; originalSql: string }[];
   entry?: CacheEntry;
   pool: ReturnType<typeof useDuckDB>['pool'];
   onClose?: () => void;
