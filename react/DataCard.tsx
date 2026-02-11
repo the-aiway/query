@@ -2,7 +2,7 @@ import { useState, useRef, useLayoutEffect, createElement, type ReactNode } from
 import { Table2 } from 'lucide-react';
 
 import { type CacheEntry } from './DataCoordinator';
-import { useMaterialize, useMultiMaterialize, type ExtractRow } from './reducks';
+import { useMaterialize, type ExtractRow } from './reducks';
 import { QueryTable } from '../table/QueryTable';
 
 // --- Types ---
@@ -47,7 +47,7 @@ function DataCardSingle({ source, mode, fallback, children }: {
   const [view, setView] = useState<'chart' | 'table'>('chart');
   const [contentHeight, setContentHeight] = useState<number | undefined>(undefined);
   const contentRef = useRef<HTMLDivElement>(null);
-  const data = useMaterialize(source);
+  const data = useMaterialize.rows(source);
 
   // Measure height of the chart content so QueryTable can match it
   useLayoutEffect(() => {
@@ -92,7 +92,7 @@ function DataCardMulti({ sources, fallback, children }: {
   fallback?: ReactNode;
   children: (data: any) => ReactNode;
 }): ReactNode {
-  const data = useMultiMaterialize(sources);
+  const data = useMaterialize.concurrent(sources);
   if (!data) return fallback ?? null;
   return children(data);
 }
