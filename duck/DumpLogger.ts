@@ -1,126 +1,164 @@
-import { Table as ArrowTable } from 'apache-arrow';
-import { highlightQuery } from './queryHighlighter';
-import { type AsyncDuckDB, type Logger, type LogEntryVariant, LogTopic, LogEvent, LogLevel } from '@duckdb/duckdb-wasm';
+import { type AsyncDuckDB, type Logger, type LogEntryVariant, LogTopic, LogEvent, LogLevel, TokenType } from '@duckdb/duckdb-wasm';
+
+const ANSI_RESET = '\x1b[0m';
+const rgbToAnsi = (r: number, g: number, b: number) => `\x1b[38;2;${r};${g};${b}m`;
+
+const COLORS: Record<TokenType, string> = {
+  [TokenType.IDENTIFIER]: 'rgb(200, 200, 200)',
+  [TokenType.NUMERIC_CONSTANT]: 'rgb(180, 150, 220)',
+  [TokenType.STRING_CONSTANT]: 'rgb(150, 200, 150)',
+  [TokenType.OPERATOR]: 'rgb(122, 130, 218)',
+  [TokenType.KEYWORD]: 'rgb(16, 177, 254)',
+  [TokenType.COMMENT]: 'rgb(100, 100, 100)',
+};
+
+const ANSI_COLORS: Record<TokenType, string> = {
+  [TokenType.IDENTIFIER]: rgbToAnsi(200, 200, 200),
+  [TokenType.NUMERIC_CONSTANT]: rgbToAnsi(180, 150, 220),
+  [TokenType.STRING_CONSTANT]: rgbToAnsi(150, 200, 150),
+  [TokenType.OPERATOR]: rgbToAnsi(122, 130, 218),
+  [TokenType.KEYWORD]: rgbToAnsi(16, 177, 254),
+  [TokenType.COMMENT]: rgbToAnsi(100, 100, 100),
+};
+
+export function stringToColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  const h = Math.abs(hash % 360);
+  return `hsl(${h}, 35%, 65%)`;
+}
+
+export function logReslug(reslug: string, type?: 'fragment' | 'table') {
+  const isFrag = type === 'fragment';
+  const label = (isFrag ? 'sql' : type || 'node').padEnd(5);
+  const color = isFrag ? '#c084fc' : '#60a5fa';
+  console.log(`%c${label} %c${reslug}`, `color: ${color}`, `color: ${stringToColor(reslug)}; font-weight: bold`);
+}
+
+function highlightAnsi(query: string, tokens: any): string {
+  return tokens.offsets
+    .map((offset: number, i: number) => {
+      const nextOffset = tokens.offsets[i + 1] ?? query.length;
+      const color = ANSI_COLORS[tokens.types[i] as TokenType] || '';
+      return `${color}${query.substring(offset, nextOffset)}${ANSI_RESET}`;
+    })
+    .join('');
+}
 
 export class DumpLogger implements Logger {
   private count = 0;
   private level: LogLevel;
-  private tokenize?: AsyncDuckDB['tokenize'];
-  private queryStates = new Map<
-    string,
-    { start: number; localId: number; query: string; timer: any }
-  >();
+  private tokenizeFn?: AsyncDuckDB['tokenize'];
+  private queryStates = new Map<string, any>();
 
   constructor(level: LogLevel = LogLevel.INFO) {
     this.level = level;
   }
-
-  public setTokenizer(tokenize: AsyncDuckDB['tokenize']): void {
-    this.tokenize = tokenize;
+  public setTokenizer(t: any) {
+    this.tokenizeFn = t;
   }
 
-  public log(entry: LogEntryVariant): void {
-    const { topic, event, value } = entry;
-    // Cast to access id if present (from recent duckdb-wasm changes)
-    const entryWithId = entry as LogEntryVariant & { id?: string };
-
+  public log(entry: LogEntryVariant) {
     if (entry.topic === LogTopic.QUERY) {
-      this.handleQueryEvent(entryWithId);
-    } else {
-      const topicLabel = getLogTopicLabel(topic);
-      const eventLabel = getLogEventLabel(event);
-      const color = this.getTopicColor(topic);
-      const logValue = value !== undefined && value !== null ? value : '';
-
-      if (event === LogEvent.ERROR) {
-        console.error(`%c[${topicLabel}]%c ❌ ${eventLabel}:`, `color: ${color}; font-weight: bold`, 'color: inherit', logValue);
-      } else if (this.level >= LogLevel.INFO) {
-        console.log(`%c[${topicLabel}]%c ${eventLabel}`, `color: ${color}; font-weight: bold`, 'color: inherit', logValue);
-      }
+      return this.handleQuery(entry as any);
     }
+    if (this.level < LogLevel.INFO && entry.event !== LogEvent.ERROR) return;
+    console.log(`%c[${LogTopic[entry.topic]}]%c ${LogEvent[entry.event]}`, `color: #888; font-weight: bold`, 'color: inherit', entry.value ?? '');
   }
 
-  private getTopicColor(topic: LogTopic): string {
-    switch (topic) {
-      case LogTopic.CONNECT: return '#3b82f6';
-      case LogTopic.OPEN: return '#8b5cf6';
-      case LogTopic.INSTANTIATE: return '#ec4899';
-      case LogTopic.QUERY: return '#10b981';
-      default: return '#6b7280';
-    }
-  }
-
-  private async handleQueryEvent(entry: LogEntryVariant & { id?: string }) {
-    console.log('HANDLE QUERY EVENT', getLogEventLabel(entry.event), getLogTopicLabel(entry.topic), entry)
+  private async handleQuery(entry: LogEntryVariant & { id?: string }) {
     const { event, value, id } = entry;
     if (!id) return;
 
     if (event === LogEvent.RUN && typeof value === 'string') {
-      const localId = this.count++;
-      const query = value;
-      const queryStart = query.replaceAll(/\n\s*/g, ' ').split(' ').slice(0, 15).join(' ');
-
-      const timer = setTimeout(() => {
-        console.log(`%c${localId}%c ⏳ Hanging: ${queryStart}`, 'color: #888; font-weight: bold', 'color: #f59e0b; font-style: italic');
+      const match = value.match(/^\-\-:re:(\w+):([\w\-]+)/);
+      const [tag, retype, reslug] = match || [];
+      const query = tag ? value.replace(tag, '').trim() : value;
+      const state = { start: performance.now(), query, localId: this.count++, retype, reslug, timer: null as any };
+      
+      state.timer = setTimeout(() => {
+        const { fmt, args } = this.formatHeader(state, 0);
+        console.log(`${fmt} %c⏳ Hanging: ${this.clean(state.query).slice(0, 60)}`, ...args, 'color: #f59e0b; font-style: italic');
       }, 1492);
-
-      this.queryStates.set(id, { start: performance.now(), localId, query, timer });
+      this.queryStates.set(id, state);
     } else if (event === LogEvent.OK || event === LogEvent.ERROR) {
       const state = this.queryStates.get(id);
       if (!state) return;
       clearTimeout(state.timer);
       this.queryStates.delete(id);
 
-      const duration = (performance.now() - state.start).toFixed(1);
-      const query = state.query;
-      
-      // Ultra simple tokenization using pool.db
-      let highlightedQuery = query;
-      let queryLabel = query.replaceAll(/\n\s*/g, ' ').split(' ').slice(0, 15).join(' ');
+      const duration = Math.round(performance.now() - state.start);
+      const cleanSql = this.clean(state.query);
+      const { fmt, args } = this.formatHeader(state, duration);
 
-      if (this.tokenize) {
+      let highlighted = cleanSql;
+      let previewFmt = '%c' + cleanSql.slice(0, 135);
+      let previewArgs = ['color: inherit'];
+
+      if (this.tokenizeFn) {
         try {
-          const tokens = await this.tokenize(query);
-          highlightedQuery = highlightQuery(query, tokens);
-          queryLabel = highlightedQuery.replaceAll(/\n\s*/g, ' ').split(' ').slice(0, 15).join(' ');
-        } catch {}
+          const previewSql = cleanSql.slice(0, 120);
+          const [pTokens, fullTokens] = await Promise.all([this.tokenizeFn(previewSql), this.tokenizeFn(state.query)]);
+
+          previewFmt = '';
+          previewArgs = [];
+          pTokens.offsets.forEach((offset: number, i: number) => {
+            const nextOffset = pTokens.offsets[i + 1] ?? previewSql.length;
+            previewFmt += '%c' + previewSql.substring(offset, nextOffset);
+            previewArgs.push(`color: ${COLORS[pTokens.types[i] as TokenType] || 'inherit'}`);
+          });
+
+          highlighted = highlightAnsi(state.query, fullTokens);
+        } catch (e) {}
       }
 
-      if (event === LogEvent.OK) {
-        console.groupCollapsed(`%c${state.localId}%c ✓ ${queryLabel} %c(${duration}ms)`, 'color: #888; font-weight: bold', 'color: inherit', 'color: #666; font-style: italic');
-        console.log(highlightedQuery);
-        console.groupEnd();
-      } else {
-        const errMsg = typeof value === 'string' ? value : 'Unknown error';
-        const errMessages = Array.from(new Set(errMsg.split('\n').filter((e: string) => e.trim())));
-        console.groupCollapsed(`%c${state.localId}%c ❌ Error: ${queryLabel} %c(${duration}ms)`, 'color: #888; font-weight: bold', 'color: red', 'color: #666; font-style: italic');
-        console.log(highlightedQuery);
-        console.error(errMessages.join('\n'));
-        console.trace();
-        console.groupEnd();
-      }
+      const log = event === LogEvent.OK ? console.groupCollapsed : console.group;
+      log(`${fmt} ${previewFmt}`, ...args, ...previewArgs);
+      console.log(highlighted);
+      if (event === LogEvent.ERROR) console.error(value);
+      console.groupEnd();
     }
   }
-}
 
-export function getLogTopicLabel(topic: LogTopic): string {
-  switch (topic) {
-    case LogTopic.CONNECT: return 'CONNECT';
-    case LogTopic.DISCONNECT: return 'DISCONNECT';
-    case LogTopic.INSTANTIATE: return 'INSTANTIATE';
-    case LogTopic.OPEN: return 'OPEN';
-    case LogTopic.QUERY: return 'QUERY';
-    default: return 'DUCKDB';
+  private clean(sql: string) {
+    return sql
+      .replace(/\-\-sql/g, '')
+      .replace(/\-\-:re:\w+:\w+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private formatHeader(s: any, ms: number) {
+    const dur = `${ms}ms`.padStart(6);
+    
+    // Progressive coloring: 0ms (grey) -> 2000ms (muted red)
+    const t = Math.min(ms / 2000, 1);
+    const saturation = Math.round(t * 65);
+    const hue = Math.round(35 * (1 - t)); // Muted Orange (35) -> Red (0)
+    const durColor = `hsl(${hue}, ${saturation}%, 50%)`;
+    
+    const typeLabel = (s.retype === 'fragment' ? 'sql' : s.retype || '').padEnd(5);
+    const slugLabel = (s.reslug || `#${s.localId}`).padEnd(20);
+    const typeColor = s.retype === 'fragment' ? '#c084fc' : s.retype === 'table' ? '#60a5fa' : '#444';
+    const slugColor = s.reslug ? stringToColor(s.reslug) : '#888';
+
+    return {
+      fmt: `%c${typeLabel}%c:%c${slugLabel}%c:%c${dur}%c:`,
+      args: [
+        `color: ${typeColor}`, 
+        'color: #444', 
+        `color: ${slugColor}; font-family: monospace`, 
+        'color: #444',
+        `color: ${durColor}`,
+        'color: #444'
+      ],
+    };
   }
 }
 
-export function getLogEventLabel(event: LogEvent): string {
-  switch (event) {
-    case LogEvent.OK: return 'OK';
-    case LogEvent.ERROR: return 'ERROR';
-    case LogEvent.START: return 'START';
-    case LogEvent.RUN: return 'RUN';
-    case LogEvent.CAPTURE: return 'CAPTURE';
-    default: return 'EVENT';
-  }
+export function getLogTopicLabel(t: LogTopic): string {
+  return { [LogTopic.CONNECT]: 'CONNECT', [LogTopic.DISCONNECT]: 'DISCONNECT', [LogTopic.INSTANTIATE]: 'INSTANTIATE', [LogTopic.OPEN]: 'OPEN', [LogTopic.QUERY]: 'QUERY' }[t] || 'DUCKDB';
+}
+export function getLogEventLabel(e: LogEvent): string {
+  return { [LogEvent.OK]: 'OK', [LogEvent.ERROR]: 'ERROR', [LogEvent.START]: 'START', [LogEvent.RUN]: 'RUN', [LogEvent.CAPTURE]: 'CAPTURE' }[e] || 'EVENT';
 }
