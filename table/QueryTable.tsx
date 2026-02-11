@@ -9,28 +9,22 @@ import {
   type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { tableFromJSON, type Vector, Table } from 'apache-arrow';
+import { type Vector } from 'apache-arrow';
 import {
   X,
   Settings2,
   Loader2,
   Database,
   AlertCircle,
-  Download,
   Search,
   Maximize2,
   Minimize2,
-  Maximize2,
-  Minimize2,
   BarChart3,
-  Copy,
-  FileJson,
-  FileSpreadsheet,
-  FileType,
 } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 
 import { Cell } from './components/Cell';
+import { ExportButton } from './components/ExportButton';
 import {
   type ColumnSummary,
   getTableDataPageQueryOptions,
@@ -40,9 +34,17 @@ import {
   useTableCount,
   useTableSchema,
 } from './components/Datasource';
+import { DependencyTree } from './components/DependencyTree';
 import { Headers } from './components/Headers';
 import { SqlQueryEditorPopover } from './components/SqlQueryEditorPopover';
 import { type FilterValue, type FiltersState } from './components/sqlUtils';
+import {
+  type DataTableSource,
+  query,
+  fromJSON,
+  fromEntry,
+  useResolvedSource,
+} from './components/useResolvedSource';
 
 import { Button } from './ui/Button';
 import { Card, CardContent } from './ui/Card';
@@ -51,44 +53,16 @@ import { Input } from './ui/Input';
 import { Label } from './ui/Label';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover';
 import { ScrollArea } from './ui/ScrollArea';
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-  ContextMenuSeparator,
-  ContextMenuLabel,
-} from './ui/ContextMenu';
 import { useDuckDB } from '../react/DuckDBProvider';
 import { type CacheEntry } from '../react/DataCoordinator';
-import { getCoordinator } from '../react/reducks';
 
 // --- Types & Helpers ---
 
-export type DataTableSource =
-  | { type: 'sql'; sql: string; params?: unknown[] }
-  | { type: 'data'; data: Record<string, unknown>[]; tableName?: string; sql?: string }
-  | { type: 'arrow'; table: Table; tableName?: string; sql?: string }
-  | { type: 'entry'; entry: CacheEntry };
-
-/** Create a SQL data source */
-export function query(sql: string, params?: unknown[]): DataTableSource {
-  return { type: 'sql', sql, params };
-}
-
-/** Create a data source from in-memory objects */
-export function fromJSON(data: Record<string, unknown>[], tableName?: string): DataTableSource {
-  return { type: 'data', data, tableName };
-}
-
-/** Create a data source from a Reducks CacheEntry */
-export function fromEntry(entry: CacheEntry): DataTableSource {
-  return { type: 'entry', entry };
-}
+export { type DataTableSource, query, fromJSON, fromEntry };
 
 type QueryTableProps = {
   /** The table data source. Can be a SQL string, an array of objects, a CacheEntry, or a DataTableSource object. */
-  table?: string | Record<string, unknown>[] | Table | CacheEntry | DataTableSource | null;
+  table?: string | Record<string, unknown>[] | CacheEntry | DataTableSource | null;
   /** SQL query (legacy prop) */
   sql?: string;
   /** SQL parameters (legacy prop) */
@@ -126,10 +100,21 @@ const COL_MAX_WIDTH = 180;
 const ESTIMATE_CHAR_PX = 4;
 const ESTIMATE_PADDING_PX = 32;
 
-let tableCounter = 0;
-function getNextTableName() {
-  return `_dt_${++tableCounter}_${Math.random().toString(36).slice(2, 7)}`;
-}
+// --- Loading Card ---
+
+const LoadingCard = ({ message }: { message?: string }) => (
+  <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden items-center justify-center bg-muted/5 border-dashed">
+    <div className="flex flex-col items-center gap-3">
+      <div className="relative">
+        <Database className="h-8 w-8 text-muted-foreground/20" />
+        <Loader2 className="h-4 w-4 animate-spin text-primary absolute -bottom-1 -right-1" />
+      </div>
+      <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-widest">
+        {message ?? 'loading...'}
+      </div>
+    </div>
+  </Card>
+);
 
 // --- Internal Components ---
 
@@ -367,174 +352,22 @@ export function QueryTable({
   onClose,
 }: QueryTableProps) {
   const { pool: contextPool } = useDuckDB();
-
-  // If a DQuery is provided via query prop, use its pool
   const pool = poolProp ?? contextPool;
 
-  // Helper to detect a CacheEntry (has slug + status + type fields)
-  const isCacheEntry = (v: unknown): v is CacheEntry =>
-    !!v && typeof v === 'object' && 'slug' in v && 'status' in v && 'id' in v;
+  const resolved = useResolvedSource(tableInput, sqlInput, paramsInput, pool);
 
-  // 1. Resolve source from various inputs
-  const source = useMemo<DataTableSource | null>(() => {
-    if (tableInput) {
-      if (typeof tableInput === 'string') return query(tableInput, paramsInput);
-      if (Array.isArray(tableInput)) return { type: 'data', data: tableInput, sql: sqlInput };
-      if (tableInput instanceof Table) {
-        return {
-          type: 'arrow',
-          table: tableInput,
-          sql: sqlInput,
-        };
-      }
-      if (isCacheEntry(tableInput)) return { type: 'entry', entry: tableInput };
-      return tableInput;
-    }
-    if (sqlInput) return query(sqlInput, paramsInput);
-    return null;
-  }, [tableInput, sqlInput, paramsInput]);
-
-  // 2. Resolve entry sources to SQL
-  // Builds a single query with CTEs for all dependencies (including fragments)
-  // so the user sees clean, editable SQL like `WITH dep1 AS (...), dep2 AS (...) SELECT * FROM entry_id`
-  const entryResolved = useMemo<{ sql: string; chain: { entry: CacheEntry; resolvedSql: string; originalSql: string }[] } | null>(() => {
-    if (!source || source.type !== 'entry' || !pool) return null;
-    const { entry } = source;
-    if (entry.status !== 'ready') return null;
-
-    const coordinator = getCoordinator(pool);
-    const sql = coordinator.resolveEntryAsSql(entry);
-    const dependencyChain = coordinator.getDependencyChain(entry);
-    const ladder = [...dependencyChain, entry];
-    const byId = new Map<string, CacheEntry>(ladder.map((item) => [item.id, item]));
-    const toOriginalSql = (item: CacheEntry) => {
-      if (!item.query) return item.type === 'table' ? `SELECT * FROM ${item.slug}` : '';
-      let restored = item.query;
-      for (const depId of item.dependencies) {
-        const dep = byId.get(depId);
-        if (!dep) continue;
-        restored = restored.split(dep.id).join(dep.slug);
-        if (dep.path) {
-          restored = restored.split(`'${dep.path}'`).join(dep.slug);
-          restored = restored.split(dep.path).join(dep.slug);
-        }
-      }
-      return restored;
-    };
-    const chain = ladder.map((item) => ({
-      entry: item,
-      resolvedSql: coordinator.resolveEntryAsSql(item),
-      originalSql: toOriginalSql(item),
-    }));
-
-    return { sql, chain };
-  }, [source, pool]);
-
-  // 3. Handle data registration if it's in-memory data
-  const [registered, setRegistered] = useState<{
-    sql: string;
-    params?: unknown[];
-    pool?: typeof pool;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!source || (source.type !== 'data' && source.type !== 'arrow') || !pool) {
-      setRegistered(null);
-      return;
-    }
-
-    let cancelled = false;
-    const tableName = ('tableName' in source && source.tableName) || getNextTableName();
-
-    async function register() {
-      try {
-        let tableToInsert: Table | null = null;
-        if (source?.type === 'arrow') {
-          tableToInsert = source.table;
-        } else if (source?.type === 'data') {
-          tableToInsert = tableFromJSON(source.data);
-        }
-
-        if (tableToInsert) {
-          const conn = await pool.acquire();
-          try {
-            await conn.insertArrowTable(tableToInsert, {
-              name: tableName,
-              create: true, // Create a new table
-            });
-          } finally {
-            pool.release(conn);
-          }
-        }
-
-        if (cancelled) return;
-
-        let sql = (source as { sql?: string }).sql || `SELECT * FROM DATA`;
-        // Replace DATA alias with actual table name
-        sql = sql.replace(/\bDATA\b/gi, `"${tableName}"`);
-
-        setRegistered({ sql });
-      } catch (err) {
-        console.error('[DataTable] Failed to register data:', err);
-      }
-    }
-
-    void register();
-    return () => {
-      cancelled = true;
-      pool.query(`DROP TABLE IF EXISTS "${tableName}"`).catch(() => {});
-    };
-  }, [source, pool]);
-
-  // 4. Get initial SQL and params
-  const initSql = source?.type === 'sql' ? source.sql
-    : source?.type === 'entry' ? entryResolved?.sql
-    : registered?.sql;
-  const params = source?.type === 'sql' ? source.params : registered?.params;
-
-  // Show loading while entry is not ready
-  if (source?.type === 'entry' && !entryResolved) {
-    return (
-      <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden items-center justify-center bg-muted/5 border-dashed">
-        <div className="flex flex-col items-center gap-3">
-          <div className="relative">
-            <Database className="h-8 w-8 text-muted-foreground/20" />
-            <Loader2 className="h-4 w-4 animate-spin text-primary absolute -bottom-1 -right-1" />
-          </div>
-          <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-widest">
-            waiting for data...
-          </div>
-        </div>
-      </Card>
-    );
+  if (resolved.loading) {
+    return <LoadingCard message={resolved.loadingMessage} />;
   }
 
-  // Show loading while registering data
-  if ((source?.type === 'data' || source?.type === 'arrow') && !registered) {
-    return (
-      <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden items-center justify-center bg-muted/5 border-dashed">
-        <div className="flex flex-col items-center gap-3">
-          <div className="relative">
-            <Database className="h-8 w-8 text-muted-foreground/20" />
-            <Loader2 className="h-4 w-4 animate-spin text-primary absolute -bottom-1 -right-1" />
-          </div>
-          <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-widest">
-            registering data...
-          </div>
-        </div>
-      </Card>
-    );
-  }
-
-  if (!initSql) return null;
+  if (!resolved.sql) return null;
 
   return (
     <QueryTableInternal
-      key={initSql} // Reset state when the fundamental SQL changes
-      initSql={initSql}
-      chain={entryResolved?.chain}
-      entry={source?.type === 'entry' ? source.entry : undefined}
-      params={params}
+      key={resolved.sql}
+      initSql={resolved.sql}
+      entry={resolved.entry}
+      params={resolved.params}
       height={height}
       rowHeight={rowHeight}
       overscan={overscan}
@@ -553,7 +386,6 @@ export function QueryTable({
 
 function QueryTableInternal({
   initSql,
-  chain,
   entry,
   params,
   height,
@@ -570,7 +402,6 @@ function QueryTableInternal({
   onClose,
 }: Omit<QueryTableProps, 'table' | 'sql'> & {
   initSql: string;
-  chain?: { entry: CacheEntry; resolvedSql: string; originalSql: string }[];
   entry?: CacheEntry;
   pool: ReturnType<typeof useDuckDB>['pool'];
   onClose?: () => void;
@@ -597,7 +428,6 @@ function QueryTableInternal({
   const [filterSearch, setFilterSearch] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // When filters are disabled for a table (e.g. pricing grid pivot), automatically tighten widths.
@@ -876,75 +706,6 @@ function QueryTableInternal({
     setFilterSearch('');
   }, []);
 
-  // --- Export Handler ---
-  const handleExport = useCallback(
-    async (
-      format: 'csv' | 'json' | 'parquet' | 'tsv',
-      mode: 'download' | 'clipboard' = 'download'
-    ) => {
-      if (!pool || !queryParts.baseSql) return;
-
-      setIsDownloading(true);
-      try {
-        const fullSql = `
-          WITH base AS (${queryParts.baseSql})
-          SELECT * FROM base
-          ${queryParts.whereClause}
-        `;
-
-        const extension = format;
-        let copyOptions = '(FORMAT CSV, HEADER true)';
-        if (format === 'json') copyOptions = '(FORMAT JSON, ARRAY true)';
-        else if (format === 'parquet') copyOptions = '(FORMAT PARQUET)';
-        else if (format === 'tsv') copyOptions = "(FORMAT CSV, DELIMITER '\t', HEADER true)";
-
-        const exportFileName = `export_${Date.now()}_${Math.random().toString(36).slice(2)}.${extension}`;
-        const conn = await pool.acquire();
-
-        try {
-          await pool.db.registerEmptyFileBuffer(exportFileName);
-          await pool.query(
-            `COPY (${fullSql}) TO '${exportFileName}' ${copyOptions}`,
-            queryParts.fullParams
-          );
-          const fileBuffer = await pool.db.copyFileToBuffer(exportFileName);
-
-          if (mode === 'clipboard') {
-            const text = new TextDecoder().decode(fileBuffer);
-            await navigator.clipboard.writeText(text);
-          } else {
-            const mimeType =
-              format === 'csv' || format === 'tsv'
-                ? 'text/csv;charset=utf-8;'
-                : format === 'json'
-                  ? 'application/json;charset=utf-8;'
-                  : 'application/octet-stream';
-
-            const blob = new Blob([fileBuffer as unknown as BlobPart], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${extension}`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-          }
-        } finally {
-          pool.release(conn);
-          try {
-            await pool.db.dropFile(exportFileName);
-          } catch {}
-        }
-      } catch (error) {
-        console.error(`[QueryTable] Export failed (${format}, ${mode}):`, error);
-      } finally {
-        setIsDownloading(false);
-      }
-    },
-    [pool, queryParts.baseSql, queryParts.whereClause, queryParts.fullParams]
-  );
-
   // --- Filters UI Logic ---
   const activeSetFilters = useMemo(() => {
     return Object.entries(setFilters)
@@ -980,55 +741,11 @@ function QueryTableInternal({
             )}
           </Button>
 
-          <ContextMenu>
-            <ContextMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 shrink-0"
-                onClick={() => void handleExport('csv')}
-                disabled={isInitialLoad || rowCount === 0 || isDownloading}
-                title="Download (Right-click for options)"
-              >
-                {isDownloading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Download className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            </ContextMenuTrigger>
-            <ContextMenuContent alignOffset={-5}>
-              <ContextMenuLabel>Copy to Clipboard</ContextMenuLabel>
-              <ContextMenuSeparator />
-              <ContextMenuItem onClick={() => void handleExport('csv', 'clipboard')}>
-                <Copy className="mr-2 h-4 w-4" />
-                Copy as CSV
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => void handleExport('json', 'clipboard')}>
-                <Copy className="mr-2 h-4 w-4" />
-                Copy as JSON
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => void handleExport('tsv', 'clipboard')}>
-                <Copy className="mr-2 h-4 w-4" />
-                Copy as TSV (for Excel)
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-              <ContextMenuLabel>Download</ContextMenuLabel>
-              <ContextMenuSeparator />
-              <ContextMenuItem onClick={() => void handleExport('csv')}>
-                <FileType className="mr-2 h-4 w-4" />
-                Download as CSV
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => void handleExport('json')}>
-                <FileJson className="mr-2 h-4 w-4" />
-                Download as JSON
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => void handleExport('parquet')}>
-                <FileType className="mr-2 h-4 w-4" />
-                Download as Parquet
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
+          <ExportButton
+            pool={pool}
+            queryParts={queryParts}
+            disabled={isInitialLoad || rowCount === 0}
+          />
 
           <div className="text-[11px] font-mono text-muted-foreground whitespace-nowrap flex items-center gap-2">
             {isInitialLoad ? (
@@ -1041,25 +758,11 @@ function QueryTableInternal({
             )}
           </div>
 
-          {/* SQL preview (must never widen the table) */}
-          <div className="min-w-0 flex-1 overflow-hidden">
-            {onSaveSql ? (
-              <SqlQueryEditorPopover
-                sql={sql}
-                onSave={onSaveSql}
-                chain={chain}
-                entry={entry}
-                onReplay={(replaySql: string) => {
-                  onSaveSql(replaySql);
-                }}
-              />
-            ) : (
-              <div
-                className="text-[11px] font-mono text-muted-foreground truncate w-full"
-                title={sql.replace(/\s+/g, ' ').trim()}
-              >
-                {sql.replace(/\s+/g, ' ').trim()}
-              </div>
+          {/* SQL preview + dependency graph */}
+          <div className="min-w-0 flex-1 overflow-hidden flex items-center gap-1">
+            <SqlQueryEditorPopover sql={sql} onSave={onSaveSql} />
+            {entry && (
+              <DependencyTree entry={entry} pool={pool} onReplay={onSaveSql} />
             )}
           </div>
 

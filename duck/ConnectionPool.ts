@@ -2,7 +2,6 @@ import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
 import { Table as ArrowTable, tableFromJSON, type TypeMap } from 'apache-arrow';
 
 import type { Materialize, InferSQL } from './inferSqlReturntype';
-import { DumpLogger } from './DumpLogger';
 
 export type { AsyncDuckDB, AsyncDuckDBConnection };
 
@@ -23,7 +22,6 @@ export class ConnectionPool {
   private available: AsyncDuckDBConnection[] = [];
   private queue: ((conn: AsyncDuckDBConnection) => void)[] = [];
   private queryHook?: string;
-  private logger = new DumpLogger();
 
   constructor(db: AsyncDuckDB, size: number = 4) {
     this.db = db;
@@ -105,10 +103,8 @@ export class ConnectionPool {
     return table.toArray() as unknown as Materialize<InferSQL<Q, TOverride>>;
   }
 
-  async dump<TOverride = unknown, Q extends string = string>(query: Q, params?: unknown[]) {
-    const table = await this.dumpIPCTable<TOverride, Q>(query, params);
-    return table.toArray() as unknown as Materialize<InferSQL<Q, TOverride>>;
-  }
+  dump = this.query;
+  dumpIPCTable = this.queryIPCTable;
 
   /**
    * Insert data into a table. Accepts either an Arrow Table or an array of objects.
@@ -124,7 +120,7 @@ export class ConnectionPool {
       const schema = Object.entries(options.schema || {})
         .map(([name, type]) => `${name} ${type}`)
         .join(', ');
-      await this.dump(`CREATE OR REPLACE TABLE ${tableName} (${schema});`);
+      await this.query(`CREATE OR REPLACE TABLE ${tableName} (${schema});`);
       return;
     }
     const table = data instanceof ArrowTable ? data : tableFromJSON(data);
@@ -149,15 +145,5 @@ export class ConnectionPool {
     Object.assign(wrappedPool, this);
     wrappedPool.queryHook = sql;
     return wrappedPool;
-  }
-  async dumpIPCTable<TOverride = unknown, Q extends string = string>(
-    query: Q,
-    params?: unknown[]
-  ): Promise<InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>> {
-    return (await this.logger.logQuery(
-        query,
-        () => this.queryIPCTable<TOverride, Q>(query, params),
-        this.db
-    )) as InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>;
-  }
+ }
 }

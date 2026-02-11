@@ -28,7 +28,6 @@ export interface CacheEntry<TSlug extends string = string, TRow = unknown> {
 export class DataCoordinator {
   protected cache = new Map<string, CacheEntry>();
   protected pool: ConnectionPool;
-  protected maxFiles = 100;
   protected pendingMaterializations = new Map<string, Promise<CacheEntry>>();
 
   constructor(pool: ConnectionPool) {
@@ -80,14 +79,17 @@ export class DataCoordinator {
   }
 
   /**
-   * Requests a Materialized Table.
+   * Requests a Materialized Table. Source can be:
+   * - SQL string: executed and COPYed to OPFS parquet
+   * - Data (JSON array or Arrow Table): inserted into temp table, COPYed to OPFS, temp dropped
    */
   async requestTable<TSlug extends string>(
     slug: TSlug,
-    query: string,
+    source: string | unknown[],
     dependencies: string[] = []
   ): Promise<CacheEntry<TSlug>> {
-    const key = this.getCacheKey(slug, query, 'table');
+    const contentKey = typeof source === 'string' ? source : `__ingest\0${dependencies[0] ?? ''}`;
+    const key = this.getCacheKey(slug, contentKey, 'table');
     const existing = this.cache.get(key);
 
     if (existing?.status === 'ready') {
@@ -109,14 +111,14 @@ export class DataCoordinator {
       path,
       status: 'pending',
       lastUsed: Date.now(),
-      dependencies,
+      dependencies: typeof source === 'string' ? dependencies : [],
       type: 'table',
-      query,
+      query: typeof source === 'string' ? source : `SELECT * FROM '${path}'`,
     };
 
     this.cache.set(key, entry);
 
-    const promise = this.executeMaterialization(key, entry, query) as Promise<CacheEntry<TSlug>>;
+    const promise = this.executeMaterialization(key, entry, source) as Promise<CacheEntry<TSlug>>;
     this.pendingMaterializations.set(key, promise);
     promise.finally(() => this.pendingMaterializations.delete(key));
     return promise;
@@ -125,71 +127,41 @@ export class DataCoordinator {
   protected async executeMaterialization(
     key: string,
     entry: CacheEntry,
-    query: string
+    source: string | unknown[],
   ): Promise<CacheEntry> {
+    const tempTable = typeof source !== 'string' ? `"__ingest_${entry.id}"` : null;
     try {
       this.cache.set(key, { ...entry, status: 'writing' });
 
+      // If data source, insert into a temp named table first
+      if (tempTable) {
+        await this.pool.insertTable(tempTable, source as any);
+      }
+
+      const copySql = tempTable
+        ? `SELECT * FROM ${tempTable}`
+        : source as string;
+
       await this.pool.db.registerOPFSFileName(entry.path);
-      await this.pool.dumpIPCTable(`COPY (${query}) TO '${entry.path}' (FORMAT PARQUET)`);
+      await this.pool.dumpIPCTable(`COPY (${copySql}) TO '${entry.path}' (FORMAT PARQUET)`);
+
+      // Drop temp table if we created one
+      if (tempTable) {
+        try { await this.pool.dump(`DROP TABLE IF EXISTS ${tempTable}`); } catch {}
+      }
 
       const readyEntry: CacheEntry = { ...entry, status: 'ready', lastUsed: Date.now() };
       this.cache.set(key, readyEntry);
-
-      this.cleanupStaleSlugEntries(entry.slug, key);
-      this.cleanup();
       return readyEntry;
     } catch (err) {
       console.error(`Error materializing table ${entry.id}:`, err);
+      if (tempTable) {
+        try { await this.pool.dump(`DROP TABLE IF EXISTS ${tempTable}`); } catch {}
+      }
       const errorEntry: CacheEntry = { ...entry, status: 'error', error: err as Error };
       this.cache.set(key, errorEntry);
       return errorEntry;
     }
-  }
-
-  protected async cleanupStaleSlugEntries(slug: string, currentKey: string) {
-    const toDelete: string[] = [];
-    for (const [key, entry] of this.cache.entries()) {
-      if (entry.slug === slug && key !== currentKey && entry.type === 'table') {
-        toDelete.push(key);
-      }
-    }
-
-    for (const key of toDelete) {
-      const entry = this.cache.get(key);
-      if (entry?.path) {
-        try {
-          await this.pool.db.dropFile(entry.path);
-        } catch (e) {}
-      }
-      this.cache.delete(key);
-    }
-  }
-
-  protected async cleanup() {
-    const tableEntries = Array.from(this.cache.entries()).filter(([, e]) => e.type === 'table');
-    if (tableEntries.length <= this.maxFiles) return;
-
-    const sorted = tableEntries.sort(([, a], [, b]) => a.lastUsed - b.lastUsed);
-    const refCounts = new Map<string, number>();
-    for (const entry of this.cache.values()) {
-      for (const depId of entry.dependencies) {
-        refCounts.set(depId, (refCounts.get(depId) || 0) + 1);
-      }
-    }
-
-    const toDelete: string[] = [];
-    for (const [key, entry] of sorted) {
-      if (tableEntries.length - toDelete.length <= this.maxFiles) break;
-      if ((refCounts.get(entry.id) || 0) === 0 && entry.status === 'ready') {
-        toDelete.push(key);
-        try {
-          await this.pool.db.dropFile(entry.path);
-        } catch (e) {}
-      }
-    }
-
-    for (const key of toDelete) this.cache.delete(key);
   }
 
   resolveEntryAsSql(entry: CacheEntry): string {
