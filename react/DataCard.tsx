@@ -38,63 +38,71 @@ interface DataCardComponent {
 
 // --- Internal Components ---
 
-function DataCardSingle({ source, mode, fallback, children }: {
-  source: CacheEntry | null;
+function DataCardImpl({ source, sources, mode, fallback, children, empty }: {
+  source?: CacheEntry | null;
+  sources?: Record<string, CacheEntry | null>;
   mode?: 'single' | 'slice';
   fallback?: ReactNode;
   children: (data: any) => ReactNode;
+  empty?: boolean;
 }): ReactNode {
   const [view, setView] = useState<'chart' | 'table'>('chart');
-  const [contentHeight, setContentHeight] = useState<number | undefined>(undefined);
   const contentRef = useRef<HTMLDivElement>(null);
-  const data = useMaterialize.rows(source);
+  const savedHeightRef = useRef<number | undefined>(undefined);
 
-  // Measure height of the chart content so QueryTable can match it
-  useLayoutEffect(() => {
-    if (view === 'chart' && contentRef.current) {
+  const isSingleSource = source !== undefined;
+  const singleData = useMaterialize.rows(isSingleSource ? source : null);
+  const multiData = useMaterialize.concurrent(isSingleSource ? {} : sources ?? {});
+
+  const data = isSingleSource ? singleData : multiData;
+
+  const handleSwitchToTable = () => {
+    if (contentRef.current) {
       const height = contentRef.current.offsetHeight;
+      console.log('[DataCard] Switching to table, measured height:', height);
       if (height > 0) {
-        setContentHeight(height);
+        savedHeightRef.current = height;
       }
     }
-  }, [view, data]);
+    console.log('[DataCard] Saved height:', savedHeightRef.current);
+    setView('table');
+  };
 
   if (!data) return fallback ?? null;
-  if (mode === 'single' && data.length === 0) return fallback ?? null;
+  if (isSingleSource && mode === 'single' && singleData?.length === 0) return fallback ?? null;
 
-  if (view === 'table') {
+  if (view === 'table' && isSingleSource) {
     return (
-      <QueryTable 
-        table={source} 
-        onClose={() => setView('chart')} 
-        height={contentHeight}
-      />
+      <div style={{ height: savedHeightRef.current }}>
+        <QueryTable 
+          table={source} 
+          onClose={() => setView('chart')} 
+          height={savedHeightRef.current}
+        />
+      </div>
     );
   }
 
+  if (empty) return <div>emtpy</div>;
+
   return (
     <div className="relative" ref={contentRef}>
-      <button
-        type="button"
-        onClick={() => setView('table')}
-        className="absolute top-2 right-2 z-10 p-1.5 rounded-md bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-        title="Switch to table view"
-      >
-        <Table2 className="w-3.5 h-3.5" />
-      </button>
-      {mode === 'single' ? children(data[0]) : children(data)}
+      {isSingleSource && (
+        <button
+          type="button"
+          onClick={handleSwitchToTable}
+          className="absolute top-2 right-2 z-10 p-1.5 rounded-md bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          title="Switch to table view"
+        >
+          <Table2 className="w-3.5 h-3.5" />
+        </button>
+      )}
+      {isSingleSource 
+        ? (mode === 'single' ? children(singleData[0]) : children(singleData))
+        : children(multiData)
+      }
     </div>
   );
-}
-
-function DataCardMulti({ sources, fallback, children }: {
-  sources: Record<string, CacheEntry | null>;
-  fallback?: ReactNode;
-  children: (data: any) => ReactNode;
-}): ReactNode {
-  const data = useMaterialize.concurrent(sources);
-  if (!data) return fallback ?? null;
-  return children(data);
 }
 
 /**
@@ -127,8 +135,8 @@ function DataCardMulti({ sources, fallback, children }: {
  * ```
  */
 export const DataCard: DataCardComponent = (props: any): any => {
-  if ('sources' in props) {
-    return createElement(DataCardMulti, props);
+  if (props?.disabled) {
+    return <div>disabled</div>;
   }
-  return createElement(DataCardSingle, props);
+  return createElement(DataCardImpl, props);
 };
