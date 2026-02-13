@@ -19,7 +19,6 @@ export function SqlQueryEditorPopover({
 }: SqlQueryEditorPopoverProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(sql);
-  const [lastPresentedDraft, setLastPresentedDraft] = useState(sql);
   const editorRef = useRef<any>(null);
 
   const display = useMemo(() => sql.replace(/\s+/g, ' ').trim(), [sql]);
@@ -36,25 +35,18 @@ export function SqlQueryEditorPopover({
   }, []);
 
   useEffect(() => {
-    const presented = toFormattedSql(sql);
-    setDraft(presented);
-    setLastPresentedDraft(presented);
+    if (open) {
+      setDraft(toFormattedSql(sql));
+    }
   }, [sql, open, toFormattedSql]);
 
-  const commit = useCallback(
-    (raw: string) => {
-      const trimmed = raw.trim();
-      if (!trimmed) return;
-      if (trimmed === lastPresentedDraft.trim()) return;
-      if (trimmed !== sql.trim()) onSave(trimmed);
-    },
-    [onSave, sql, lastPresentedDraft],
-  );
-
   const execute = useCallback(() => {
-    commit(draft);
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== sql.trim()) {
+      onSave(trimmed);
+    }
     setOpen(false);
-  }, [commit, draft]);
+  }, [onSave, sql, draft]);
 
   const handleEditorMount: OnMount = useCallback(
     (editor, monaco) => {
@@ -102,10 +94,7 @@ export function SqlQueryEditorPopover({
   return (
     <Popover
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) commit(draft);
-        setOpen(nextOpen);
-      }}
+      onOpenChange={setOpen}
     >
       <PopoverTrigger asChild>
         <div

@@ -10,16 +10,10 @@ import {
   ContextMenuSeparator,
   ContextMenuLabel,
 } from '../ui/ContextMenu';
-import { type useDuckDB } from '../../react/DuckDBProvider';
-import { type useQueryParts } from './Datasource';
+import { useQT } from './QueryTableContext';
 
-type ExportButtonProps = {
-  pool: ReturnType<typeof useDuckDB>['pool'];
-  queryParts: ReturnType<typeof useQueryParts>;
-  disabled?: boolean;
-};
-
-export function ExportButton({ pool, queryParts, disabled }: ExportButtonProps) {
+export function ExportButton({ disabled }: { disabled?: boolean }) {
+  const { pool, queryParts } = useQT();
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleExport = useCallback(
