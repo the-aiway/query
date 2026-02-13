@@ -1,16 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { GitBranch, Play, Database, Code2 } from 'lucide-react';
-import { type CacheEntry } from '../../react/DataCoordinator';
-import { getCoordinator } from '../../react/reducks';
+import { type QueryRef } from '../../react/reducks';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { Button } from '../ui/Button';
 import { ScrollArea } from '../ui/ScrollArea';
 import type { ConnectionPool } from '../../duck/ConnectionPool';
+import { useDuckDB } from '../../react/DuckDBProvider';
 
 // --- Tree types ---
 
 type TreeNode = {
-  entry: CacheEntry;
+  entry: QueryRef;
   displaySql: string;
   children: TreeNode[];
 };
@@ -18,42 +18,40 @@ type TreeNode = {
 // --- Helpers ---
 
 /** Replace internal IDs/paths with human-readable slugs for display */
-function toDisplaySql(entry: CacheEntry, byId: Map<string, CacheEntry>): string {
-  if (!entry.query) {
-    return entry.type === 'table' ? `SELECT * FROM ${entry.slug}` : '';
+function toDisplaySql(entry: QueryRef): string {
+  if (!entry._query) {
+    return entry._type === 'table' ? `SELECT * FROM ${entry._name || entry._id}` : '';
   }
-  let sql = entry.query;
-  for (const depId of entry.dependencies) {
-    const dep = byId.get(depId);
-    if (!dep) continue;
-    sql = sql.split(dep.id).join(dep.slug);
-    if (dep.path) {
-      sql = sql.split(`'${dep.path}'`).join(dep.slug);
-      sql = sql.split(dep.path).join(dep.slug);
+  let sql = entry._query;
+  // Replace dependencies
+  for (const dep of entry._dependencies || []) {
+    const name = dep._name || dep._id;
+    // Replace ID
+    sql = sql.split(dep._id).join(name);
+    // Replace Path
+    if (dep._path) {
+      sql = sql.split(`'${dep._path}'`).join(name);
+      sql = sql.split(dep._path).join(name);
     }
   }
   return sql;
 }
 
 function buildTree(
-  entry: CacheEntry,
-  byId: Map<string, CacheEntry>,
+  entry: QueryRef,
   visited = new Set<string>(),
 ): TreeNode {
   const children: TreeNode[] = [];
-  for (const depId of entry.dependencies) {
-    if (visited.has(depId)) continue;
-    const dep = byId.get(depId);
-    if (dep) {
-      visited.add(depId);
-      children.push(buildTree(dep, byId, visited));
-    }
+  for (const dep of entry._dependencies || []) {
+    if (visited.has(dep._id)) continue;
+    visited.add(dep._id);
+    children.push(buildTree(dep, visited));
   }
-  return { entry, displaySql: toDisplaySql(entry, byId), children };
+  return { entry, displaySql: toDisplaySql(entry), children };
 }
 
 function flatFind(node: TreeNode, id: string): TreeNode | null {
-  if (node.entry.id === id) return node;
+  if (node.entry._id === id) return node;
   for (const child of node.children) {
     const found = flatFind(child, id);
     if (found) return found;
@@ -76,8 +74,9 @@ function TreeNodeRow({
   selectedId: string | null;
   onSelect: (node: TreeNode) => void;
 }) {
-  const isTable = node.entry.type === 'table';
-  const isSelected = selectedId === node.entry.id;
+  const isTable = node.entry._type === 'table';
+  const isSelected = selectedId === node.entry._id;
+  const name = node.entry._name || node.entry._id;
 
   return (
     <>
@@ -97,7 +96,7 @@ function TreeNodeRow({
         ) : (
           <Code2 className="h-3 w-3 shrink-0 text-amber-500" />
         )}
-        <span className="truncate flex-1">{node.entry.slug}</span>
+        <span className="truncate flex-1">{name}</span>
         <span
           className={`text-[9px] px-1 rounded shrink-0 ${
             isTable ? 'bg-blue-500/10 text-blue-600' : 'bg-amber-500/10 text-amber-600'
@@ -108,7 +107,7 @@ function TreeNodeRow({
       </button>
       {node.children.map((child) => (
         <TreeNodeRow
-          key={child.entry.id}
+          key={child.entry._id}
           node={child}
           depth={depth + 1}
           isRoot={false}
@@ -123,21 +122,17 @@ function TreeNodeRow({
 // --- Main component ---
 
 type DependencyTreeProps = {
-  entry: CacheEntry;
+  entry: QueryRef;
   pool: ConnectionPool;
   onReplay: (sql: string) => void;
 };
 
-export function DependencyTree({ entry, pool, onReplay }: DependencyTreeProps) {
-  const coordinator = useMemo(() => getCoordinator(pool), [pool]);
+export function DependencyTree({ entry, onReplay }: DependencyTreeProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const tree = useMemo(() => {
-    const chain = coordinator.getDependencyChain(entry);
-    const allEntries = [...chain, entry];
-    const byId = new Map(allEntries.map((e) => [e.id, e]));
-    return buildTree(entry, byId);
-  }, [entry, coordinator]);
+    return buildTree(entry);
+  }, [entry]);
 
   const selectedNode = useMemo(() => {
     if (!selectedId) return null;
@@ -146,8 +141,7 @@ export function DependencyTree({ entry, pool, onReplay }: DependencyTreeProps) {
 
   const handleReplay = () => {
     if (!selectedNode) return;
-    const resolvedSql = coordinator.resolveEntryAsSql(selectedNode.entry);
-    onReplay(resolvedSql);
+    onReplay(selectedNode.entry._query);
   };
 
   return (
@@ -162,7 +156,7 @@ export function DependencyTree({ entry, pool, onReplay }: DependencyTreeProps) {
           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Dependency Graph
           </span>
-          {selectedNode && selectedNode.entry.id !== entry.id && (
+          {selectedNode && selectedNode.entry._id !== entry._id && (
             <button
               type="button"
               onClick={handleReplay}
@@ -180,7 +174,7 @@ export function DependencyTree({ entry, pool, onReplay }: DependencyTreeProps) {
               depth={0}
               isRoot={true}
               selectedId={selectedId}
-              onSelect={(node) => setSelectedId(node.entry.id)}
+              onSelect={(node) => setSelectedId(node.entry._id)}
             />
           </div>
         </ScrollArea>

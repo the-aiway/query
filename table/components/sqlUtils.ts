@@ -46,14 +46,14 @@ export function fnv1a32Hex(input: string) {
 export function buildWhereClause(opts: {
   globalFilter: string;
   fieldNamesForGlobal: string[];
-  setFilters: FiltersState;
+  columnFilters: FiltersState;
   excludeCol?: string;
 }): { whereClause: string; whereParams: unknown[] } {
   const gf = opts.globalFilter.trim();
   const whereParts: string[] = [];
   const whereParams: unknown[] = [];
 
-  const sortedEntries = Object.entries(opts.setFilters).sort(([a], [b]) => a.localeCompare(b));
+  const sortedEntries = Object.entries(opts.columnFilters).sort(([a], [b]) => a.localeCompare(b));
 
   for (const [col, filter] of sortedEntries) {
     if (!filter) continue;

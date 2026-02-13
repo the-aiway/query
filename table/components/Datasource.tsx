@@ -31,7 +31,7 @@ type QueryBase = {
   sql: string;
   params?: unknown[];
   globalFilter: string;
-  setFilters: FiltersState;
+  columnFilters: FiltersState;
 };
 
 export type QueryParts = {
@@ -45,7 +45,7 @@ export function useQueryParts({
   sql,
   params,
   globalFilter,
-  setFilters,
+  columnFilters,
   fieldNames,
 }: QueryBase & { fieldNames: string[] }) {
   const normalizedSql = normalizeSelectSql(sql);
@@ -55,7 +55,7 @@ export function useQueryParts({
   const { whereClause, whereParams } = buildWhereClause({
     globalFilter,
     fieldNamesForGlobal,
-    setFilters,
+    columnFilters,
   });
 
   const fullParams = [...(params ?? []), ...whereParams];

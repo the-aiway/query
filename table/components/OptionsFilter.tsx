@@ -1,65 +1,35 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import React, { useMemo } from 'react';
 
-import { useQueryParts } from './Datasource';
 import type { ColumnOption } from './Datasource';
+import { useQT } from './QueryTableContext';
 import { buildWhereClause, quoteIdent, type FiltersState } from './sqlUtils';
-import type { FilterValue } from './sqlUtils';
 
 import { Input } from '../ui/Input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { ScrollArea } from '../ui/ScrollArea';
-import { useDuckDB } from '../../react/DuckDBProvider';
 
-export type OptionsFilterProps = {
-  col: string;
-  icon: React.ReactNode;
-  filterValue: FilterValue | undefined;
-  onChange: (next: FilterValue | undefined) => void;
-  onClear: () => void;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  triggerClassName?: string;
-  search: string;
-  onChangeSearch: (next: string) => void;
-  sql: string;
-  params?: unknown[];
-  globalFilter: string;
-  fieldNamesForGlobal: string[];
-  setFilters: FiltersState;
-  limit?: number;
-};
-
-// Hook to fetch column options (categorical)
 function useColumnOptions(opts: {
   open: boolean;
   col: string | null;
-  sql: string;
+  baseSql: string;
   params?: unknown[];
   globalFilter: string;
   fieldNamesForGlobal: string[];
-  setFilters: FiltersState;
+  columnFilters: FiltersState;
   search: string;
   limit?: number;
+  pool: ReturnType<typeof import('../../react/DuckDBProvider').useDuckDB>['pool'];
 }) {
-  const { pool } = useDuckDB();
-  const parts = useQueryParts({
-    sql: opts.sql,
-    params: opts.params,
-    globalFilter: opts.globalFilter,
-    setFilters: opts.setFilters,
-    fieldNames: opts.fieldNamesForGlobal,
-  });
-
   return useQuery({
-    queryKey: ['duckdb', 'options', opts.col, parts?.fullParams, opts.search],
+    queryKey: ['duckdb', 'options', opts.col, opts.baseSql, opts.globalFilter, opts.columnFilters, opts.search],
     queryFn: async () => {
-      if (!parts || !opts.col || !opts.open) return { options: [], total: 0 };
+      if (!opts.baseSql || !opts.col || !opts.open) return { options: [], total: 0 };
 
       const { whereClause, whereParams } = buildWhereClause({
         globalFilter: opts.globalFilter,
         fieldNamesForGlobal: opts.fieldNamesForGlobal,
-        setFilters: opts.setFilters,
+        columnFilters: opts.columnFilters,
         excludeCol: opts.col,
       });
 
@@ -70,7 +40,7 @@ function useColumnOptions(opts: {
       const searchParams = opts.search.trim() ? [opts.search] : [];
 
       const q = `
-        WITH base AS (${parts.baseSql}),
+        WITH base AS (${opts.baseSql}),
         ${filtered},
         ${counts}
         SELECT key, cnt, (cnt::DOUBLE / SUM(cnt) OVER ()) AS frac
@@ -81,7 +51,7 @@ function useColumnOptions(opts: {
       `;
 
       const fullParams = [...(opts.params ?? []), ...whereParams, ...searchParams];
-      const rows = await pool.query(q, fullParams);
+      const rows = await opts.pool.query(q, fullParams);
 
       const options = rows.map(
         (r) =>
@@ -90,13 +60,13 @@ function useColumnOptions(opts: {
             label: r.key === '__NULL__' ? '(null)' : r.key,
             count: Number(r.cnt),
             frac: r.frac,
-          }) as ColumnOption
+          }) as ColumnOption,
       );
 
       const total = options.reduce((acc, o) => acc + o.count, 0) || 1;
       return { options, total };
     },
-    enabled: opts.open && !!opts.col && !!parts,
+    enabled: opts.open && !!opts.col && !!opts.baseSql,
     placeholderData: keepPreviousData,
   });
 }
@@ -104,31 +74,43 @@ function useColumnOptions(opts: {
 export function OptionsFilter({
   col,
   icon,
-  filterValue,
-  onChange,
-  onClear,
-  open,
-  onOpenChange,
-  triggerClassName,
-  search,
-  onChangeSearch,
-  sql,
-  params,
-  globalFilter,
-  fieldNamesForGlobal,
-  setFilters,
   limit,
-}: OptionsFilterProps) {
+  triggerClassName,
+}: {
+  col: string;
+  icon: React.ReactNode;
+  limit?: number;
+  triggerClassName?: string;
+}) {
+  const {
+    pool,
+    columnFilters,
+    onChangeFilter,
+    onClearCol,
+    openFilterCol,
+    onOpenFilterCol,
+    filterSearch,
+    setFilterSearch,
+    queryParts,
+    globalFilter,
+    fieldNamesForGlobal,
+    params,
+  } = useQT();
+
+  const open = openFilterCol === col;
+  const filterValue = columnFilters[col];
+
   const { data, isLoading, error } = useColumnOptions({
     open,
     col,
-    sql,
+    baseSql: queryParts.baseSql,
     params,
     globalFilter,
     fieldNamesForGlobal,
-    setFilters,
-    search,
+    columnFilters,
+    search: open ? filterSearch : '',
     limit,
+    pool,
   });
 
   const options = data?.options ?? [];
@@ -140,7 +122,7 @@ export function OptionsFilter({
   }, [filterValue]);
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
+    <Popover open={open} onOpenChange={(o) => onOpenFilterCol(o ? col : null)}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -177,7 +159,7 @@ export function OptionsFilter({
             <button
               type="button"
               className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono"
-              onClick={() => onChange({ type: 'set', values: options.map((o) => o.key) })}
+              onClick={() => onChangeFilter(col, { type: 'set', values: options.map((o) => o.key) })}
               title="Select all (loaded options)"
               disabled={options.length === 0}
             >
@@ -186,7 +168,7 @@ export function OptionsFilter({
             <button
               type="button"
               className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono"
-              onClick={() => onChange({ type: 'set', values: [] })}
+              onClick={() => onChangeFilter(col, { type: 'set', values: [] })}
               title="Select none"
             >
               none
@@ -194,7 +176,7 @@ export function OptionsFilter({
             <button
               type="button"
               className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono text-muted-foreground hover:text-foreground"
-              onClick={onClear}
+              onClick={() => onClearCol(col)}
               title="Clear filter"
             >
               clear
@@ -212,15 +194,15 @@ export function OptionsFilter({
           <>
             <div className="flex items-center gap-2 mb-2">
               <Input
-                value={search}
-                onChange={(e) => onChangeSearch(e.target.value)}
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
                 placeholder="search…"
                 className="h-8 text-xs font-mono"
               />
               <button
                 type="button"
                 className="h-8 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono"
-                onClick={() => onChange({ type: 'set', values: ['__NULL__'] })}
+                onClick={() => onChangeFilter(col, { type: 'set', values: ['__NULL__'] })}
                 title="Only (null)"
               >
                 (null)
@@ -245,7 +227,7 @@ export function OptionsFilter({
                         const next = new Set(selectedKeys);
                         if (checked) next.delete(opt.key);
                         else next.add(opt.key);
-                        onChange({ type: 'set', values: Array.from(next) });
+                        onChangeFilter(col, { type: 'set', values: Array.from(next) });
                       }}
                     >
                       <div className="pt-0.5">

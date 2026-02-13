@@ -1,11 +1,11 @@
-import { type Table, flexRender } from '@tanstack/react-table';
+import { flexRender } from '@tanstack/react-table';
 import { Filter } from 'lucide-react';
 import React from 'react';
 
 import { copyToClipboard } from './Cell';
 import { OptionsFilter } from './OptionsFilter';
 import { RangeFilter } from './RangeFilter';
-import type { FiltersState, FilterValue } from './sqlUtils';
+import { useQT } from './QueryTableContext';
 
 import {
   ContextMenu,
@@ -16,58 +16,31 @@ import {
 } from '../ui/ContextMenu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 
-type HeadersProps = {
-  table: Table<Record<string, unknown>>;
-  schema: { name: string; type: string }[];
+export function Headers() {
+  const {
+    table,
+    schema,
+    columnFilters,
+    enableFilters,
+    openFilterCol,
+    onOpenFilterCol,
+    onClearCol,
+    onChangeFilter,
+  } = useQT();
 
-  setFilters: FiltersState;
-  enableFilters?: boolean;
-
-  openFilterCol: string | null;
-  onOpenFilterCol: (col: string | null) => void;
-
-  filterSearch: string;
-  onChangeFilterSearch: (next: string) => void;
-
-  onClearCol: (col: string) => void;
-  onChangeFilter: (col: string, next: FilterValue | undefined) => void;
-
-  // Query props
-  sql: string;
-  params?: unknown[];
-  globalFilter: string;
-  fieldNamesForGlobal: string[];
-};
-
-export function Headers({
-  table,
-  schema,
-  setFilters,
-  enableFilters = true,
-  openFilterCol,
-  onOpenFilterCol,
-  filterSearch,
-  onChangeFilterSearch,
-  onClearCol,
-  onChangeFilter,
-  sql,
-  params,
-  globalFilter,
-  fieldNamesForGlobal,
-}: HeadersProps) {
   return (
     <div className="sticky top-0 z-10 border-b bg-secondary shadow-sm w-fit min-w-full">
       {table.getHeaderGroups().map((headerGroup) => (
         <div key={headerGroup.id} className="flex min-w-full w-max">
           {headerGroup.headers.map((header) => {
             const colName = header.column.id;
-            const filterValue = setFilters[colName];
+            const filterValue = columnFilters[colName];
             const hasFilter = filterValue !== undefined;
             const compact = header.getSize() < 120;
             const isRowIndex = colName === '_row_index';
 
             // Find schema type
-            const colSchema = schema.find((s) => s.name === colName);
+            const colSchema = schema?.find((s) => s.name === colName);
             const typeStr = colSchema?.type?.toUpperCase() ?? '';
             const isNumeric = typeStr.match(/INT|DOUBLE|FLOAT|DECIMAL|REAL|NUMERIC/);
             const fullTitle = isRowIndex
@@ -151,16 +124,6 @@ export function Headers({
                                 }
                               />
                             }
-                            filterValue={filterValue}
-                            onChange={(next) => onChangeFilter(colName, next)}
-                            onClear={() => onClearCol(colName)}
-                            open={openFilterCol === colName}
-                            onOpenChange={(open) => onOpenFilterCol(open ? colName : null)}
-                            sql={sql}
-                            params={params}
-                            globalFilter={globalFilter}
-                            fieldNamesForGlobal={fieldNamesForGlobal}
-                            setFilters={setFilters}
                           />
                         ) : (
                           <OptionsFilter
@@ -174,18 +137,6 @@ export function Headers({
                                 }
                               />
                             }
-                            filterValue={filterValue}
-                            onChange={(next) => onChangeFilter(colName, next)}
-                            onClear={() => onClearCol(colName)}
-                            open={openFilterCol === colName}
-                            onOpenChange={(open) => onOpenFilterCol(open ? colName : null)}
-                            search={openFilterCol === colName ? filterSearch : ''}
-                            onChangeSearch={onChangeFilterSearch}
-                            sql={sql}
-                            params={params}
-                            globalFilter={globalFilter}
-                            fieldNamesForGlobal={fieldNamesForGlobal}
-                            setFilters={setFilters}
                           />
                         )}
                       </div>

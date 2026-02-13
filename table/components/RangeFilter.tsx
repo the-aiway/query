@@ -1,68 +1,40 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import { useQueryParts } from './Datasource';
+import { useQT } from './QueryTableContext';
 import { buildWhereClause, quoteIdent, type FiltersState } from './sqlUtils';
-import type { FilterValue } from './sqlUtils';
 
 import { Input } from '../ui/Input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { Slider } from '../ui/Slider';
-import { useDuckDB } from '../../react/DuckDBProvider';
 
-export type RangeFilterProps = {
-  col: string;
-  icon: React.ReactNode;
-  filterValue: FilterValue | undefined;
-  onChange: (next: FilterValue | undefined) => void;
-  onClear: () => void;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  triggerClassName?: string;
-  sql: string;
-  params?: unknown[];
-  globalFilter: string;
-  fieldNamesForGlobal: string[];
-  setFilters: FiltersState;
-};
-
-// Hook to fetch column stats (numeric)
 function useColumnStats(opts: {
   open: boolean;
   col: string | null;
-  sql: string;
+  baseSql: string;
   params?: unknown[];
   globalFilter: string;
   fieldNamesForGlobal: string[];
-  setFilters: FiltersState;
+  columnFilters: FiltersState;
+  pool: ReturnType<typeof import('../../react/DuckDBProvider').useDuckDB>['pool'];
 }) {
-  const { pool } = useDuckDB();
-  const parts = useQueryParts({
-    sql: opts.sql,
-    params: opts.params,
-    globalFilter: opts.globalFilter,
-    setFilters: opts.setFilters,
-    fieldNames: opts.fieldNamesForGlobal,
-  });
-
   return useQuery({
-    queryKey: ['duckdb', 'stats', opts.col, parts?.fullParams],
+    queryKey: ['duckdb', 'stats', opts.col, opts.baseSql, opts.globalFilter, opts.columnFilters],
     queryFn: async () => {
-      if (!parts || !opts.col || !opts.open) return null;
+      if (!opts.baseSql || !opts.col || !opts.open) return null;
 
       const { whereClause, whereParams } = buildWhereClause({
         globalFilter: opts.globalFilter,
         fieldNamesForGlobal: opts.fieldNamesForGlobal,
-        setFilters: opts.setFilters,
+        columnFilters: opts.columnFilters,
         excludeCol: opts.col,
       });
 
-      // More buckets = smoother distribution + better brushing UX
       const BUCKETS = 80;
       const colIdent = quoteIdent(opts.col);
 
       const q = `
-        WITH base AS (${parts.baseSql}),
+        WITH base AS (${opts.baseSql}),
         filtered AS (SELECT * FROM base${whereClause}),
         stats AS (
           SELECT 
@@ -105,7 +77,7 @@ function useColumnStats(opts: {
       `;
 
       const fullParams = [...(opts.params ?? []), ...whereParams];
-      const rows = await pool.query(q, fullParams);
+      const rows = await opts.pool.query(q, fullParams);
 
       if (rows.length === 0) return null;
 
@@ -129,8 +101,6 @@ function useColumnStats(opts: {
           p90: firstRow.p90,
           histogram: Array.from({ length: BUCKETS }, (_, i) => ({ bin: i, count: 0 })),
           total,
-          useSplitScale: false,
-          splitPoint: firstRow.p90,
         };
       }
 
@@ -159,30 +129,52 @@ function useColumnStats(opts: {
         p90: firstRow.p90,
         histogram,
         total,
-        useSplitScale: false,
-        splitPoint: firstRow.p90,
       };
     },
-    enabled: opts.open && !!opts.col && !!parts,
+    enabled: opts.open && !!opts.col && !!opts.baseSql,
     placeholderData: keepPreviousData,
   });
 }
 
+type ColumnStatsData = {
+  min: number;
+  max: number;
+  min_val: number;
+  max_val: number;
+  avg: number;
+  median: number;
+  p01: number;
+  p99: number;
+  p90: number;
+  histogram: { bin: number; count: number }[];
+  total: number;
+};
+
 export function RangeFilter({
   col,
   icon,
-  filterValue,
-  onChange,
-  onClear,
-  open,
-  onOpenChange,
   triggerClassName,
-  sql,
-  params,
-  globalFilter,
-  fieldNamesForGlobal,
-  setFilters,
-}: RangeFilterProps) {
+}: {
+  col: string;
+  icon: React.ReactNode;
+  triggerClassName?: string;
+}) {
+  const {
+    pool,
+    columnFilters,
+    onChangeFilter,
+    onClearCol,
+    openFilterCol,
+    onOpenFilterCol,
+    queryParts,
+    globalFilter,
+    fieldNamesForGlobal,
+    params,
+  } = useQT();
+
+  const open = openFilterCol === col;
+  const filterValue = columnFilters[col];
+
   const {
     data: stats,
     isLoading,
@@ -190,49 +182,28 @@ export function RangeFilter({
   } = useColumnStats({
     open,
     col,
-    sql,
+    baseSql: queryParts.baseSql,
     params,
     globalFilter,
     fieldNamesForGlobal,
-    setFilters,
-  }) as {
-    isLoading: boolean;
-    error: Error | null;
-    data: {
-      min: number;
-      max: number;
-      min_val: number;
-      max_val: number;
-      avg: number;
-      median: number;
-      p01: number;
-      p99: number;
-      p90: number;
-      histogram: { bin: number; count: number }[];
-      total: number;
-      useSplitScale: boolean;
-      splitPoint: number;
-    };
-  };
+    columnFilters,
+    pool,
+  }) as { isLoading: boolean; error: Error | null; data: ColumnStatsData };
 
-  // Helper to format numbers for display (max 2 decimals)
   const fmtNum = (n: number | undefined) =>
     n?.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-  // Transform range value to slider position (0-100)
   const valToPos = (v: number): number => {
     if (!stats) return 0;
     if (stats.max === stats.min) return 0;
     return ((v - stats.min) / (stats.max - stats.min)) * 100;
   };
 
-  // Transform slider position (0-100) to value
   const posToVal = (p: number): number => {
     if (!stats) return 0;
     return stats.min + (p / 100) * (stats.max - stats.min);
   };
 
-  // Committed range from filterValue
   const committedRange = useMemo(() => {
     if (filterValue?.type === 'range') {
       return [filterValue.min, filterValue.max] as [number, number];
@@ -240,16 +211,12 @@ export function RangeFilter({
     return null;
   }, [filterValue]);
 
-  // Temporary slider position (0-100) for visual feedback only
   const [sliderPos, setSliderPos] = useState<[number, number] | null>(null);
 
-  // Initialize slider position when opening
   useEffect(() => {
     if (open && stats) {
       if (committedRange) {
-        const pos0 = valToPos(committedRange[0]);
-        const pos1 = valToPos(committedRange[1]);
-        setSliderPos([pos0, pos1]);
+        setSliderPos([valToPos(committedRange[0]), valToPos(committedRange[1])]);
       } else {
         setSliderPos([0, 100]);
       }
@@ -257,7 +224,6 @@ export function RangeFilter({
   }, [open, stats, committedRange]);
 
   const handleRangeChange = (val: number[]) => {
-    // Only update visual position, don't commit
     if (val.length >= 2 && val[0] !== undefined && val[1] !== undefined) {
       setSliderPos([val[0], val[1]]);
     }
@@ -267,33 +233,25 @@ export function RangeFilter({
     if (!stats || val.length < 2 || val[0] === undefined || val[1] === undefined) return;
     const v0 = posToVal(val[0]);
     const v1 = posToVal(val[1]);
-
-    // Check if full range covered (approximately)
     const isFull = Math.abs(v0 - stats.min) < 0.0001 && Math.abs(v1 - stats.max) < 0.0001;
-
     if (isFull) {
-      onChange(undefined);
+      onChangeFilter(col, undefined);
     } else {
-      onChange({ type: 'range', min: v0, max: v1 });
+      onChangeFilter(col, { type: 'range', min: v0, max: v1 });
     }
   };
 
   const histogramData = useMemo(() => {
     if (!stats) return [];
-
     const width = (stats.max - stats.min) / stats.histogram.length;
     const bucketCount = Math.max(1, stats.histogram.length);
-
     return stats.histogram.map((bin) => {
       const binStart = stats.min + bin.bin * width;
       const binEnd = stats.min + (bin.bin + 1) * width;
-      // If no filter is applied (committedRange is null), show all bars as active
-      // Otherwise, check if this bin overlaps with the filter range
       const isActive =
         committedRange === null
           ? true
           : binEnd >= committedRange[0] && binStart <= committedRange[1];
-
       return {
         name: bin.bin,
         count: bin.count,
@@ -322,8 +280,7 @@ export function RangeFilter({
     const el = svgRef.current;
     if (!el) return 0;
     const r = el.getBoundingClientRect();
-    const pct = ((clientX - r.left) / Math.max(1, r.width)) * 100;
-    return clampPct(pct);
+    return clampPct(((clientX - r.left) / Math.max(1, r.width)) * 100);
   };
 
   const toViewX = (domainPct: number) => {
@@ -338,12 +295,12 @@ export function RangeFilter({
   const setFocusFromSelection = (sel: [number, number]) => {
     const s0 = clampPct(Math.min(sel[0], sel[1]));
     const s1 = clampPct(Math.max(sel[0], sel[1]));
-    const width = Math.max(0, s1 - s0);
-    if (width <= 0.5 || width >= 99.5) {
+    const w = Math.max(0, s1 - s0);
+    if (w <= 0.5 || w >= 99.5) {
       setFocusWindow({ startPct: 0, endPct: 100 });
       return;
     }
-    const pad = clampPct(Math.max(3, width * 0.2));
+    const pad = clampPct(Math.max(3, w * 0.2));
     const start = clampPct(s0 - pad);
     const end = clampPct(s1 + pad);
     const focusWidth = Math.max(8, end - start);
@@ -363,7 +320,7 @@ export function RangeFilter({
   }>(null);
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
+    <Popover open={open} onOpenChange={(o) => onOpenFilterCol(o ? col : null)}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -403,7 +360,7 @@ export function RangeFilter({
             <button
               type="button"
               className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono text-muted-foreground hover:text-foreground"
-              onClick={onClear}
+              onClick={() => onClearCol(col)}
               title="Clear filter"
             >
               clear
@@ -411,7 +368,7 @@ export function RangeFilter({
             <button
               type="button"
               className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono text-muted-foreground hover:text-foreground"
-              onClick={() => onOpenChange(false)}
+              onClick={() => onOpenFilterCol(null)}
               title="Close"
             >
               close
@@ -427,7 +384,6 @@ export function RangeFilter({
           </div>
         ) : stats ? (
           <div className="space-y-3">
-            {/* Stats strip */}
             <div className="grid grid-cols-5 gap-2">
               {(
                 [
@@ -447,7 +403,6 @@ export function RangeFilter({
               ))}
             </div>
 
-            {/* Custom histogram (no recharts) */}
             <div className="rounded-lg border bg-background/40 p-2 relative">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[10px] font-mono text-muted-foreground uppercase">
@@ -470,15 +425,11 @@ export function RangeFilter({
                     : [currentRange[1], currentRange[0]];
                 const selPos =
                   sliderPos && sliderPos.length === 2
-                    ? ([
-                        Math.min(sliderPos[0], sliderPos[1]),
-                        Math.max(sliderPos[0], sliderPos[1]),
-                      ] as [number, number])
+                    ? ([Math.min(sliderPos[0], sliderPos[1]), Math.max(sliderPos[0], sliderPos[1])] as [number, number])
                     : ([0, 100] as [number, number]);
                 const [sx0, sx1] = selPos;
 
                 const focusActive = focusWindow.startPct > 0.01 || focusWindow.endPct < 99.99;
-
                 const vsx0 = focusActive ? clampPct(toViewX(sx0)) : sx0;
                 const vsx1 = focusActive ? clampPct(toViewX(sx1)) : sx1;
 
@@ -501,7 +452,7 @@ export function RangeFilter({
                       onDoubleClick={() => {
                         setSliderPos(null);
                         setFocusWindow({ startPct: 0, endPct: 100 });
-                        onChange(undefined);
+                        onChangeFilter(col, undefined);
                       }}
                       onPointerDown={(e) => {
                         const viewPct = clientXToViewPct(e.clientX);
@@ -509,36 +460,22 @@ export function RangeFilter({
 
                         const committedSel =
                           committedRange && stats
-                            ? ([
-                                clampPct(valToPos(committedRange[0])),
-                                clampPct(valToPos(committedRange[1])),
-                              ] as [number, number])
+                            ? ([clampPct(valToPos(committedRange[0])), clampPct(valToPos(committedRange[1]))] as [number, number])
                             : null;
                         const currentSel =
                           sliderPos && sliderPos.length === 2
-                            ? ([
-                                Math.min(sliderPos[0], sliderPos[1]),
-                                Math.max(sliderPos[0], sliderPos[1]),
-                              ] as [number, number])
+                            ? ([Math.min(sliderPos[0], sliderPos[1]), Math.max(sliderPos[0], sliderPos[1])] as [number, number])
                             : committedSel;
 
-                        // If we have a committed range and no live slider yet, touching inside should "grab" it.
                         if (!sliderPos && committedSel) {
                           setSliderPos(committedSel);
                         }
 
                         if (currentSel && xPct >= currentSel[0] && xPct <= currentSel[1]) {
-                          // Move existing selection
-                          setDragState({
-                            mode: 'move',
-                            offsetPct: xPct - currentSel[0],
-                            widthPct: currentSel[1] - currentSel[0],
-                          });
+                          setDragState({ mode: 'move', offsetPct: xPct - currentSel[0], widthPct: currentSel[1] - currentSel[0] });
                         } else {
-                          // New selection
                           setDragState({ mode: 'new', startPct: xPct });
                           setSliderPos([xPct, xPct]);
-                          // Don't refocus while drawing a new selection
                           setFocusWindow({ startPct: 0, endPct: 100 });
                         }
                         const target = e.currentTarget as unknown as HTMLElement;
@@ -553,17 +490,10 @@ export function RangeFilter({
                         if (dragState.mode === 'new') {
                           setSliderPos([dragState.startPct, xPct]);
                         } else {
-                          // move
                           const start = clampPct(xPct - dragState.offsetPct);
                           const end = clampPct(start + dragState.widthPct);
-                          const correctedStart =
-                            end - start < dragState.widthPct
-                              ? clampPct(end - dragState.widthPct)
-                              : start;
-                          setSliderPos([
-                            correctedStart,
-                            clampPct(correctedStart + dragState.widthPct),
-                          ]);
+                          const correctedStart = end - start < dragState.widthPct ? clampPct(end - dragState.widthPct) : start;
+                          setSliderPos([correctedStart, clampPct(correctedStart + dragState.widthPct)]);
                         }
                       }}
                       onPointerUp={(e) => {
@@ -574,53 +504,18 @@ export function RangeFilter({
                         setDragState(null);
                         const sel =
                           sliderPos && sliderPos.length === 2
-                            ? ([
-                                Math.min(sliderPos[0], sliderPos[1]),
-                                Math.max(sliderPos[0], sliderPos[1]),
-                              ] as [number, number])
+                            ? ([Math.min(sliderPos[0], sliderPos[1]), Math.max(sliderPos[0], sliderPos[1])] as [number, number])
                             : null;
                         if (sel) {
                           handleRangeCommit(sel);
-                          // Refocus only after releasing selection
                           setFocusFromSelection(sel);
                         }
                       }}
                     >
-                      {/* baseline */}
-                      <line
-                        x1="0"
-                        y1="39.5"
-                        x2="100"
-                        y2="39.5"
-                        stroke="hsl(var(--border))"
-                        strokeWidth="0.5"
-                      />
-
-                      {/* selection overlay */}
-                      <rect
-                        x={vsx0}
-                        y="0"
-                        width={Math.max(0.1, vsx1 - vsx0)}
-                        height="40"
-                        fill="hsl(var(--primary))"
-                        fillOpacity="0.06"
-                      />
-                      <rect
-                        x={vsx0}
-                        y="0"
-                        width="0.4"
-                        height="40"
-                        fill="hsl(var(--primary))"
-                        fillOpacity="0.35"
-                      />
-                      <rect
-                        x={vsx1 - 0.4}
-                        y="0"
-                        width="0.4"
-                        height="40"
-                        fill="hsl(var(--primary))"
-                        fillOpacity="0.35"
-                      />
+                      <line x1="0" y1="39.5" x2="100" y2="39.5" stroke="hsl(var(--border))" strokeWidth="0.5" />
+                      <rect x={vsx0} y="0" width={Math.max(0.1, vsx1 - vsx0)} height="40" fill="hsl(var(--primary))" fillOpacity="0.06" />
+                      <rect x={vsx0} y="0" width="0.4" height="40" fill="hsl(var(--primary))" fillOpacity="0.35" />
+                      <rect x={vsx1 - 0.4} y="0" width="0.4" height="40" fill="hsl(var(--primary))" fillOpacity="0.35" />
 
                       {histogramData.map((d, idx) => {
                         const x0 = focusActive ? toViewX(d.x0) : d.x0;
@@ -630,9 +525,7 @@ export function RangeFilter({
                         const h = (d.logCount / maxLog) * 38;
                         const y = 39 - h;
                         const inRange = d.binEnd >= r0 && d.binStart <= r1;
-                        const fill = inRange
-                          ? 'hsl(var(--primary))'
-                          : 'hsl(var(--muted-foreground))';
+                        const fill = inRange ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))';
                         const opacity = inRange ? 0.9 : 0.18;
                         return (
                           <rect
@@ -645,40 +538,21 @@ export function RangeFilter({
                             fillOpacity={opacity}
                             rx="0.6"
                             onMouseMove={(e) => {
-                              setHoveredBin({
-                                idx,
-                                count: d.count,
-                                start: d.binStart,
-                                end: d.binEnd,
-                                clientX: e.clientX,
-                                clientY: e.clientY,
-                              });
+                              setHoveredBin({ idx, count: d.count, start: d.binStart, end: d.binEnd, clientX: e.clientX, clientY: e.clientY });
                             }}
                           >
-                            <title>
-                              {`${fmtNum(d.binStart)} – ${fmtNum(d.binEnd)}\n${d.count.toLocaleString()} rows`}
-                            </title>
+                            <title>{`${fmtNum(d.binStart)} – ${fmtNum(d.binEnd)}\n${d.count.toLocaleString()} rows`}</title>
                           </rect>
                         );
                       })}
 
-                      {/* line overlay */}
-                      <polyline
-                        points={linePoints}
-                        fill="none"
-                        stroke="hsl(var(--primary))"
-                        strokeOpacity="0.45"
-                        strokeWidth="0.6"
-                      />
+                      <polyline points={linePoints} fill="none" stroke="hsl(var(--primary))" strokeOpacity="0.45" strokeWidth="0.6" />
                     </svg>
 
                     {hoveredBin && (
                       <div
                         className="pointer-events-none absolute z-50 rounded-md border bg-popover px-2 py-1 shadow-sm"
-                        style={{
-                          left: 8,
-                          top: 8,
-                        }}
+                        style={{ left: 8, top: 8 }}
                       >
                         <div className="text-[10px] font-mono text-muted-foreground">count</div>
                         <div className="text-[11px] font-mono font-semibold">
@@ -694,7 +568,6 @@ export function RangeFilter({
               })()}
             </div>
 
-            {/* Controls */}
             <div className="rounded-lg border bg-background/40 p-2 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[10px] font-mono text-muted-foreground uppercase">range</div>
@@ -714,9 +587,7 @@ export function RangeFilter({
                 />
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <div className="text-[10px] text-muted-foreground font-mono uppercase">
-                      from
-                    </div>
+                    <div className="text-[10px] text-muted-foreground font-mono uppercase">from</div>
                     <Input
                       type="number"
                       value={
@@ -740,9 +611,7 @@ export function RangeFilter({
                     />
                   </div>
                   <div className="space-y-1">
-                    <div className="text-[10px] text-muted-foreground font-mono uppercase text-right">
-                      to
-                    </div>
+                    <div className="text-[10px] text-muted-foreground font-mono uppercase text-right">to</div>
                     <Input
                       type="number"
                       value={
