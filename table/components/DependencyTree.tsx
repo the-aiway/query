@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { GitBranch, Play, Database, Code2 } from 'lucide-react';
+import { GitBranch, Database, Code2 } from 'lucide-react';
 import { type QueryRef } from '../../react/reducks';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { Button } from '../ui/Button';
@@ -139,10 +139,7 @@ export function DependencyTree({ entry, onReplay }: DependencyTreeProps) {
     return flatFind(tree, selectedId);
   }, [selectedId, tree]);
 
-  const handleReplay = () => {
-    if (!selectedNode) return;
-    onReplay(selectedNode.entry._query);
-  };
+
 
   return (
     <Popover>
@@ -156,16 +153,6 @@ export function DependencyTree({ entry, onReplay }: DependencyTreeProps) {
           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Dependency Graph
           </span>
-          {selectedNode && selectedNode.entry._id !== entry._id && (
-            <button
-              type="button"
-              onClick={handleReplay}
-              className="flex items-center gap-1 text-[10px] font-mono font-medium text-primary hover:text-primary/80 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors"
-            >
-              <Play className="h-3 w-3" />
-              Replay
-            </button>
-          )}
         </div>
         <ScrollArea className="max-h-[400px]">
           <div className="p-1">
@@ -174,7 +161,12 @@ export function DependencyTree({ entry, onReplay }: DependencyTreeProps) {
               depth={0}
               isRoot={true}
               selectedId={selectedId}
-              onSelect={(node) => setSelectedId(node.entry._id)}
+              onSelect={(node) => {
+                setSelectedId(node.entry._id);
+                if (node.entry._id !== entry._id && node.entry._query) {
+                  onReplay(node.entry._query);
+                }
+              }}
             />
           </div>
         </ScrollArea>

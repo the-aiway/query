@@ -4,6 +4,7 @@ import {
   useReactTable,
   type ColumnSizingState,
   type ColumnPinningState,
+  type SortingState,
   type VisibilityState,
 } from '@tanstack/react-table';
 import { Table } from 'apache-arrow';
@@ -26,7 +27,7 @@ import {
   useTableCount,
   useTableSchema,
 } from './Datasource';
-import { useQueryTableUrlState } from './useQueryTableUrlState';
+import { type FilterValue, type FiltersState } from './sqlUtils';
 import { useDuckDB } from '../../react/DuckDBProvider';
 import { type QueryRef } from '../../react/reducks';
 
@@ -51,7 +52,6 @@ export type QueryTableProps = {
   pool?: ReturnType<typeof useDuckDB>['pool'];
   showRowNumbers?: boolean;
   onClose?: () => void;
-  urlPrefix?: string;
 };
 
 const COL_DEFAULT_WIDTH = 140;
@@ -73,8 +73,9 @@ function useQueryTableState({
   getRowClassName,
   renderCell,
   onClose,
-  urlPrefix = 'qt',
+  title,
 }: {
+  title: string,
   initSql: string;
   entry?: QueryRef;
   params?: unknown[];
@@ -89,8 +90,9 @@ function useQueryTableState({
     setSql(initSql);
   }, [initSql]);
 
-  const urlState = useQueryTableUrlState(urlPrefix);
-
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [columnFilters, setColumnFilters] = useState<FiltersState>({});
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({});
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
@@ -100,23 +102,47 @@ function useQueryTableState({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const schemaQuery = useTableSchema({ sql, params, globalFilter: urlState.globalFilter, columnFilters: urlState.columnFilters });
+  const onClearCol = useCallback((col: string) => {
+    setColumnFilters((prev) => {
+      const next = { ...prev };
+      delete next[col];
+      return next;
+    });
+  }, []);
+
+  const onChangeFilter = useCallback((col: string, next: FilterValue | undefined) => {
+    setColumnFilters((prev) => {
+      const nextState = { ...prev };
+      if (!next) delete nextState[col];
+      else nextState[col] = next;
+      return nextState;
+    });
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setColumnFilters({});
+    setGlobalFilter('');
+    setOpenFilterCol(null);
+    setFilterSearch('');
+  }, []);
+
+  const schemaQuery = useTableSchema({ sql, params, globalFilter, columnFilters });
   const schema = schemaQuery.data ?? [];
   const fieldNames = useMemo(() => schema.map((f) => f.name), [schema]);
 
-  const countQuery = useTableCount({ sql, params, globalFilter: urlState.globalFilter, columnFilters: urlState.columnFilters });
+  const countQuery = useTableCount({ sql, params, globalFilter, columnFilters });
   const rowCount = countQuery.data ?? 0;
   const isInitialLoad = schemaQuery.isLoading || (countQuery.isLoading && schema.length === 0);
 
-  const summariesQuery = useColumnSummaries({ sql, params, globalFilter: urlState.globalFilter, columnFilters: urlState.columnFilters });
+  const summariesQuery = useColumnSummaries({ sql, params, globalFilter, columnFilters });
   const columnSummaries = summariesQuery.data ?? [];
   const summaryMap = useMemo(() => new Map(columnSummaries.map((s) => [s.name, s])), [columnSummaries]);
 
-  const sizesQuery = useColumnSizes({ sql, params, globalFilter: urlState.globalFilter, columnFilters: urlState.columnFilters });
+  const sizesQuery = useColumnSizes({ sql, params, globalFilter, columnFilters });
   const columnSizes = sizesQuery.data ?? [];
   const sizeMap = useMemo(() => new Map(columnSizes.map((s) => [s.name, s])), [columnSizes]);
 
-  const queryParts = useQueryParts({ sql, params, globalFilter: urlState.globalFilter, columnFilters: urlState.columnFilters, fieldNames });
+  const queryParts = useQueryParts({ sql, params, globalFilter, columnFilters, fieldNames });
 
   const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
     const effDefault = enableFilters ? colDefaultWidth : Math.min(colDefaultWidth, 72);
@@ -124,12 +150,12 @@ function useQueryTableState({
     const effMax = enableFilters ? colMaxWidth : Math.min(colMaxWidth, 110);
 
     const dataColumns = schema.flatMap((col) => {
-      if (col.fields && col.fields.length > 0) {
-        return col.fields.map((f: { name: string; type: string }) => {
-          const subName = `${col.name}.${f.name}`;
-          return { id: subName, accessorKey: subName, header: subName.replace(/^\d+_/, ''), size: effDefault, minSize: effMin, maxSize: effMax };
-        });
-      }
+      // if (col.fields && col.fields.length > 0) {
+      //   return col.fields.map((f: { name: string; type: string }) => {
+      //     const subName = `${col.name}.${f.name}`;
+      //     return { id: subName, accessorKey: subName, header: subName.replace(/^\d+_/, ''), size: effDefault, minSize: effMin, maxSize: effMax };
+      //   });
+      // }
       return [{ id: col.name, accessorKey: col.name, header: col.name.replace(/^\d+_/, ''), size: effDefault, minSize: effMin, maxSize: effMax }];
     });
 
@@ -145,10 +171,8 @@ function useQueryTableState({
   const table = useReactTable({
     data: [],
     columns,
-    state: { sorting: urlState.sorting, columnSizing, columnPinning, columnVisibility },
-    onSortingChange: (updater) => {
-      urlState.setSorting(typeof updater === 'function' ? updater(urlState.sorting) : updater);
-    },
+    state: { sorting, columnSizing, columnPinning, columnVisibility },
+    onSortingChange: setSorting,
     onColumnSizingChange: (updater) => {
       setColumnSizing((prev) => (typeof updater === 'function' ? updater(prev) : updater));
     },
@@ -168,7 +192,9 @@ function useQueryTableState({
 
     if (lastSqlRef.current !== sql) {
       lastSqlRef.current = sql;
-      urlState.resetAll();
+      setSorting([]);
+      setColumnFilters({});
+      setGlobalFilter('');
       setColumnSizing({});
       setColumnVisibility({});
       setOpenFilterCol(null);
@@ -203,22 +229,22 @@ function useQueryTableState({
         initializedVisibilityRef.current = schemaKey;
       }
     }
-  }, [sql, fieldNames, columnSizes, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, columnVisibility, urlState.resetAll]);
+  }, [sql, fieldNames, columnSizes, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, columnVisibility]);
 
   const onSaveSql = useCallback((nextSql: string) => setSql(nextSql), []);
 
   const fieldNamesForGlobal = useMemo(
-    () => (urlState.globalFilter.trim() ? fieldNames : []),
-    [urlState.globalFilter, fieldNames],
+    () => (globalFilter.trim() ? fieldNames : []),
+    [globalFilter, fieldNames],
   );
 
   const activeColumnFilters = useMemo(() => {
-    return Object.entries(urlState.columnFilters)
+    return Object.entries(columnFilters)
       .filter(([, val]) => val !== undefined)
       .sort(([a], [b]) => a.localeCompare(b));
-  }, [urlState.columnFilters]);
+  }, [columnFilters]);
 
-  const globalFilterActive = !!urlState.globalFilter.trim();
+  const globalFilterActive = !!globalFilter.trim();
   const totalFilterCount = (globalFilterActive ? 1 : 0) + activeColumnFilters.length;
 
   return {
@@ -235,8 +261,17 @@ function useQueryTableState({
     isInitialLoad,
     schemaError: schemaQuery.error,
     countError: countQuery.error,
+    title,
 
-    ...urlState,
+    sorting,
+    setSorting,
+    globalFilter,
+    setGlobalFilter,
+    columnFilters,
+    setColumnFilters,
+    onClearCol,
+    onChangeFilter,
+    clearAllFilters,
 
     columnSizing,
     setColumnSizing,

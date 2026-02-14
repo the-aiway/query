@@ -2,29 +2,27 @@ import Editor, { type OnMount } from '@monaco-editor/react';
 import { format } from 'sql-formatter';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
+import { Dialog, DialogContent, DialogTrigger } from '../ui/Dialog';
 
 type SqlQueryEditorPopoverProps = {
   sql: string;
   onSave: (nextSql: string) => void;
-  widthClassName?: string;
   title?: string;
+  children?: React.ReactNode;
 };
 
 export function SqlQueryEditorPopover({
   sql,
   onSave,
-  widthClassName = 'w-[860px]',
-  title = 'Click to edit query',
+  title = 'SQL Editor',
+  children,
 }: SqlQueryEditorPopoverProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(sql);
   const editorRef = useRef<any>(null);
 
-  const display = useMemo(() => sql.replace(/\s+/g, ' ').trim(), [sql]);
-
   const lineCount = useMemo(() => draft.split('\n').length, [draft]);
-  const editorHeight = Math.min(Math.max(lineCount * 19 + 20, 100), 500);
+  const editorHeight = Math.min(Math.max(lineCount * 19 + 20, 150), 500);
 
   const toFormattedSql = useCallback((inputSql: string) => {
     try {
@@ -92,23 +90,23 @@ export function SqlQueryEditorPopover({
   );
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={setOpen}
-    >
-      <PopoverTrigger asChild>
-        <div
-          className="text-[11px] text-muted-foreground truncate cursor-pointer hover:text-foreground w-full min-w-0"
-          title={title}
-        >
-          {display}
-        </div>
-      </PopoverTrigger>
-      <PopoverContent className={`${widthClassName} p-0 overflow-hidden`} align="start">
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        {children || (
+          <button
+            type="button"
+            className="text-[11px] font-mono text-muted-foreground truncate cursor-pointer hover:text-foreground"
+            title={title}
+          >
+            {title}
+          </button>
+        )}
+      </DialogTrigger>
+      <DialogContent className="p-0 overflow-hidden">
         <div className="flex flex-col min-w-0">
           <div className="border-b border-border bg-muted/30 px-3 py-1.5 flex items-center justify-between">
             <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
-              SQL Editor
+              {title}
             </span>
             <span className="text-[10px] text-muted-foreground font-mono">
               {navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Enter run
@@ -165,7 +163,7 @@ export function SqlQueryEditorPopover({
             </button>
           </div>
         </div>
-      </PopoverContent>
-    </Popover>
+      </DialogContent>
+    </Dialog>
   );
 }
