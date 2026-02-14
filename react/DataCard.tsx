@@ -1,50 +1,54 @@
-import { useState, useRef, useLayoutEffect, createElement, type ReactNode } from 'react';
+import { useState, useRef, createElement, type ReactNode } from 'react';
 import { Table2 } from 'lucide-react';
 
-import { type CacheEntry } from './DataCoordinator';
-import { useMaterialize, type ExtractRow } from './reducks';
+import { useMaterialize, type ExtractRow, type QueryRef } from './reducks';
 import { QueryTable } from '../table/QueryTable';
+import { cn } from '../table/ui/utils';
 
 // --- Types ---
 
-type SourcesData<T extends Record<string, CacheEntry | null>> = {
+type SourcesData<T extends Record<string, QueryRef | null>> = {
   [K in keyof T]: ExtractRow<NonNullable<T[K]>>[];
 };
 
 interface DataCardComponent {
   /** Single source, slice mode (default) — children receives all rows. */
-  <TEntry extends CacheEntry<string, any> | null>(props: {
+  <TEntry extends QueryRef<string, any> | null>(props: {
     source: TEntry;
     mode?: 'slice';
     fallback?: ReactNode;
+    className?: string;
     children: (data: ExtractRow<NonNullable<TEntry>>[]) => ReactNode;
   }): ReactNode;
 
   /** Single source, single mode — children receives first row. */
-  <TEntry extends CacheEntry<string, any> | null>(props: {
+  <TEntry extends QueryRef<string, any> | null>(props: {
     source: TEntry;
     mode: 'single';
     fallback?: ReactNode;
+    className?: string;
     children: (data: ExtractRow<NonNullable<TEntry>>) => ReactNode;
   }): ReactNode;
 
   /** Multiple sources — children receives a keyed record of row arrays. */
-  <TSources extends Record<string, CacheEntry<string, any> | null>>(props: {
+  <TSources extends Record<string, QueryRef<string, any> | null>>(props: {
     sources: TSources;
     fallback?: ReactNode;
+    className?: string;
     children: (data: SourcesData<TSources>) => ReactNode;
   }): ReactNode;
 }
 
 // --- Internal Components ---
 
-function DataCardImpl({ source, sources, mode, fallback, children, empty }: {
-  source?: CacheEntry | null;
-  sources?: Record<string, CacheEntry | null>;
+function DataCardImpl({ source, sources, mode, fallback, children, empty, className }: {
+  source?: QueryRef | null;
+  sources?: Record<string, QueryRef | null>;
   mode?: 'single' | 'slice';
   fallback?: ReactNode;
   children: (data: any) => ReactNode;
   empty?: boolean;
+  className?: string;
 }): ReactNode {
   const [view, setView] = useState<'chart' | 'table'>('chart');
   const contentRef = useRef<HTMLDivElement>(null);
@@ -59,12 +63,10 @@ function DataCardImpl({ source, sources, mode, fallback, children, empty }: {
   const handleSwitchToTable = () => {
     if (contentRef.current) {
       const height = contentRef.current.offsetHeight;
-      console.log('[DataCard] Switching to table, measured height:', height);
       if (height > 0) {
         savedHeightRef.current = height;
       }
     }
-    console.log('[DataCard] Saved height:', savedHeightRef.current);
     setView('table');
   };
 
@@ -73,7 +75,7 @@ function DataCardImpl({ source, sources, mode, fallback, children, empty }: {
 
   if (view === 'table' && isSingleSource) {
     return (
-      <div style={{ height: savedHeightRef.current }}>
+      <div style={{ height: savedHeightRef.current }} className={className}>
         <QueryTable 
           table={source} 
           onClose={() => setView('chart')} 
@@ -83,10 +85,10 @@ function DataCardImpl({ source, sources, mode, fallback, children, empty }: {
     );
   }
 
-  if (empty) return <div>emtpy</div>;
+  if (empty) return <div className={className}>emtpy</div>;
 
   return (
-    <div className="relative" ref={contentRef}>
+    <div className={cn("relative h-1/5", className)} ref={contentRef}>
       {isSingleSource && (
         <button
           type="button"
@@ -98,7 +100,7 @@ function DataCardImpl({ source, sources, mode, fallback, children, empty }: {
         </button>
       )}
       {isSingleSource 
-        ? (mode === 'single' ? children(singleData[0]) : children(singleData))
+        ? (mode === 'single' ? children(singleData![0]) : children(singleData!))
         : children(multiData)
       }
     </div>
@@ -106,33 +108,12 @@ function DataCardImpl({ source, sources, mode, fallback, children, empty }: {
 }
 
 /**
- * Reactive data boundary component. Materializes CacheEntry sources and renders
+ * Reactive data boundary component. Materializes QueryRef sources and renders
  * children with typed data. Isolates re-renders to only the consuming subtree.
  *
  * Features a table/chart toggle icon in the top-right corner (single source only).
- * In table mode, renders a full QueryTable powered by the source CacheEntry,
+ * In table mode, renders a full QueryTable powered by the source QueryRef,
  * with editable SQL and virtual scrolling.
- *
- * @example Single source (slice):
- * ```tsx
- * <DataCard source={myFragment}>
- *   {(rows) => <Chart data={rows} />}
- * </DataCard>
- * ```
- *
- * @example Single source (aggregate):
- * ```tsx
- * <DataCard source={statsFrag} mode="single">
- *   {(row) => <div>{row.total}</div>}
- * </DataCard>
- * ```
- *
- * @example Multiple sources:
- * ```tsx
- * <DataCard sources={{ stats: statsFrag, share: shareFrag }}>
- *   {({ stats, share }) => <Combined stats={stats} share={share} />}
- * </DataCard>
- * ```
  */
 export const DataCard: DataCardComponent = (props: any): any => {
   if (props?.disabled) {

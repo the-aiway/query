@@ -104,6 +104,11 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
       debug('[DuckDB] Opening database...');
       await database.open({
         maximumThreads,
+        accessMode: duckdb.DuckDBAccessMode.READ_WRITE,
+        opfs: {
+          fileHandling: 'auto'
+        },
+        path: '/abel.db',
         useDirectIO: true,
         filesystem: {
           reliableHeadRequests: true,

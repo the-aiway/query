@@ -66,7 +66,7 @@ export function inlineEntry(
     const depSql = inlineEntry(cache, dep, visited);
 
     if (dep.type === 'table') {
-      sql = sql.split(`'${dep.path}'`).join(`(--:dep:${dep.type}:${dep.slug}\n'${dep.path}')`);
+      sql = sql.split(`'${dep.path}'`).join(`read_parquet(--:dep:${dep.type}:${dep.slug}\n'${dep.path}')`);
     } else if (dep.type === 'fragment') {
       // Find the substitution if it exists, otherwise we'd need to know the slug token
       // For inlining, we usually look for $slug or similar, but here we are resolving paths/IDs.
