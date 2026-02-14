@@ -243,7 +243,7 @@ function QueryTableInternal({
 
   const tableContent = (
     <Card
-      className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full min-w-0'} flex flex-col overflow-hidden relative max-w-full flex-1 min-h-64`}
+      className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full min-w-0'} flex flex-col overflow-hidden relative max-w-full flex-1 min-h-80`}
     >
       <CardContent className="p-0 flex flex-col min-h-0 min-w-0 flex-1 relative overflow-hidden">
         <QueryTableToolbar />

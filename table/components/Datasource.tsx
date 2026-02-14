@@ -238,7 +238,6 @@ export function getTableDataPageQueryOptions(
         ${orderClause}
         LIMIT ${limit} OFFSET ${offset}
       `;
-
       const t = await pool.queryIPCTable(q, parts.fullParams);
 
       const nextVectors = new Map<string, Vector>();

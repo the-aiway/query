@@ -6,6 +6,7 @@ import {
   Maximize2,
   Minimize2,
   BarChart3,
+  Code2,
 } from 'lucide-react';
 import React from 'react';
 
@@ -26,6 +27,7 @@ export function QueryTableToolbar() {
     isFullscreen,
     setIsFullscreen,
     pool,
+    title,
     queryParts,
     isInitialLoad,
     rowCount,
@@ -73,7 +75,12 @@ export function QueryTableToolbar() {
       </div>
 
       <div className="min-w-0 flex-1 overflow-hidden flex items-center gap-1">
-        <SqlQueryEditorPopover sql={sql} onSave={onSaveSql} />
+        {title && <span className="text-[11px] font-mono text-muted-foreground truncate">{title}</span>}
+        <SqlQueryEditorPopover title={title} sql={sql} onSave={onSaveSql}>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" title="Edit SQL">
+            <Code2 className="h-3.5 w-3.5" />
+          </Button>
+        </SqlQueryEditorPopover>
         {entry && <DependencyTree entry={entry} pool={pool} onReplay={onSaveSql} />}
       </div>
 
