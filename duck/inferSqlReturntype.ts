@@ -141,7 +141,7 @@ type SplitAlias<S extends string, Current extends string = ''> = S extends `${in
       : SplitAlias<Tail, `${Current}${Head} as `>
     : never;
 
-type ResolveImplicitType<T extends string> = Lowercase<T> extends `${NumericSqlFunction}(${string}` ? number : T extends `${number}` ? number : T extends `'${string}'` ? string : unknown;
+type ResolveImplicitType<T extends string> = Lowercase<T> extends `${NumericSqlFunction}(${string}` ? number : T extends `${number}` ? number : T extends `'${string}'` ? string : Lowercase<T> extends 'true' | 'false' ? boolean : unknown;
 
 export type ParseField<S extends string> =
   // CASE 1 & 2: Has Cast "::"
