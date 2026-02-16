@@ -66,10 +66,7 @@ export class ConnectionPool {
    * Execute a query and return the raw DuckDB Table (IPC format).
    * Useful for direct table manipulation or when you need the table structure.
    */
-  async queryIPCTable<TOverride = unknown, Q extends string = string>(
-    query: Q,
-    params?: unknown[]
-  ): Promise<InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>> {
+  async queryIPCTable<TOverride = unknown, Q extends string = string>(query: Q, params?: unknown[]): Promise<InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>> {
     const conn = await this.acquire();
     await this.ensureQueryHook(conn);
     try {
@@ -79,9 +76,13 @@ export class ConnectionPool {
       } else {
         const stmt = await conn.prepare(query);
         try {
-          const stream = await stmt.send(...params);
-          const res = await stream.readAll();
-          result = new ArrowTable(res);
+          if (typeof stmt.query === 'function') {
+            result = await stmt.query(...params);
+          } else {
+            const stream = await stmt.send(...params);
+            const res = await stream.readAll();
+            result = new ArrowTable(res);
+          }
         } finally {
           await stmt.close();
         }
@@ -110,11 +111,7 @@ export class ConnectionPool {
    * Insert data into a table. Accepts either an Arrow Table or an array of objects.
    * If an array of objects is provided, it will be converted to an Arrow Table first.
    */
-  async insertTable<T extends Record<string, unknown>>(
-    tableName: string,
-    data: ArrowTable | T[],
-    options: { create?: boolean; schema?: Record<string, string> } = {}
-  ): Promise<void> {
+  async insertTable<T extends Record<string, unknown>>(tableName: string, data: ArrowTable | T[], options: { create?: boolean; schema?: Record<string, string> } = {}): Promise<void> {
     if (!data || (Array.isArray(data) && data?.length === 0)) {
       // arrow cannot create table from empty array cause theres no schema
       const schema = Object.entries(options.schema || {})
@@ -145,5 +142,5 @@ export class ConnectionPool {
     Object.assign(wrappedPool, this);
     wrappedPool.queryHook = sql;
     return wrappedPool;
- }
+  }
 }
