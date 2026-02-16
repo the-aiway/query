@@ -2,7 +2,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { useQT } from './QueryTableContext';
-import { buildWhereClause, quoteIdent, type FiltersState } from './sqlUtils';
+import { buildWhereClause, quoteIdent, isRangeFilter, type FiltersState } from './sqlUtils';
 
 import { useDuckDB } from '../../react/DuckDBProvider';
 import { Input } from '../ui/Input';
@@ -282,8 +282,8 @@ export function RangeFilter({
   };
 
   const committedRange = useMemo(() => {
-    if (filterValue?.type === 'range') {
-      return [filterValue.min, filterValue.max] as [number, number];
+    if (filterValue && isRangeFilter(filterValue)) {
+      return filterValue.$between;
     }
     return null;
   }, [filterValue]);
@@ -315,7 +315,7 @@ export function RangeFilter({
     if (isFull) {
       onChangeFilter(col, undefined);
     } else {
-      onChangeFilter(col, { type: 'range', min: v0, max: v1 });
+      onChangeFilter(col, { $between: [v0, v1] });
     }
   };
 
@@ -356,8 +356,8 @@ export function RangeFilter({
           type="button"
           className={`relative h-6 w-6 inline-flex items-center justify-center rounded border border-border bg-background/40 backdrop-blur hover:bg-background/60 ${triggerClassName ?? ''}`}
           title={
-            filterValue?.type === 'range'
-              ? `Filter [${filterValue.min}, ${filterValue.max}]`
+            filterValue && isRangeFilter(filterValue)
+              ? `Filter [${filterValue.$between[0]}, ${filterValue.$between[1]}]`
               : 'Filter values'
           }
           onClick={(e) => e.stopPropagation()}

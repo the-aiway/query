@@ -113,18 +113,17 @@ export function useTableCount(opts: QueryBase) {
   });
 }
 
-// 3b. Fetch Column Summaries (uniq, nulls, total)
+// 3b. Fetch Column Summaries (uniq, nulls, total) — always on unfiltered base data
 export function useColumnSummaries(opts: QueryBase) {
   const { pool } = useDuckDB();
-  const parts = useQueryParts({ ...opts, fieldNames: [] });
+  const baseSql = normalizeSelectSql(opts.sql);
 
   return useQuery({
-    queryKey: ['duckdb', 'col-summaries', parts.baseSql, parts.fullParams],
+    queryKey: ['duckdb', 'col-summaries', baseSql, opts.params],
     queryFn: async () => {
       const rows = await pool.dump(`--sql
       
-        WITH base AS (${parts.baseSql}),
-        base_filtered AS (SELECT * FROM base${parts.whereClause}),
+        WITH base AS (${baseSql}),
         metrics AS (
           SELECT
             {
@@ -134,7 +133,7 @@ export function useColumnSummaries(opts: QueryBase) {
               nulls: (count(*) - count(COLUMNS(*)))::BIGINT,
               total: count(*)::BIGINT
             } AS "m_\\0"
-          FROM base_filtered
+          FROM base
         ),
         stacked AS (
           UNPIVOT metrics ON COLUMNS(*)
@@ -148,7 +147,7 @@ export function useColumnSummaries(opts: QueryBase) {
           value.total AS total
         FROM stacked
         ORDER BY name
-      `, parts.fullParams);
+      `, opts.params ?? []);
 
       return rows.map(
         (r): ColumnSummary => ({
@@ -160,25 +159,24 @@ export function useColumnSummaries(opts: QueryBase) {
         })
       );
     },
-    enabled: !!parts.baseSql,
+    enabled: !!baseSql,
     placeholderData: keepPreviousData,
     staleTime: Infinity,
     gcTime: Infinity,
   });
 }
 
-// 3c. Fetch Column Sizes (p80Len using sample)
+// 3c. Fetch Column Sizes (p80Len using sample) — always on unfiltered base data
 export function useColumnSizes(opts: QueryBase) {
   const { pool } = useDuckDB();
-  const parts = useQueryParts({ ...opts, fieldNames: [] });
+  const baseSql = normalizeSelectSql(opts.sql);
 
   return useQuery({
-    queryKey: ['duckdb', 'col-sizes', parts.baseSql, parts.fullParams],
+    queryKey: ['duckdb', 'col-sizes', baseSql, opts.params],
     queryFn: async () => {
       const rows = await pool.dump(`--sql
-        WITH base AS (${parts.baseSql}),
-        base_filtered AS (SELECT * FROM base${parts.whereClause}),
-        sample AS (SELECT * FROM base_filtered USING SAMPLE 1000),
+        WITH base AS (${baseSql}),
+        sample AS (SELECT * FROM base USING SAMPLE 1000),
         metrics AS (
           SELECT
             {
@@ -196,7 +194,7 @@ export function useColumnSizes(opts: QueryBase) {
           value.p80Len AS p80Len
         FROM stacked
         ORDER BY name
-      `, parts.fullParams);
+      `, opts.params ?? []);
 
       return rows.map(
         (r): ColumnSize => ({
@@ -205,7 +203,7 @@ export function useColumnSizes(opts: QueryBase) {
         })
       );
     },
-    enabled: !!parts.baseSql,
+    enabled: !!baseSql,
     placeholderData: keepPreviousData,
     staleTime: Infinity,
     gcTime: Infinity,

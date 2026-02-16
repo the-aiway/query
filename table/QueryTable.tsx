@@ -198,6 +198,7 @@ const QueryError = ({ error }: { error: unknown }) => (
 // --- Main Components ---
 
 export function QueryTable({
+  id,
   table: tableInput,
   height,
   rowHeight = 28,
@@ -220,12 +221,15 @@ export function QueryTable({
   return (
     <QueryTableProvider
       key={resolved.sql}
+      id={id}
       initSql={resolved.sql}
       initOriginalSql={resolved.originalSql ?? undefined}
       entry={resolved.entry}
       params={resolved.params}
       pool={pool}
       onEditSql={setEditedSql}
+      title={props.title ?? id}
+      refreshing={resolved.refreshing}
       {...props}
     >
       <QueryTableInternal height={height} rowHeight={rowHeight} overscan={overscan} />

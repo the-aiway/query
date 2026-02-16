@@ -7,6 +7,7 @@ import {
   Minimize2,
   BarChart3,
   Code2,
+  RotateCcw,
 } from 'lucide-react';
 import React from 'react';
 
@@ -21,6 +22,7 @@ import { DependencyTree } from './DependencyTree';
 import { ExportButton } from './ExportButton';
 import { SqlQueryEditorPopover } from './SqlQueryEditorPopover';
 import { useQT } from './QueryTableContext';
+import { isSetFilter, isRangeFilter } from './sqlUtils';
 
 export function QueryTableToolbar() {
   const {
@@ -31,8 +33,12 @@ export function QueryTableToolbar() {
     queryParts,
     isInitialLoad,
     rowCount,
+    sql,
     originalSql,
+    hasCustomSql,
     onSaveSql,
+    resetAll,
+    hasChanges,
     entry,
     enableFilters,
     activeColumnFilters,
@@ -47,6 +53,7 @@ export function QueryTableToolbar() {
     setIsSearchExpanded,
     searchInputRef,
     onClose,
+    refreshing,
   } = useQT();
 
   const searchInputRefInternal = React.useRef<HTMLInputElement>(null);
@@ -70,17 +77,25 @@ export function QueryTableToolbar() {
         {isInitialLoad ? (
           <><Loader2 className="h-3 w-3 animate-spin text-primary" /><span>Loading...</span></>
         ) : (
-          <span>{rowCount.toLocaleString()} rows</span>
+          <>
+            <span>{rowCount.toLocaleString()} rows</span>
+            {refreshing && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+          </>
         )}
       </div>
 
       <div className="min-w-0 flex-1 overflow-hidden flex items-center gap-1">
         {title && <span className="text-[11px] font-mono text-muted-foreground truncate">{title}</span>}
-        <SqlQueryEditorPopover title={title} sql={originalSql} onSave={onSaveSql}>
+        <SqlQueryEditorPopover title={title} sql={hasCustomSql ? sql : originalSql} onSave={onSaveSql}>
           <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" title="Edit SQL">
             <Code2 className="h-3.5 w-3.5" />
           </Button>
         </SqlQueryEditorPopover>
+        {hasChanges && (
+          <Button variant="ghost" size="sm" className="h-7 px-2 gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground shrink-0" onClick={resetAll} title="Reset SQL, filters & sorting">
+            <RotateCcw className="h-3 w-3" />reset
+          </Button>
+        )}
         {entry && <DependencyTree entry={entry} pool={pool} onReplay={onSaveSql} />}
       </div>
 
@@ -97,7 +112,7 @@ export function QueryTableToolbar() {
               {activeColumnFilters.map(([col, val]) => (
                 <button key={col} type="button" className="inline-flex items-center gap-1 px-2 h-7 rounded border bg-background text-[11px] font-mono" onClick={() => onClearCol(col)}>
                   <span className="truncate max-w-45">{col}</span>
-                  <span className="text-muted-foreground">{val.type === 'set' ? `(${val.values.length})` : val.type === 'range' ? `[${Math.round(val.min * 100) / 100}, ${Math.round(val.max * 100) / 100}]` : ''}</span>
+                  <span className="text-muted-foreground">{isSetFilter(val) ? `(${val.length})` : isRangeFilter(val) ? `[${Math.round(val.$between[0] * 100) / 100}, ${Math.round(val.$between[1] * 100) / 100}]` : ''}</span>
                   <X className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
               ))}
@@ -124,7 +139,7 @@ export function QueryTableToolbar() {
                     {activeColumnFilters.map(([col, val]) => (
                       <button key={col} type="button" className="inline-flex items-center gap-1 px-2 h-7 rounded border bg-background text-[11px] font-mono" onClick={() => onClearCol(col)}>
                         <span className="truncate max-w-65">{col}</span>
-                        <span className="text-muted-foreground">{val.type === 'set' ? `(${val.values.length})` : val.type === 'range' ? `[${Math.round(val.min * 100) / 100}, ${Math.round(val.max * 100) / 100}]` : ''}</span>
+                        <span className="text-muted-foreground">{isSetFilter(val) ? `(${val.length})` : isRangeFilter(val) ? `[${Math.round(val.$between[0] * 100) / 100}, ${Math.round(val.$between[1] * 100) / 100}]` : ''}</span>
                         <X className="h-3.5 w-3.5 text-muted-foreground" />
                       </button>
                     ))}

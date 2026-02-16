@@ -27,11 +27,22 @@ import {
   useTableCount,
   useTableSchema,
 } from './Datasource';
-import { type FilterValue, type FiltersState } from './sqlUtils';
+import {
+  type FilterValue,
+  type FiltersState,
+  isSetFilter,
+  isRangeFilter,
+  serializeQTLayout,
+  parseQTLayout,
+  serializeQTUrlState,
+  parseQTUrlState,
+} from './sqlUtils';
 import { useDuckDB } from '../../react/DuckDBProvider';
 import { type QueryRef } from '../../react/reducks';
+import { useQueryState } from 'nuqs';
 
 export type QueryTableProps = {
+  id: string;
   table?: string | Record<string, unknown>[] | QueryRef | Table | null;
   height?: number;
   rowHeight?: number;
@@ -61,7 +72,10 @@ const COL_MAX_WIDTH = 180;
 const ESTIMATE_CHAR_PX = 4;
 const ESTIMATE_PADDING_PX = 32;
 
+const LAYOUT_DEBOUNCE_MS = 500;
+
 function useQueryTableState({
+  id,
   initSql,
   initOriginalSql,
   entry,
@@ -77,7 +91,9 @@ function useQueryTableState({
   onClose,
   onEditSql,
   title,
+  refreshing = false,
 }: {
+  id: string;
   title?: string,
   initSql: string;
   initOriginalSql?: string;
@@ -85,6 +101,7 @@ function useQueryTableState({
   entry?: QueryRef;
   params?: unknown[];
   pool: ReturnType<typeof useDuckDB>['pool'];
+  refreshing?: boolean;
 } & Omit<QueryTableProps, 'table' | 'pool' | 'height' | 'rowHeight' | 'overscan'>) {
   const [sql, setSql] = useState(initSql);
   const [originalSql, setOriginalSql] = useState(initOriginalSql ?? initSql);
@@ -97,12 +114,64 @@ function useQueryTableState({
     setOriginalSql(initOriginalSql ?? initSql);
   }, [initSql, initOriginalSql]);
 
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [globalFilter, setGlobalFilter] = useState('');
-  const [columnFilters, setColumnFilters] = useState<FiltersState>({});
+  // --- URL state: read once on mount, write back on change ---
+  const urlParamKey = `qt_${id}`;
+
+  const [rawUrlParam, setRawUrlParam] = useQueryState(urlParamKey, {
+    shallow: true,
+    history: 'replace',
+    // throttleMs: 500,
+  });
+
+  const initialUrlState = useRef(parseQTUrlState(rawUrlParam));
+  const isFirstSync = useRef(true);
+
+  const [sorting, setSorting] = useState<SortingState>(initialUrlState.current.sorting);
+  const [globalFilter, setGlobalFilter] = useState(initialUrlState.current.globalFilter);
+  const [columnFilters, setColumnFilters] = useState<FiltersState>(initialUrlState.current.filters);
+
+  useEffect(() => {
+    if (isFirstSync.current) {
+      isFirstSync.current = false;
+      return;
+    }
+
+    const serialized = serializeQTUrlState(sorting, columnFilters, globalFilter);
+    setRawUrlParam(serialized);
+  }, [sorting, columnFilters, globalFilter, setRawUrlParam]);
+
+  // --- localStorage: column sizing + visibility ---
+  const layoutKey = `qt_layout_${id}`;
+
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({});
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+
+  const layoutTimerRef = useRef<Timer | null>(null);
+
+  const saveLayout = useCallback((sizing: ColumnSizingState, visibility: VisibilityState) => {
+    if (layoutTimerRef.current) clearTimeout(layoutTimerRef.current);
+    layoutTimerRef.current = setTimeout(() => {
+      localStorage.setItem(layoutKey, serializeQTLayout(visibility, sizing));
+    }, LAYOUT_DEBOUNCE_MS);
+  }, [layoutKey]);
+
+  const setColumnSizingWithSave = useCallback((updater: ColumnSizingState | ((prev: ColumnSizingState) => ColumnSizingState)) => {
+    setColumnSizing((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      setColumnVisibility((vis) => { saveLayout(next, vis); return vis; });
+      return next;
+    });
+  }, [saveLayout]);
+
+  const setColumnVisibilityWithSave = useCallback((updater: VisibilityState | ((prev: VisibilityState) => VisibilityState)) => {
+    setColumnVisibility((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      setColumnSizing((sz) => { saveLayout(sz, next); return sz; });
+      return next;
+    });
+  }, [saveLayout]);
+
   const [openFilterCol, setOpenFilterCol] = useState<string | null>(null);
   const [filterSearch, setFilterSearch] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
@@ -151,18 +220,26 @@ function useQueryTableState({
 
   const queryParts = useQueryParts({ sql, params, globalFilter, columnFilters, fieldNames });
 
+  const hasActiveFiltersOrSorting = sorting.length > 0 || Object.keys(columnFilters).length > 0 || globalFilter.trim().length > 0;
+
+  const queryError = schemaQuery.error || countQuery.error;
+
+  useEffect(() => {
+    if (queryError && hasActiveFiltersOrSorting) {
+      setSorting([]);
+      setColumnFilters({});
+      setGlobalFilter('');
+      setOpenFilterCol(null);
+      setFilterSearch('');
+    }
+  }, [queryError, hasActiveFiltersOrSorting]);
+
   const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
     const effDefault = enableFilters ? colDefaultWidth : Math.min(colDefaultWidth, 72);
     const effMin = enableFilters ? colMinWidth : Math.min(colMinWidth, 44);
     const effMax = enableFilters ? colMaxWidth : Math.min(colMaxWidth, 110);
 
     const dataColumns = schema.flatMap((col) => {
-      // if (col.fields && col.fields.length > 0) {
-      //   return col.fields.map((f: { name: string; type: string }) => {
-      //     const subName = `${col.name}.${f.name}`;
-      //     return { id: subName, accessorKey: subName, header: subName.replace(/^\d+_/, ''), size: effDefault, minSize: effMin, maxSize: effMax };
-      //   });
-      // }
       return [{ id: col.name, accessorKey: col.name, header: col.name.replace(/^\d+_/, ''), size: effDefault, minSize: effMin, maxSize: effMax }];
     });
 
@@ -181,16 +258,18 @@ function useQueryTableState({
     state: { sorting, columnSizing, columnPinning, columnVisibility },
     onSortingChange: setSorting,
     onColumnSizingChange: (updater) => {
-      setColumnSizing((prev) => (typeof updater === 'function' ? updater(prev) : updater));
+      setColumnSizingWithSave((prev) => (typeof updater === 'function' ? updater(prev) : updater));
     },
     onColumnPinningChange: setColumnPinning,
-    onColumnVisibilityChange: setColumnVisibility,
+    onColumnVisibilityChange: (updater) => {
+      setColumnVisibilityWithSave((prev) => (typeof updater === 'function' ? updater(prev) : updater));
+    },
     columnResizeMode: 'onChange',
     getCoreRowModel: getCoreRowModel(),
     manualSorting: true,
   });
 
-  const lastSqlRef = useRef<string>('');
+  const lastSqlRef = useRef<string>(initSql);
   const initializedSchemaRef = useRef<string>('');
   const initializedVisibilityRef = useRef<string>('');
 
@@ -199,11 +278,9 @@ function useQueryTableState({
 
     if (lastSqlRef.current !== sql) {
       lastSqlRef.current = sql;
-      setSorting([]);
-      setColumnFilters({});
-      setGlobalFilter('');
       setColumnSizing({});
       setColumnVisibility({});
+      setColumnPinning({});
       setOpenFilterCol(null);
       setFilterSearch('');
       initializedSchemaRef.current = '';
@@ -214,9 +291,14 @@ function useQueryTableState({
     if (schemaKey && columnSizes.length > 0 && initializedSchemaRef.current !== schemaKey) {
       const effMin = enableFilters ? colMinWidth : Math.min(colMinWidth, 44);
       const effMax = enableFilters ? colMaxWidth : Math.min(colMaxWidth, 110);
-      const newSizing: ColumnSizingState = {};
+
+      const savedLayout = parseQTLayout(localStorage.getItem(layoutKey), fieldNames);
+
+      const newSizing: ColumnSizingState = { ...(savedLayout?.sizing ?? {}) };
       if (showRowNumbers) newSizing['_row_index'] = 60;
+
       for (const name of fieldNames) {
+        if (newSizing[name] !== undefined) continue;
         const size = sizeMap.get(name);
         const p80 = size?.p80Len ?? 0;
         const maxLen = Math.max(name.length, p80);
@@ -224,11 +306,16 @@ function useQueryTableState({
         newSizing[name] = Math.max(effMin, Math.min(effMax, estimatedWidth));
       }
       setColumnSizing(newSizing);
+
       initializedSchemaRef.current = schemaKey;
     }
 
     if (schemaKey && columnSummaries.length > 0 && initializedVisibilityRef.current !== schemaKey) {
-      if (Object.keys(columnVisibility).length === 0) {
+      const savedLayout = parseQTLayout(localStorage.getItem(layoutKey), fieldNames);
+      if (savedLayout?.visibility && Object.keys(savedLayout.visibility).length > 0) {
+        setColumnVisibility(savedLayout.visibility);
+        initializedVisibilityRef.current = schemaKey;
+      } else if (Object.keys(columnVisibility).length === 0) {
         const nextVisibility: VisibilityState = {};
         if (showRowNumbers) nextVisibility['_row_index'] = true;
         for (const name of fieldNames) nextVisibility[name] = true;
@@ -236,16 +323,28 @@ function useQueryTableState({
         initializedVisibilityRef.current = schemaKey;
       }
     }
-  }, [sql, fieldNames, columnSizes, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, columnVisibility]);
+  }, [sql, fieldNames, columnSizes, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, columnVisibility, layoutKey]);
 
   const onSaveSql = useCallback((nextSql: string) => {
-    if (onEditSql) {
-      onEditSql(nextSql);
-    } else {
-      setSql(nextSql);
-      setOriginalSql(nextSql);
-    }
-  }, [onEditSql]);
+    setSql(nextSql);
+  }, []);
+
+  const hasCustomSql = sql !== initSql;
+  const hasChanges = hasCustomSql || hasActiveFiltersOrSorting;
+
+  const resetAll = useCallback(() => {
+    setSql(initSql);
+    setSorting([]);
+    setColumnFilters({});
+    setGlobalFilter('');
+    setOpenFilterCol(null);
+    setFilterSearch('');
+    setColumnSizing({});
+    setColumnVisibility({});
+    setColumnPinning({});
+    initializedSchemaRef.current = '';
+    initializedVisibilityRef.current = '';
+  }, [initSql]);
 
   const fieldNamesForGlobal = useMemo(
     () => (globalFilter.trim() ? fieldNames : []),
@@ -254,13 +353,17 @@ function useQueryTableState({
 
   const activeColumnFilters = useMemo(() => {
     return Object.entries(columnFilters)
-      .filter(([, val]) => val !== undefined)
+      .filter(([, val]) => {
+        if (!val) return false;
+        if (isSetFilter(val)) return val.length > 0;
+        return isRangeFilter(val);
+      })
       .sort(([a], [b]) => a.localeCompare(b));
   }, [columnFilters]);
 
   const globalFilterActive = !!globalFilter.trim();
   const totalFilterCount = (globalFilterActive ? 1 : 0) + activeColumnFilters.length;
-  // console.log({schemaQuery, countQuery})
+
   return {
     pool,
     sql,
@@ -289,9 +392,9 @@ function useQueryTableState({
     clearAllFilters,
 
     columnSizing,
-    setColumnSizing,
+    setColumnSizing: setColumnSizingWithSave,
     columnVisibility,
-    setColumnVisibility,
+    setColumnVisibility: setColumnVisibilityWithSave,
     openFilterCol,
     onOpenFilterCol: setOpenFilterCol,
     filterSearch,
@@ -308,6 +411,9 @@ function useQueryTableState({
     globalFilterActive,
 
     onSaveSql,
+    resetAll,
+    hasChanges,
+    hasCustomSql,
     table,
 
     enableFilters,
@@ -315,6 +421,7 @@ function useQueryTableState({
     getRowClassName,
     renderCell,
     onClose,
+    refreshing,
   };
 }
 
@@ -332,6 +439,7 @@ export function QueryTableProvider({
   children,
   ...stateProps
 }: {
+  id: string;
   children: ReactNode;
   initSql: string;
   initOriginalSql?: string;
@@ -339,6 +447,7 @@ export function QueryTableProvider({
   entry?: QueryRef;
   params?: unknown[];
   pool: ReturnType<typeof useDuckDB>['pool'];
+  refreshing?: boolean;
 } & Omit<QueryTableProps, 'table' | 'pool' | 'height' | 'rowHeight' | 'overscan'>) {
   const value = useQueryTableState(stateProps);
   return <QTContext.Provider value={value}>{children}</QTContext.Provider>;
