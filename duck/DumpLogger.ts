@@ -1,8 +1,5 @@
 import { type AsyncDuckDB, type Logger, type LogEntryVariant, LogTopic, LogEvent, LogLevel, TokenType } from '@duckdb/duckdb-wasm';
 
-// We import the registry to pick up a-posteriori names
-import { _nameRegistry } from '../react/reducks';
-
 const ANSI_RESET = '\x1b[0m';
 const rgbToAnsi = (r: number, g: number, b: number) => `\x1b[38;2;${r};${g};${b}m`;
 
@@ -31,13 +28,6 @@ export function stringToColor(str: string): string {
   return `hsl(${h}, 35%, 65%)`;
 }
 
-export function logReslug(reslug: string, type?: 'fragment' | 'table') {
-  const isFrag = type === 'fragment';
-  const label = (isFrag ? 'sql' : type || 'node').padEnd(5);
-  const color = isFrag ? '#c084fc' : '#60a5fa';
-  console.log(`%c${label} %c${reslug}`, `color: ${color}`, `color: ${stringToColor(reslug)}; font-weight: bold`);
-}
-
 function highlightAnsi(query: string, tokens: any): string {
   return tokens.offsets
     .map((offset: number, i: number) => {
@@ -61,19 +51,6 @@ export class DumpLogger implements Logger {
     this.tokenizeFn = t;
   }
 
-  private async waitIdle() {
-    // Wait for all pending queries to finish
-    while (this.queryStates.size > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    // Then wait for the browser to be idle
-    if (typeof window !== 'undefined' && (window as any).requestIdleCallback) {
-      await new Promise((resolve) => (window as any).requestIdleCallback(resolve, { timeout: 1000 }));
-    } else {
-      await new Promise((resolve) => setTimeout(resolve, 16));
-    }
-  }
-
   public log(entry: LogEntryVariant) {
     if (entry.topic === LogTopic.QUERY) {
       return this.handleQuery(entry as any);
@@ -92,12 +69,6 @@ export class DumpLogger implements Logger {
       const query = tag ? value.replace(tag, '').trim() : value;
       const state = { start: performance.now(), query, localId: this.count++, retype, reslug, timer: null as any };
 
-      // If reslug is a UID, try to look up a real name immediately
-      if (state.reslug && state.reslug.match(/^[tf]_\d+_[a-z0-9]+$/)) {
-        const registeredName = _nameRegistry.get(state.reslug);
-        if (registeredName) state.reslug = registeredName;
-      }
-
       state.timer = setTimeout(() => {
         const { fmt, args } = this.formatHeader(state, 0);
         console.log(`${fmt} %c⏳ Hanging: ${this.clean(state.query).slice(0, 60)}`, ...args, 'color: #f59e0b; font-style: italic');
@@ -110,20 +81,6 @@ export class DumpLogger implements Logger {
       this.queryStates.delete(id);
 
       const duration = Math.round(performance.now() - state.start);
-
-      // Wait for all pending queries to finish and for the browser to be idle.
-      // This ensures we don't block the main thread with tokenization/logging
-      // while DuckDB is still processing other queries, and gives a-posteriori
-      // naming a chance to propagate.
-      await this.waitIdle();
-
-      // Pick up a-posteriori name if it was assigned after the query started
-      if (state.reslug && !state.reslug.match(/^[tf]_\d+_[a-z0-9]+$/)) {
-        // Already has a "real" name
-      } else if (state.reslug) {
-        const registeredName = _nameRegistry.get(state.reslug);
-        if (registeredName) state.reslug = registeredName;
-      }
       const cleanSql = this.clean(state.query);
       const { fmt, args } = this.formatHeader(state, duration);
 
@@ -167,10 +124,9 @@ export class DumpLogger implements Logger {
   private formatHeader(s: any, ms: number) {
     const dur = `${ms}ms`.padStart(6);
 
-    // Progressive coloring: 0ms (grey) -> 2000ms (muted red)
     const t = Math.min(ms / 2000, 1);
     const saturation = Math.round(t * 65);
-    const hue = Math.round(35 * (1 - t)); // Muted Orange (35) -> Red (0)
+    const hue = Math.round(35 * (1 - t));
     const durColor = `hsl(${hue}, ${saturation}%, 50%)`;
 
     const typeLabel = (s.retype === 'fragment' ? 'sql' : s.retype || '').padEnd(5);
@@ -186,9 +142,3 @@ export class DumpLogger implements Logger {
   }
 }
 
-export function getLogTopicLabel(t: LogTopic): string {
-  return { [LogTopic.CONNECT]: 'CONNECT', [LogTopic.DISCONNECT]: 'DISCONNECT', [LogTopic.INSTANTIATE]: 'INSTANTIATE', [LogTopic.OPEN]: 'OPEN', [LogTopic.QUERY]: 'QUERY' }[t] || 'DUCKDB';
-}
-export function getLogEventLabel(e: LogEvent): string {
-  return { [LogEvent.OK]: 'OK', [LogEvent.ERROR]: 'ERROR', [LogEvent.START]: 'START', [LogEvent.RUN]: 'RUN', [LogEvent.CAPTURE]: 'CAPTURE' }[e] || 'EVENT';
-}

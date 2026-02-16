@@ -1,95 +1,82 @@
 import { useState, useRef, createElement, type ReactNode } from 'react';
 import { Table2 } from 'lucide-react';
 
-import { useMaterialize, type ExtractRow, type QueryRef } from './reducks';
+import { useMaterialize, row, map, values, type SourceEntry, type ResolveShape, type QueryRef } from './reducks';
 import { QueryTable } from '../table/QueryTable';
 import { cn } from '../table/ui/utils';
 
-// --- Types ---
-
-type SourcesData<T extends Record<string, QueryRef | null>> = {
-  [K in keyof T]: ExtractRow<NonNullable<T[K]>>[];
+type ResolvedData<T extends Record<string, SourceEntry>> = {
+  [K in keyof T]: ResolveShape<T[K]>;
 };
 
+interface ShapeHelpers {
+  row: typeof row;
+  map: typeof map;
+  values: typeof values;
+}
+
+const shapeHelpers: ShapeHelpers = { row, map, values };
+
+type SourceProp<T extends Record<string, SourceEntry>> = T | ((m: ShapeHelpers) => T);
+
 interface DataCardComponent {
-  /** Single source, slice mode (default) — children receives all rows. */
-  <TEntry extends QueryRef<string, any> | null>(props: {
-    source: TEntry;
-    mode?: 'slice';
+  <T extends Record<string, SourceEntry>>(props: {
+    source: SourceProp<T>;
     fallback?: ReactNode;
     className?: string;
-    children: (data: ExtractRow<NonNullable<TEntry>>[]) => ReactNode;
-  }): ReactNode;
-
-  /** Single source, single mode — children receives first row. */
-  <TEntry extends QueryRef<string, any> | null>(props: {
-    source: TEntry;
-    mode: 'single';
-    fallback?: ReactNode;
-    className?: string;
-    children: (data: ExtractRow<NonNullable<TEntry>>) => ReactNode;
-  }): ReactNode;
-
-  /** Multiple sources — children receives a keyed record of row arrays. */
-  <TSources extends Record<string, QueryRef<string, any> | null>>(props: {
-    sources: TSources;
-    fallback?: ReactNode;
-    className?: string;
-    children: (data: SourcesData<TSources>) => ReactNode;
+    disabled?: boolean;
+    children: (data: ResolvedData<T>) => ReactNode;
   }): ReactNode;
 }
 
-// --- Internal Components ---
+function unwrapFirstRef(source: Record<string, SourceEntry>): QueryRef | null {
+  const first = Object.values(source)[0];
+  if (!first) return null;
+  return '_ref' in first ? first._ref : first;
+}
 
-function DataCardImpl({ source, sources, mode, fallback, children, empty, className }: {
-  source?: QueryRef | null;
-  sources?: Record<string, QueryRef | null>;
-  mode?: 'single' | 'slice';
+function DataCardImpl({ source: sourceProp, fallback, children, className }: {
+  source: Record<string, SourceEntry> | ((m: ShapeHelpers) => Record<string, SourceEntry>);
   fallback?: ReactNode;
-  children: (data: any) => ReactNode;
-  empty?: boolean;
+  children: (data: Record<string, unknown>) => ReactNode;
   className?: string;
 }): ReactNode {
+  const source = typeof sourceProp === 'function' ? sourceProp(shapeHelpers) : sourceProp;
   const [view, setView] = useState<'chart' | 'table'>('chart');
   const contentRef = useRef<HTMLDivElement>(null);
   const savedHeightRef = useRef<number | undefined>(undefined);
 
-  const isSingleSource = source !== undefined;
-  const singleData = useMaterialize.rows(isSingleSource ? source : null);
-  const multiData = useMaterialize.concurrent(isSingleSource ? {} : sources ?? {});
-
-  const data = isSingleSource ? singleData : multiData;
+  const data = useMaterialize.concurrent(source);
+  const entries = Object.entries(source);
+  const isSingle = entries.length === 1;
+  const firstRef = unwrapFirstRef(source);
 
   const handleSwitchToTable = () => {
     if (contentRef.current) {
       const height = contentRef.current.offsetHeight;
-      if (height > 0) {
-        savedHeightRef.current = height;
-      }
+      if (height > 0) savedHeightRef.current = height;
     }
     setView('table');
   };
 
   if (!data) return fallback ?? null;
-  if (isSingleSource && mode === 'single' && singleData?.length === 0) return fallback ?? null;
 
-  if (view === 'table' && isSingleSource) {
+  if (view === 'table' && isSingle && firstRef) {
     return (
       <div style={{ height: savedHeightRef.current }} className={className}>
-        <QueryTable 
-          table={source} 
-          onClose={() => setView('chart')} 
+        <QueryTable
+          id={firstRef._name || firstRef._id}
+          table={firstRef}
+          onClose={() => setView('chart')}
           height={savedHeightRef.current}
         />
       </div>
     );
   }
 
-  if (empty) return <div className={className}>emtpy</div>;
-
   return (
     <div className={cn("relative h-1/5", className)} ref={contentRef}>
-      {isSingleSource && (
+      {isSingle && (
         <button
           type="button"
           onClick={handleSwitchToTable}
@@ -99,25 +86,21 @@ function DataCardImpl({ source, sources, mode, fallback, children, empty, classN
           <Table2 className="w-3.5 h-3.5" />
         </button>
       )}
-      {isSingleSource 
-        ? (mode === 'single' ? children(singleData![0]) : children(singleData!))
-        : children(multiData)
-      }
+      {children(data as Record<string, unknown>)}
     </div>
   );
 }
 
 /**
- * Reactive data boundary component. Materializes QueryRef sources and renders
- * children with typed data. Isolates re-renders to only the consuming subtree.
+ * Reactive data boundary. Materializes QueryRef sources and renders
+ * children with typed named data. Isolates re-renders to the consuming subtree.
  *
- * Features a table/chart toggle icon in the top-right corner (single source only).
- * In table mode, renders a full QueryTable powered by the source QueryRef,
- * with editable SQL and virtual scrolling.
+ * Usage:
+ *   <DataCard source={{myTable}}>{({myTable}) => ...}</DataCard>
+ *   <DataCard source={{stats: row(statsRef)}}>{({stats}) => stats.total}</DataCard>
+ *   <DataCard source={m => ({ stats: m.row(statsRef) })}>{({stats}) => stats.total}</DataCard>
  */
 export const DataCard: DataCardComponent = (props: any): any => {
-  if (props?.disabled) {
-    return <div>disabled</div>;
-  }
+  if (props?.disabled) return <div>disabled</div>;
   return createElement(DataCardImpl, props);
 };
