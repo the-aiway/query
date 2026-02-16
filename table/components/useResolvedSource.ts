@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { tableFromJSON, Table } from 'apache-arrow';
-import { type QueryRef } from '../../react/reducks';
+import { type QueryRef, needsMaterialization, materializeChain, tablePath } from '../../react/reducks';
 import type { ConnectionPool } from '../../duck/ConnectionPool';
 import { normalizeSelectSql } from './sqlUtils';
 
@@ -19,6 +19,7 @@ export type ResolvedSource = {
   entry?: QueryRef;
   loading: boolean;
   loadingMessage?: string;
+  refreshing?: boolean;
 };
 
 export function useResolvedSource(
@@ -27,11 +28,23 @@ export function useResolvedSource(
 ): ResolvedSource {
   const entry = isQueryRef(tableInput) ? tableInput : undefined;
 
+  const depsReady = !isQueryRef(tableInput) || !needsMaterialization(tableInput);
+  const [materializingDeps, setMaterializingDeps] = useState(false);
+
+  useEffect(() => {
+    if (!isQueryRef(tableInput) || depsReady) return;
+    let alive = true;
+    setMaterializingDeps(true);
+    materializeChain(tableInput, pool)
+      .finally(() => { if (alive) setMaterializingDeps(false); });
+    return () => { alive = false; };
+  }, [tableInput, depsReady, pool]);
+
   const tableRefSql = useMemo(() => {
     if (!isQueryRef(tableInput)) return null;
     if (tableInput._status !== 'ready') return null;
-    if (tableInput._type === 'table' && tableInput._path) {
-      return `SELECT * FROM '${tableInput._path}'`;
+    if (tableInput._type === 'table') {
+      return `SELECT * FROM '${tablePath(tableInput)}'`;
     }
     return null;
   }, [tableInput]);
@@ -40,11 +53,11 @@ export function useResolvedSource(
     if (typeof tableInput === 'string' && tableInput.trim()) {
       return normalizeSelectSql(tableInput);
     }
-    if (isQueryRef(tableInput) && tableInput._status === 'ready' && tableInput._type === 'fragment') {
+    if (isQueryRef(tableInput) && tableInput._type === 'fragment' && depsReady) {
       return tableInput._query;
     }
     return null;
-  }, [tableInput]);
+  }, [tableInput, depsReady]);
 
   const [materialized, setMaterialized] = useState<{ baseSql: string } | null>(null);
 
@@ -126,27 +139,40 @@ export function useResolvedSource(
     return null;
   }, [tableInput]);
 
-  if (isQueryRef(tableInput) && tableInput._status !== 'ready') {
+  const lastGood = useRef<ResolvedSource | null>(null);
+
+  const depsPending = isQueryRef(tableInput) && (!depsReady || materializingDeps);
+
+  if (isQueryRef(tableInput) && tableInput._status !== 'ready' && !depsPending) {
     return { sql: null, originalSql: null, entry, loading: true, loadingMessage: 'waiting for data...' };
   }
 
+  if (depsPending) {
+    if (lastGood.current) return { ...lastGood.current, entry, refreshing: true };
+    return { sql: null, originalSql: null, entry, loading: true, loadingMessage: 'materializing dependencies...' };
+  }
+
+  let result: ResolvedSource;
+
   if (tableRefSql) {
-    return { sql: tableRefSql, originalSql, entry, loading: false };
-  }
-
-  if (sqlToMaterialize) {
+    result = { sql: tableRefSql, originalSql, entry, loading: false };
+  } else if (sqlToMaterialize) {
     if (!materialized) {
-      return { sql: null, originalSql, entry, loading: true, loadingMessage: 'materializing...' };
+      if (lastGood.current) return { ...lastGood.current, entry, refreshing: true };
+      result = { sql: null, originalSql, entry, loading: true, loadingMessage: 'materializing...' };
+    } else {
+      result = { sql: materialized.baseSql, originalSql, entry, loading: false };
     }
-    return { sql: materialized.baseSql, originalSql, entry, loading: false };
-  }
-
-  if (Array.isArray(tableInput) || tableInput instanceof Table) {
+  } else if (Array.isArray(tableInput) || tableInput instanceof Table) {
     if (!registered) {
-      return { sql: null, originalSql: null, loading: true, loadingMessage: 'registering data...' };
+      result = { sql: null, originalSql: null, loading: true, loadingMessage: 'registering data...' };
+    } else {
+      result = { sql: registered.sql, originalSql: registered.sql, loading: false };
     }
-    return { sql: registered.sql, originalSql: registered.sql, loading: false };
+  } else {
+    result = { sql: null, originalSql: null, loading: false };
   }
 
-  return { sql: null, originalSql: null, loading: false };
+  if (result.sql) lastGood.current = result;
+  return result;
 }

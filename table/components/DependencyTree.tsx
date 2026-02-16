@@ -1,57 +1,80 @@
+import Editor from '@monaco-editor/react';
+import { format } from 'sql-formatter';
 import React, { useMemo, useState } from 'react';
-import { GitBranch, Database, Code2 } from 'lucide-react';
+import { GitBranch, Database, Code2, Globe } from 'lucide-react';
 import { type QueryRef } from '../../react/reducks';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { Button } from '../ui/Button';
 import { ScrollArea } from '../ui/ScrollArea';
 import type { ConnectionPool } from '../../duck/ConnectionPool';
-import { useDuckDB } from '../../react/DuckDBProvider';
+import { useQT } from './QueryTableContext';
 
 // --- Tree types ---
 
 type TreeNode = {
-  entry: QueryRef;
+  id: string;
+  kind: 'ref' | 'path';
+  entry?: QueryRef;
+  path?: string;
   displaySql: string;
   children: TreeNode[];
 };
 
 // --- Helpers ---
 
-/** Replace internal IDs/paths with human-readable slugs for display */
+const API_PATH_RE = /'(\/(?:api|data)\/[^']+)'/g;
+
+function extractPathSources(sql: string): string[] {
+  API_PATH_RE.lastIndex = 0;
+  const paths: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = API_PATH_RE.exec(sql)) !== null) paths.push(m[1]!);
+  return [...new Set(paths)];
+}
+
 function toDisplaySql(entry: QueryRef): string {
   if (!entry._query) {
     return entry._type === 'table' ? `SELECT * FROM ${entry._name || entry._id}` : '';
   }
   let sql = entry._query;
-  // Replace dependencies
   for (const dep of entry._dependencies || []) {
     const name = dep._name || dep._id;
-    // Replace ID
     sql = sql.split(dep._id).join(name);
-    // Replace Path
-    if (dep._path) {
-      sql = sql.split(`'${dep._path}'`).join(name);
-      sql = sql.split(dep._path).join(name);
-    }
   }
   return sql;
 }
 
-function buildTree(
-  entry: QueryRef,
-  visited = new Set<string>(),
-): TreeNode {
+function buildTree(entry: QueryRef, visited = new Set<string>()): TreeNode {
   const children: TreeNode[] = [];
+
+  const paths = extractPathSources(entry._query || '');
+  for (const p of paths) {
+    children.push({
+      id: `path:${p}`,
+      kind: 'path',
+      path: p,
+      displaySql: `SELECT * FROM '${p}'`,
+      children: [],
+    });
+  }
+
   for (const dep of entry._dependencies || []) {
     if (visited.has(dep._id)) continue;
     visited.add(dep._id);
     children.push(buildTree(dep, visited));
   }
-  return { entry, displaySql: toDisplaySql(entry), children };
+
+  return {
+    id: entry._id,
+    kind: 'ref',
+    entry,
+    displaySql: toDisplaySql(entry),
+    children,
+  };
 }
 
 function flatFind(node: TreeNode, id: string): TreeNode | null {
-  if (node.entry._id === id) return node;
+  if (node.id === id) return node;
   for (const child of node.children) {
     const found = flatFind(child, id);
     if (found) return found;
@@ -60,6 +83,26 @@ function flatFind(node: TreeNode, id: string): TreeNode | null {
 }
 
 // --- Tree node row ---
+
+function PathNodeRow({ node, depth, selectedId, onSelect }: { node: TreeNode; depth: number; selectedId: string | null; onSelect: (node: TreeNode) => void }) {
+  const isSelected = selectedId === node.id;
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(node)}
+      className={`
+        w-full flex items-center gap-2 py-1.5 rounded text-left text-[11px] font-mono transition-colors
+        ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted/40 text-foreground/60'}
+      `}
+      style={{ paddingLeft: `${depth * 16 + 8}px`, paddingRight: 8 }}
+      title={node.path}
+    >
+      <Globe className="h-3 w-3 shrink-0 text-emerald-500" />
+      <span className="truncate flex-1">{node.path}</span>
+      <span className="text-[9px] px-1 rounded shrink-0 bg-emerald-500/10 text-emerald-600">source</span>
+    </button>
+  );
+}
 
 function TreeNodeRow({
   node,
@@ -74,9 +117,11 @@ function TreeNodeRow({
   selectedId: string | null;
   onSelect: (node: TreeNode) => void;
 }) {
-  const isTable = node.entry._type === 'table';
-  const isSelected = selectedId === node.entry._id;
-  const name = node.entry._name || node.entry._id;
+  if (node.kind === 'path') return <PathNodeRow node={node} depth={depth} selectedId={selectedId} onSelect={onSelect} />;
+
+  const isTable = node.entry!._type === 'table';
+  const isSelected = selectedId === node.id;
+  const name = node.entry!._name || node.entry!._id;
 
   return (
     <>
@@ -107,7 +152,7 @@ function TreeNodeRow({
       </button>
       {node.children.map((child) => (
         <TreeNodeRow
-          key={child.entry._id}
+          key={child.id}
           node={child}
           depth={depth + 1}
           isRoot={false}
@@ -116,6 +161,56 @@ function TreeNodeRow({
         />
       ))}
     </>
+  );
+}
+
+// --- SQL Preview ---
+
+function formatSql(sql: string): string {
+  try {
+    return format(sql, { language: 'sql' });
+  } catch {
+    return sql;
+  }
+}
+
+function SqlPreview({ sql }: { sql: string }) {
+  const formatted = useMemo(() => formatSql(sql), [sql]);
+  const lineCount = formatted.split('\n').length;
+  const height = Math.min(Math.max(lineCount * 18 + 16, 60), 200);
+
+  return (
+    <div className="border-t border-border">
+      <Editor
+        height={height}
+        defaultLanguage="sql"
+        value={formatted}
+        theme="vs-dark"
+        options={{
+          readOnly: true,
+          minimap: { enabled: false },
+          fontSize: 11,
+          lineNumbers: 'off',
+          lineNumbersMinChars: 0,
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          wordWrap: 'on',
+          folding: false,
+          glyphMargin: false,
+          renderLineHighlight: 'none',
+          scrollbar: { vertical: 'auto', horizontal: 'hidden', verticalScrollbarSize: 6 },
+          padding: { top: 6, bottom: 6 },
+          tabSize: 2,
+          domReadOnly: true,
+          contextmenu: false,
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
+          overviewRulerBorder: false,
+          cursorStyle: 'block',
+          cursorBlinking: 'solid',
+        }}
+      />
+    </div>
   );
 }
 
@@ -128,18 +223,31 @@ type DependencyTreeProps = {
 };
 
 export function DependencyTree({ entry, onReplay }: DependencyTreeProps) {
+  const { resetAll } = useQT();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const tree = useMemo(() => {
-    return buildTree(entry);
-  }, [entry]);
+  const tree = useMemo(() => buildTree(entry), [entry]);
 
   const selectedNode = useMemo(() => {
     if (!selectedId) return null;
     return flatFind(tree, selectedId);
   }, [selectedId, tree]);
 
-
+  const handleSelect = (node: TreeNode) => {
+    if (node.kind === 'path') {
+      setSelectedId(node.id);
+      onReplay(`SELECT * FROM '${node.path}'`);
+      return;
+    }
+    const ref = node.entry!;
+    if (ref._id === entry._id) {
+      resetAll();
+      setSelectedId(null);
+      return;
+    }
+    setSelectedId(node.id);
+    if (ref._query) onReplay(ref._query);
+  };
 
   return (
     <Popover>
@@ -161,22 +269,11 @@ export function DependencyTree({ entry, onReplay }: DependencyTreeProps) {
               depth={0}
               isRoot={true}
               selectedId={selectedId}
-              onSelect={(node) => {
-                setSelectedId(node.entry._id);
-                if (node.entry._id !== entry._id && node.entry._query) {
-                  onReplay(node.entry._query);
-                }
-              }}
+              onSelect={handleSelect}
             />
           </div>
         </ScrollArea>
-        {selectedNode && (
-          <div className="border-t border-border bg-muted/10 px-3 py-2">
-            <pre className="text-[10px] font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-32 overflow-auto">
-              {selectedNode.displaySql.replace(/\s+/g, ' ').trim()}
-            </pre>
-          </div>
-        )}
+        {selectedNode && <SqlPreview sql={selectedNode.displaySql} />}
       </PopoverContent>
     </Popover>
   );

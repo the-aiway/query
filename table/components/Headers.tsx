@@ -72,7 +72,7 @@ export function Headers() {
                     {/* Header Content with Sort Handler */}
                     <div
                       // Don't reserve space for filter icon until hover (prevents early ellipsis)
-                      className={`flex-1 min-w-0 flex items-center gap-1 pl-2 pr-2 py-2 ${isRowIndex ? '' : 'cursor-pointer'} focus:outline-none ${enableFilters && !isRowIndex ? 'group-hover:pr-10' : ''}`}
+                      className={`flex-1 min-w-0 flex items-center gap-1 pl-2 pr-2 py-2 ${isRowIndex ? '' : 'cursor-pointer'} focus:outline-none ${enableFilters && !isRowIndex ? (hasFilter ? 'pr-10' : 'group-hover:pr-10') : ''}`}
                       onClick={isRowIndex ? undefined : header.column.getToggleSortingHandler()}
                       title={isRowIndex ? undefined : 'Click to sort, Right click for more options'}
                     >
@@ -107,10 +107,9 @@ export function Headers() {
                     {/* Filter Icon */}
                     {enableFilters && !isRowIndex && (
                       <div
-                        // Only show filter icon on hover (no layout space taken)
-                        className={`absolute right-1 top-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto ${
-                          compact ? 'scale-90 origin-right' : ''
-                        }`}
+                        className={`absolute right-1 top-1/2 -translate-y-1/2 transition-opacity ${
+                          hasFilter ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'
+                        } ${compact ? 'scale-90 origin-right' : ''}`}
                       >
                         {isNumeric ? (
                           <RangeFilter

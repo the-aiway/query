@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 
 import type { ColumnOption } from './Datasource';
 import { useQT } from './QueryTableContext';
-import { buildWhereClause, quoteIdent, type FiltersState } from './sqlUtils';
+import { buildWhereClause, quoteIdent, isSetFilter, type FiltersState } from './sqlUtils';
 
 import { Input } from '../ui/Input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
@@ -117,7 +117,7 @@ export function OptionsFilter({
   const optionsTotal = data?.total ?? 1;
 
   const selectedKeys = useMemo(() => {
-    if (filterValue?.type === 'set') return new Set(filterValue.values);
+    if (filterValue && isSetFilter(filterValue)) return new Set(filterValue);
     return new Set<string>();
   }, [filterValue]);
 
@@ -128,14 +128,14 @@ export function OptionsFilter({
           type="button"
           className={`relative h-6 w-6 inline-flex items-center justify-center rounded border border-border bg-background/40 backdrop-blur hover:bg-background/60 ${triggerClassName ?? ''}`}
           title={
-            filterValue?.type === 'set' ? `Filter (${filterValue.values.length})` : 'Filter values'
+            filterValue && isSetFilter(filterValue) ? `Filter (${filterValue.length})` : 'Filter values'
           }
           onClick={(e) => e.stopPropagation()}
         >
           {icon}
-          {filterValue && (
+          {filterValue && isSetFilter(filterValue) && filterValue.length > 0 && (
             <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-mono leading-4 text-center">
-              {filterValue.type === 'set' ? filterValue.values.length : 'R'}
+              {filterValue.length}
             </span>
           )}
         </button>
@@ -151,7 +151,7 @@ export function OptionsFilter({
           <div className="min-w-0">
             <div className="text-xs font-mono font-semibold truncate">{col}</div>
             <div className="mt-1 text-[10px] font-mono text-muted-foreground">
-              {filterValue?.type === 'set' ? `${filterValue.values.length} selected` : 'no filter'}
+              {filterValue && isSetFilter(filterValue) ? `${filterValue.length} selected` : 'no filter'}
             </div>
           </div>
 
@@ -159,7 +159,7 @@ export function OptionsFilter({
             <button
               type="button"
               className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono"
-              onClick={() => onChangeFilter(col, { type: 'set', values: options.map((o) => o.key) })}
+              onClick={() => onChangeFilter(col, options.map((o) => o.key))}
               title="Select all (loaded options)"
               disabled={options.length === 0}
             >
@@ -168,7 +168,7 @@ export function OptionsFilter({
             <button
               type="button"
               className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono"
-              onClick={() => onChangeFilter(col, { type: 'set', values: [] })}
+              onClick={() => onChangeFilter(col, [])}
               title="Select none"
             >
               none
@@ -202,7 +202,7 @@ export function OptionsFilter({
               <button
                 type="button"
                 className="h-8 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono"
-                onClick={() => onChangeFilter(col, { type: 'set', values: ['__NULL__'] })}
+                onClick={() => onChangeFilter(col, ['__NULL__'])}
                 title="Only (null)"
               >
                 (null)
@@ -227,7 +227,7 @@ export function OptionsFilter({
                         const next = new Set(selectedKeys);
                         if (checked) next.delete(opt.key);
                         else next.add(opt.key);
-                        onChangeFilter(col, { type: 'set', values: Array.from(next) });
+                        onChangeFilter(col, Array.from(next));
                       }}
                     >
                       <div className="pt-0.5">
