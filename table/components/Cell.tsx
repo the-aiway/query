@@ -67,18 +67,18 @@ export function formatCell(value: unknown, type: string, colName: string) {
   if (value === null || value === undefined) return '';
   if (type.match(/date/im) && typeof value === 'number' && !isNaN(value)) {
     // Only return date part for display in pill, not full ISO
-    return new Date(value).toISOString().slice(0, 10);
+    return new Date(value).toISOString()?.slice(0, 10);
   }
   if (typeof value === 'bigint') return value.toString();
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (value instanceof Date) return value.toISOString()?.slice(0, 10);
   if (typeof value === 'string') return value;
   if (colName === 'id') return (value as string).toString();
   if (typeof value === 'number') {
-    if (value > 1_000_000) {
-      return Math.round(value / 1000) + 'k';
+    if (value > 100_000) {
+      return Intl.NumberFormat('fr-CH', { maximumFractionDigits: 2, notation: 'compact' }).format(value)
     }
     return Number.isFinite(value)
-      ? value.toLocaleString('fr-FR', { maximumFractionDigits: 2 }).replace(/\u00a0/g, ' ')
+      ? Intl.NumberFormat('fr-CH', { maximumFractionDigits: 2 }).format(value)
       : '';
   }
   if (typeof value === 'boolean') return value ? 'true' : 'false';
@@ -301,7 +301,7 @@ export function Cell({
           onClick={(e) => handleCopy(e, rawValue)}
         >
           <Hash className="h-2.5 w-2.5 opacity-50" />
-          {rawValue.slice(-6)}
+          {String(rawValue)?.slice(-6) ?? ''}
 
           {/* Feedback overlay with CSS animation */}
           <span className="absolute inset-0 flex items-center justify-center bg-black/90 text-white text-[10px] font-bold rounded opacity-0 pointer-events-none [button[data-copied='true']_&]:opacity-100 [button[data-copied='true']_&]:animate-fadeOut" />

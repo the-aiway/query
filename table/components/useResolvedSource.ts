@@ -1,22 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { tableFromJSON, Table } from 'apache-arrow';
-import { type QueryRef, getCoordinator } from '../../react/reducks';
+import { type QueryRef } from '../../react/reducks';
 import type { ConnectionPool } from '../../duck/ConnectionPool';
-
-// --- Helpers ---
+import { normalizeSelectSql } from './sqlUtils';
 
 let tableCounter = 0;
 function getNextTableName() {
-  return `_dt_${++tableCounter}_${Math.random().toString(36).slice(2, 7)}`;
+  return `_qt_${++tableCounter}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
 const isQueryRef = (v: unknown): v is QueryRef =>
   !!v && typeof v === 'object' && '_type' in v && '_id' in v;
 
-// --- Hook ---
-
 export type ResolvedSource = {
   sql: string | null;
+  originalSql: string | null;
   params?: unknown[];
   entry?: QueryRef;
   loading: boolean;
@@ -27,15 +25,60 @@ export function useResolvedSource(
   tableInput: string | Record<string, unknown>[] | Table | QueryRef | null | undefined,
   pool: ConnectionPool,
 ): ResolvedSource {
-  // 1. Resolve entry sources to flat SQL
-  const entryResolvedSql = useMemo<string | null>(() => {
+  const entry = isQueryRef(tableInput) ? tableInput : undefined;
+
+  const tableRefSql = useMemo(() => {
     if (!isQueryRef(tableInput)) return null;
     if (tableInput._status !== 'ready') return null;
-    const coordinator = getCoordinator(pool);
-    return coordinator.resolveEntryAsSql(tableInput);
-  }, [tableInput, pool]);
+    if (tableInput._type === 'table' && tableInput._path) {
+      return `SELECT * FROM '${tableInput._path}'`;
+    }
+    return null;
+  }, [tableInput]);
 
-  // 2. Handle data/arrow registration (insert into temp DuckDB table)
+  const sqlToMaterialize = useMemo(() => {
+    if (typeof tableInput === 'string' && tableInput.trim()) {
+      return normalizeSelectSql(tableInput);
+    }
+    if (isQueryRef(tableInput) && tableInput._status === 'ready' && tableInput._type === 'fragment') {
+      return tableInput._query;
+    }
+    return null;
+  }, [tableInput]);
+
+  const [materialized, setMaterialized] = useState<{ baseSql: string } | null>(null);
+
+  useEffect(() => {
+    if (!sqlToMaterialize) {
+      setMaterialized(null);
+      return;
+    }
+
+    let cancelled = false;
+    const name = getNextTableName();
+    const path = `opfs://${name}.parquet`;
+
+    (async () => {
+      try {
+        await pool.db.registerOPFSFileName(path);
+        await pool.queryIPCTable(`COPY (${sqlToMaterialize}) TO '${path}' (FORMAT PARQUET)`);
+        if (!cancelled) {
+          setMaterialized({ baseSql: `SELECT * FROM '${path}'` });
+        }
+      } catch (err) {
+        console.error('[QueryTable] Materialization failed, using raw SQL:', err);
+        if (!cancelled) {
+          setMaterialized({ baseSql: sqlToMaterialize });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      pool.db.dropFile(path).catch(() => {});
+    };
+  }, [sqlToMaterialize, pool]);
+
   const [registered, setRegistered] = useState<{ sql: string } | null>(null);
 
   useEffect(() => {
@@ -77,24 +120,33 @@ export function useResolvedSource(
     };
   }, [tableInput, pool]);
 
-  // 3. Derive final result
-  const entry = isQueryRef(tableInput) ? tableInput : undefined;
-  const isEntryLoading = isQueryRef(tableInput) && !entryResolvedSql;
-  const isDataLoading = (Array.isArray(tableInput) || tableInput instanceof Table) && !registered;
+  const originalSql = useMemo(() => {
+    if (typeof tableInput === 'string') return tableInput;
+    if (isQueryRef(tableInput)) return tableInput._query;
+    return null;
+  }, [tableInput]);
 
-  if (isEntryLoading) {
-    return { sql: null, entry, loading: true, loadingMessage: 'waiting for data...' };
+  if (isQueryRef(tableInput) && tableInput._status !== 'ready') {
+    return { sql: null, originalSql: null, entry, loading: true, loadingMessage: 'waiting for data...' };
   }
 
-  if (isDataLoading) {
-    return { sql: null, loading: true, loadingMessage: 'registering data...' };
+  if (tableRefSql) {
+    return { sql: tableRefSql, originalSql, entry, loading: false };
   }
 
-  const sql = typeof tableInput === 'string'
-    ? tableInput
-    : isQueryRef(tableInput)
-      ? entryResolvedSql
-      : registered?.sql ?? null;
+  if (sqlToMaterialize) {
+    if (!materialized) {
+      return { sql: null, originalSql, entry, loading: true, loadingMessage: 'materializing...' };
+    }
+    return { sql: materialized.baseSql, originalSql, entry, loading: false };
+  }
 
-  return { sql: sql ?? null, entry, loading: false };
+  if (Array.isArray(tableInput) || tableInput instanceof Table) {
+    if (!registered) {
+      return { sql: null, originalSql: null, loading: true, loadingMessage: 'registering data...' };
+    }
+    return { sql: registered.sql, originalSql: registered.sql, loading: false };
+  }
+
+  return { sql: null, originalSql: null, loading: false };
 }

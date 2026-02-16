@@ -2,7 +2,7 @@ import { useQueries } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { type Vector, Table } from 'apache-arrow';
 import { Database, Loader2, AlertCircle } from 'lucide-react';
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 
 import { Cell } from './components/Cell';
 import { getTableDataPageQueryOptions } from './components/Datasource';
@@ -208,7 +208,8 @@ export function QueryTable({
   const { pool: contextPool } = useDuckDB();
   const pool = poolProp ?? contextPool;
 
-  const resolved = useResolvedSource(tableInput, pool);
+  const [editedSql, setEditedSql] = useState<string | null>(null);
+  const resolved = useResolvedSource(editedSql ?? tableInput, pool);
 
   if (resolved.loading) {
     return <LoadingCard message={resolved.loadingMessage} />;
@@ -220,9 +221,11 @@ export function QueryTable({
     <QueryTableProvider
       key={resolved.sql}
       initSql={resolved.sql}
+      initOriginalSql={resolved.originalSql ?? undefined}
       entry={resolved.entry}
       params={resolved.params}
       pool={pool}
+      onEditSql={setEditedSql}
       {...props}
     >
       <QueryTableInternal height={height} rowHeight={rowHeight} overscan={overscan} />
