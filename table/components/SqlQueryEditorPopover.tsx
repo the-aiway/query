@@ -26,7 +26,7 @@ export function SqlQueryEditorPopover({
 
   const toFormattedSql = useCallback((inputSql: string) => {
     try {
-      return format(inputSql, { language: 'sql' });
+      return format(inputSql, { language: 'sql' , dialect: 'duckdb' });
     } catch {
       return inputSql;
     }

@@ -97,7 +97,7 @@ export function useTableCount(opts: QueryBase) {
   const parts = useQueryParts({ ...opts, fieldNames: [] });
 
   return useQuery({
-    queryKey: ['duckdb', 'count', parts.baseSql, parts.fullParams],
+    queryKey: ['duckdb', 'count', parts.baseSql, JSON.stringify(parts.fullParams)],
     queryFn: async () => {
       const q = `
         WITH base AS (${parts.baseSql})
@@ -105,8 +105,8 @@ export function useTableCount(opts: QueryBase) {
         FROM base
         ${parts.whereClause}
       ` as const;
-      const rows = await pool.query(q, parts.fullParams);
-      return Number(rows[0]?.c ?? 0);
+        const rows = await pool.query(q, parts.fullParams);
+        return Number(rows[0]?.c ?? 0);
     },
     enabled: !!parts.baseSql,
     placeholderData: keepPreviousData,

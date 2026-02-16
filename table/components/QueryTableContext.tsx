@@ -52,6 +52,7 @@ export type QueryTableProps = {
   pool?: ReturnType<typeof useDuckDB>['pool'];
   showRowNumbers?: boolean;
   onClose?: () => void;
+  title?: string;
 };
 
 const COL_DEFAULT_WIDTH = 140;
@@ -62,6 +63,7 @@ const ESTIMATE_PADDING_PX = 32;
 
 function useQueryTableState({
   initSql,
+  initOriginalSql,
   entry,
   params,
   pool,
@@ -73,22 +75,27 @@ function useQueryTableState({
   getRowClassName,
   renderCell,
   onClose,
+  onEditSql,
   title,
 }: {
-  title: string,
+  title?: string,
   initSql: string;
+  initOriginalSql?: string;
+  onEditSql?: (sql: string) => void;
   entry?: QueryRef;
   params?: unknown[];
   pool: ReturnType<typeof useDuckDB>['pool'];
 } & Omit<QueryTableProps, 'table' | 'pool' | 'height' | 'rowHeight' | 'overscan'>) {
   const [sql, setSql] = useState(initSql);
+  const [originalSql, setOriginalSql] = useState(initOriginalSql ?? initSql);
   const lastInitSqlRef = useRef(initSql);
 
   useEffect(() => {
     if (lastInitSqlRef.current === initSql) return;
     lastInitSqlRef.current = initSql;
     setSql(initSql);
-  }, [initSql]);
+    setOriginalSql(initOriginalSql ?? initSql);
+  }, [initSql, initOriginalSql]);
 
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
@@ -231,7 +238,14 @@ function useQueryTableState({
     }
   }, [sql, fieldNames, columnSizes, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, columnVisibility]);
 
-  const onSaveSql = useCallback((nextSql: string) => setSql(nextSql), []);
+  const onSaveSql = useCallback((nextSql: string) => {
+    if (onEditSql) {
+      onEditSql(nextSql);
+    } else {
+      setSql(nextSql);
+      setOriginalSql(nextSql);
+    }
+  }, [onEditSql]);
 
   const fieldNamesForGlobal = useMemo(
     () => (globalFilter.trim() ? fieldNames : []),
@@ -246,10 +260,11 @@ function useQueryTableState({
 
   const globalFilterActive = !!globalFilter.trim();
   const totalFilterCount = (globalFilterActive ? 1 : 0) + activeColumnFilters.length;
-
+  // console.log({schemaQuery, countQuery})
   return {
     pool,
     sql,
+    originalSql,
     params,
     entry,
     schema,
@@ -319,6 +334,8 @@ export function QueryTableProvider({
 }: {
   children: ReactNode;
   initSql: string;
+  initOriginalSql?: string;
+  onEditSql?: (sql: string) => void;
   entry?: QueryRef;
   params?: unknown[];
   pool: ReturnType<typeof useDuckDB>['pool'];
