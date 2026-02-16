@@ -1,4 +1,3 @@
-import JSONCrush from 'jsoncrush';
 
 export type FilterValue = string[] | { $between: [number, number] };
 export type FiltersState = Record<string, FilterValue>;
@@ -33,24 +32,9 @@ export function serializeQTUrlState(
 
   if (Object.keys(state).length === 0) return null;
 
-  return JSONCrush.crush(JSON.stringify(state));
+  return JSON.stringify(state);
 }
 
-function uncrushed(raw: string): Record<string, unknown> | null {
-  let json: string;
-  try {
-    json = JSONCrush.uncrush(raw);
-  } catch {
-    json = raw;
-  }
-  try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 export function parseQTUrlState(raw: string | null): {
   sorting: { id: string; desc: boolean }[];
@@ -61,7 +45,7 @@ export function parseQTUrlState(raw: string | null): {
   const defaults = { sorting: [] as { id: string; desc: boolean }[], filters: {} as FiltersState, globalFilter: '', customSql: null as string | null };
   if (!raw) return defaults;
 
-  const parsed = uncrushed(raw);
+  const parsed = JSON.parse(raw);
   if (!parsed) return defaults;
 
   const sorting: { id: string; desc: boolean }[] = [];
