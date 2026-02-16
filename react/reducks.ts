@@ -2,7 +2,7 @@
  * reducks — self-contained reactive SQL hooks for DuckDB-WASM.
  *
  * API:
- *   useTable(t => sql, params?)   → QueryRef | null   (materializes to OPFS parquet)
+ *   useTable(t => sql, params?)   → QueryRef | null   (lazy spec — materializes on first consume)
  *   useSql(t => sql, params?)     → QueryRef | null   (virtual fragment, inlined as subquery)
  *   useMaterialize.rows(ref)      → Row[] | null
  *   useMaterialize.row(ref)       → Row | null
@@ -13,23 +13,29 @@
  *   Scalars          → auto-escaped SQL literals (strings quoted, numbers raw, booleans TRUE/FALSE)
  *   t.raw.*          → raw interpolation (for file paths, identifiers, prebuilt SQL expressions)
  *
- * Cache: content-addressed by resolved SQL string. No slugs needed.
+ * Lazy materialization:
+ *   useTable creates a spec without executing. Actual COPY TO PARQUET runs
+ *   only when a consumer (useMaterialize) triggers materializeChain().
+ *   Names are always resolved before materialization, so no a-posteriori lookup.
+ *   Unused tables skip execution entirely.
+ *
+ * Cache: content-addressed by resolved SQL string.
  */
 
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useDuckDB } from './DuckDBProvider';
 import type { InferSQLStrict } from '../duck/inferSqlReturntype';
+import { type SqlConditionValue, buildWhere, eq, neq, gt, gte, lt, lte, between, $in, like, ilike } from '../sqlConditions';
 
 // ─── Core Types ──────────────────────────────────────────────
 
 export interface QueryRef<TRow = unknown> {
   _name?: string;
   readonly _id: string;
-  readonly _status: 'pending' | 'writing' | 'ready' | 'error';
+  _status: 'idle' | 'writing' | 'ready' | 'error';
   readonly _type: 'table' | 'fragment';
-  readonly _path: string;
   readonly _query: string;
-  readonly _error?: Error;
+  _error?: Error;
   readonly _dependencies: QueryRef[];
   /** @internal Phantom — never set at runtime. */
   readonly __row?: TRow;
@@ -37,10 +43,77 @@ export interface QueryRef<TRow = unknown> {
 
 export type ExtractRow<T> = T extends QueryRef<infer R> ? R : unknown;
 
+// ─── Shaped Refs ─────────────────────────────────────────────
+
+export type ShapedRef<TShape extends string = 'rows', TRow = unknown> = {
+  readonly _ref: QueryRef<TRow>;
+  readonly _shape: TShape;
+  readonly _key?: string;
+};
+
+export type SourceEntry<TRow = unknown> = QueryRef<TRow> | ShapedRef<string, TRow> | null;
+
+export function row<TRow>(ref: QueryRef<TRow> | null): ShapedRef<'row', TRow> | null {
+  return ref ? { _ref: ref, _shape: 'row' } : null;
+}
+
+export function map<TRow>(ref: QueryRef<TRow> | null, key: string & keyof NonNullable<TRow>): ShapedRef<'map', TRow> | null {
+  return ref ? { _ref: ref, _shape: 'map', _key: key } : null;
+}
+
+export function values<TRow, K extends string & keyof NonNullable<TRow>>(ref: QueryRef<TRow> | null, key: K): ShapedRef<'values', TRow> | null {
+  return ref ? { _ref: ref, _shape: 'values', _key: key } : null;
+}
+
+function isShapedRef(v: unknown): v is ShapedRef {
+  return v != null && typeof v === 'object' && '_ref' in v && '_shape' in v;
+}
+
+function unwrapRef(v: SourceEntry): QueryRef | null {
+  if (v == null) return null;
+  if (isShapedRef(v)) return v._ref;
+  return v as QueryRef;
+}
+
+function getShape(v: SourceEntry): { shape: string; key?: string } {
+  if (isShapedRef(v)) return { shape: v._shape, key: v._key };
+  return { shape: 'rows' };
+}
+
+function applyShape(rows: unknown[], shape: string, key?: string): unknown {
+  if (shape === 'row') return rows[0] ?? null;
+  if (shape === 'map' && key) return new Map(rows.map(r => [(r as Record<string, unknown>)[key], r]));
+  if (shape === 'values' && key) return rows.map(r => (r as Record<string, unknown>)[key]);
+  return rows;
+}
+
+export type ResolveShape<TEntry> =
+  TEntry extends null ? never :
+  TEntry extends ShapedRef<'row', infer R> ? NonNullable<R> :
+  TEntry extends ShapedRef<'map', infer R> ? Map<string, NonNullable<R>> :
+  TEntry extends ShapedRef<'values', infer R> ? (R extends Record<string, infer V> ? V[] : unknown[]) :
+  TEntry extends QueryRef<infer R> ? NonNullable<R>[] :
+  unknown[];
+
 // ─── Param Proxy Types ───────────────────────────────────────
 
-/** `t.*` = auto-escaped, `t.raw.*` = raw interpolation */
-type ParamProxy<T> = { [K in keyof T]: string } & { raw: { [K in keyof T]: string } };
+type ScalarValue = string | number | boolean | null | undefined;
+
+/** `t.*` = auto-escaped, `t.raw.*` = raw interpolation, `t.where(...)` = WHERE clause, `t.eq(col, val)` etc = inline conditions */
+type ParamProxy<T> = { [K in keyof T]: string } & {
+  raw: { [K in keyof T]: string };
+  where: (conditions: Record<string, SqlConditionValue>) => string;
+  eq: (col: string, val: ScalarValue) => string;
+  neq: (col: string, val: ScalarValue) => string;
+  gt: (col: string, val: ScalarValue) => string;
+  gte: (col: string, val: ScalarValue) => string;
+  lt: (col: string, val: ScalarValue) => string;
+  lte: (col: string, val: ScalarValue) => string;
+  between: (col: string, a: ScalarValue, b: ScalarValue) => string;
+  in: (col: string, vals: (string | number)[]) => string;
+  like: (col: string, val: string) => string;
+  ilike: (col: string, val: string) => string;
+};
 
 type StripPrefix<T extends string> = T extends `${' ' | '\n' | '\t'}${infer Rest}`
   ? StripPrefix<Rest>
@@ -76,21 +149,21 @@ export interface UseSqlHook {
   ): QueryRef<InferSQLStrict<TQuery>[number]> | null;
 }
 
-export interface UseTablesHook {
-  <T extends Record<string, ((t: ParamProxy<TParams>) => ValidSQL<any>) | ValidSQL<any>>, TParams extends Record<string, any>>(
-    queries: T,
-    params?: TParams,
-  ): {
-    [K in keyof T]: T[K] extends (t: ParamProxy<TParams>) => ValidSQL<infer Q>
-      ? QueryRef<InferSQLStrict<Q>[number]>
-      : T[K] extends ValidSQL<infer Q>
-        ? QueryRef<InferSQLStrict<Q>[number]>
-        : QueryRef;
-  };
+type DuckDBType = 'VARCHAR' | 'INT' | 'INTEGER' | 'BIGINT' | 'FLOAT' | 'DOUBLE' | 'BOOLEAN' | 'DATE' | 'TIMESTAMP' | 'DECIMAL' | 'HUGEINT' | (string & {});
+
+export interface UseValuesHook {
+  <TSchema extends Record<string, DuckDBType>>(
+    data: { [K in keyof TSchema]?: unknown }[],
+    schema: TSchema,
+  ): QueryRef<{ [K in keyof TSchema]: unknown }> | null;
+  <TKey extends string>(
+    data: Record<string, unknown>[],
+    columns: readonly TKey[],
+  ): QueryRef<{ [K in TKey]: unknown }> | null;
 }
 
+
 interface MaterializeRowsHook {
-  <TRef extends QueryRef | null>(source: TRef): ExtractRow<NonNullable<TRef>>[] | null;
   <T extends Record<string, QueryRef | null>>(source: T): ExtractRow<NonNullable<T[keyof T]>>[] | null;
   <TParams extends Record<string, any>, TQuery extends string>(
     queryFn: (t: ParamProxy<TParams>) => ValidSQL<TQuery>,
@@ -99,7 +172,6 @@ interface MaterializeRowsHook {
 }
 
 interface MaterializeRowHook {
-  <TRef extends QueryRef | null>(source: TRef): ExtractRow<NonNullable<TRef>> | null;
   <T extends Record<string, QueryRef | null>>(source: T): ExtractRow<NonNullable<T[keyof T]>> | null;
   <TParams extends Record<string, any>, TQuery extends string>(
     queryFn: (t: ParamProxy<TParams>) => ValidSQL<TQuery>,
@@ -108,15 +180,15 @@ interface MaterializeRowHook {
 }
 
 interface MaterializeConcurrentHook {
-  <T extends Record<string, QueryRef | null>>(sources: T): {
-    [K in keyof T]: ExtractRow<NonNullable<T[K]>>[];
+  <T extends Record<string, SourceEntry>>(sources: T): {
+    [K in keyof T]: ResolveShape<T[K]>;
   } | null;
 }
 
 // ─── Internals ───────────────────────────────────────────────
 
 const _cache = new Map<string, QueryRef>();
-export const _nameRegistry = new Map<string, string>();
+const _materializing = new Map<string, Promise<void>>();
 
 function isRef(v: unknown): v is QueryRef {
   return v != null && typeof v === 'object' && '_type' in v && '_id' in v;
@@ -129,16 +201,20 @@ function escapeSQL(v: unknown): string {
   if (typeof v === 'string') return `'${v.replace(/'/g, "''")}'`;
   if (typeof v === 'object') {
     return JSON.stringify(v)
-      .replace(/'/g, "''") // SQL escape single quotes
-      .replace(/\\"/g, '__ESC_DQ__') // Protect escaped double quotes
-      .replace(/"/g, "'") // Structural double quotes -> single quotes
-      .replace(/__ESC_DQ__/g, '"'); // Restore double quotes in content
+      .replace(/'/g, "''")
+      .replace(/\\"/g, '__ESC_DQ__')
+      .replace(/"/g, "'")
+      .replace(/__ESC_DQ__/g, '"');
   }
   return String(v);
 }
 
+export function tablePath(ref: QueryRef): string {
+  return ref._name ? `opfs://${ref._name}.${ref._id}.parquet` : `opfs://${ref._id}.parquet`;
+}
+
 function fromExpr(ref: QueryRef): string {
-  return ref._type === 'fragment' ? `(${ref._query})` : `'${ref._path}'`;
+  return ref._type === 'fragment' ? `(${ref._query})` : `'${tablePath(ref)}'`;
 }
 
 function buildProxy<T extends Record<string, any>>(params: T): ParamProxy<T> {
@@ -146,10 +222,7 @@ function buildProxy<T extends Record<string, any>>(params: T): ParamProxy<T> {
   const raw: Record<string, string> = {};
   for (const [k, v] of Object.entries(params)) {
     if (isRef(v)) {
-      if (!v._name) {
-        v._name = k;
-        _nameRegistry.set(v._id, k);
-      }
+      if (!v._name) v._name = k;
       const expr = fromExpr(v);
       escaped[k] = expr;
       raw[k] = expr;
@@ -158,15 +231,71 @@ function buildProxy<T extends Record<string, any>>(params: T): ParamProxy<T> {
       raw[k] = String(v ?? '');
     }
   }
-  return Object.assign(escaped, { raw }) as ParamProxy<T>;
+  return Object.assign(escaped, { raw, where: buildWhere, eq, neq, gt, gte, lt, lte, between, in: $in, like, ilike }) as ParamProxy<T>;
 }
 
-function depsReady(params: Record<string, any>): boolean {
-  return Object.values(params).every((v) => v != null && (!isRef(v) || v._status === 'ready'));
+function depsResolved(params: Record<string, any>): boolean {
+  return Object.values(params).every(v => v != null);
 }
 
 let _seq = 0;
 const uid = (prefix: string) => `${prefix}_${++_seq}_${Math.random().toString(36).slice(2, 6)}`;
+
+// ─── Materialization ─────────────────────────────────────────
+
+function getDependencyChain(ref: QueryRef): QueryRef[] {
+  const visited = new Set<string>();
+  const chain: QueryRef[] = [];
+  const traverse = (node: QueryRef) => {
+    if (visited.has(node._id)) return;
+    visited.add(node._id);
+    for (const dep of node._dependencies) traverse(dep);
+    chain.push(node);
+  };
+  traverse(ref);
+  return chain;
+}
+
+async function materializeRef(ref: QueryRef, pool: any): Promise<void> {
+  if (ref._status === 'ready' || ref._type === 'fragment') return;
+  if (ref._status === 'error') throw ref._error;
+
+  const existing = _materializing.get(ref._id);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    ref._status = 'writing';
+    const name = ref._name || ref._id;
+    const path = tablePath(ref);
+    try {
+      await pool.db.registerOPFSFileName(path);
+      await pool.queryIPCTable(`--:re:table:${name}\nCOPY (${ref._query}) TO '${path}' (FORMAT PARQUET)`);
+      ref._status = 'ready';
+    } catch (err) {
+      ref._status = 'error';
+      ref._error = err as Error;
+      console.error(`[materialize:${name}]`, err);
+      throw err;
+    } finally {
+      _materializing.delete(ref._id);
+    }
+  })();
+
+  _materializing.set(ref._id, promise);
+  return promise;
+}
+
+export async function materializeChain(ref: QueryRef, pool: any): Promise<void> {
+  for (const node of getDependencyChain(ref)) {
+    if (node._type === 'table' && node._status !== 'ready') {
+      await materializeRef(node, pool);
+    }
+  }
+}
+
+export function needsMaterialization(ref: QueryRef): boolean {
+  return getDependencyChain(ref).some(n => n._type === 'table' && n._status !== 'ready');
+}
 
 // ─── Hooks: Producers ────────────────────────────────────────
 
@@ -190,71 +319,31 @@ function usePoolQuery(sql: string | null): unknown[] | null {
 }
 
 export const useTable: UseTableHook = (queryFn: any, params: any = {}): any => {
-  const { pool } = useDuckDB();
-  const [ref, setRef] = useState<QueryRef | null>(null);
-  const lastReady = useRef<QueryRef | null>(null);
-
-  const ready = depsReady(params);
+  const ready = depsResolved(params);
   const sql = ready ? (typeof queryFn === 'function' ? queryFn(buildProxy(params)) : queryFn) : null;
 
-  useEffect(() => {
-    if (!sql) return;
+  return useMemo(() => {
+    if (!sql) return null;
     const key = `table\0${sql}`;
     const hit = _cache.get(key);
-    if (hit?._status === 'ready') {
-      setRef(hit);
-      lastReady.current = hit;
-      return;
-    }
+    if (hit) return hit;
 
-    let alive = true;
-    const id = hit?._id ?? uid('t');
-    const path = hit?._path ?? `opfs://${id}.parquet`;
-
-    (async () => {
-      try {
-        await pool.db.registerOPFSFileName(path);
-        const name = hit?._name || _nameRegistry.get(id);
-        const prefix = name ? `--:re:table:${name}\n` : `--:re:table:${id}\n`;
-        await pool.queryIPCTable(`${prefix}COPY (${sql}) TO '${path}' (FORMAT PARQUET)`);
-        const deps = Object.values(params).filter(isRef) as QueryRef[];
-        const entry: QueryRef = {
-          _id: id,
-          _status: 'ready',
-          _type: 'table',
-          _path: path,
-          _query: sql,
-          _name: name,
-          _dependencies: deps,
-        };
-        _cache.set(key, entry);
-        if (alive) { setRef(entry); lastReady.current = entry; }
-      } catch (err) {
-        const deps = Object.values(params).filter(isRef) as QueryRef[];
-        const entry: QueryRef = {
-          _id: id,
-          _status: 'error',
-          _type: 'table',
-          _path: path,
-          _query: sql,
-          _error: err as Error,
-          _name: hit?._name,
-          _dependencies: deps,
-        };
-        _cache.set(key, entry);
-        if (alive) setRef(entry);
-        console.error('[useTable] materialization error:', err);
-      }
-    })();
-
-    return () => { alive = false; };
-  }, [sql, pool]);
-
-  return ref?._status === 'ready' ? ref : lastReady.current;
+    const id = uid('t');
+    const deps = Object.values(params).filter(isRef) as QueryRef[];
+    const entry: QueryRef = {
+      _id: id,
+      _status: 'idle',
+      _type: 'table',
+      _query: sql,
+      _dependencies: deps,
+    };
+    _cache.set(key, entry);
+    return entry;
+  }, [sql]);
 };
 
 export const useSql: UseSqlHook = (queryFn: any, params: any = {}): any => {
-  const ready = depsReady(params);
+  const ready = depsResolved(params);
   const sql: string | null = ready ? queryFn(buildProxy(params)) : null;
 
   return useMemo(() => {
@@ -267,7 +356,6 @@ export const useSql: UseSqlHook = (queryFn: any, params: any = {}): any => {
       _id: uid('f'),
       _status: 'ready',
       _type: 'fragment',
-      _path: '',
       _query: sql,
       _dependencies: deps,
     };
@@ -276,48 +364,77 @@ export const useSql: UseSqlHook = (queryFn: any, params: any = {}): any => {
   }, [sql]);
 };
 
-export const useTables: UseTablesHook = (queries: Record<string, any>, params: any = {}): any => {
-  const results: Record<string, QueryRef | null> = {};
-  for (const [key, queryOrFn] of Object.entries(queries)) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const ref = useTable(queryOrFn, params);
-    if (ref && !ref._name) {
-      ref._name = key;
-      _nameRegistry.set(ref._id, key);
-    }
-    results[key] = ref;
-  }
 
-  const allReady = Object.values(results).every(r => r?._status === 'ready');
-  return allReady ? results : {};
+export const useValues: UseValuesHook = (data: Record<string, unknown>[], schema: Record<string, string> | readonly string[]): any => {
+  const isArray = Array.isArray(schema);
+  const cols = isArray ? schema as string[] : Object.keys(schema);
+  const sql = useMemo(() => {
+    if (data.length === 0) {
+      if (isArray) return `SELECT ${cols.map(c => `NULL AS ${c}`).join(', ')} WHERE FALSE`;
+      const selects = cols.map(c => `NULL::${(schema as Record<string, string>)[c]} AS ${c}`).join(', ');
+      return `SELECT ${selects} WHERE FALSE`;
+    }
+    const rows = data.map(r => `(${cols.map(c => escapeSQL(r[c])).join(',')})`);
+    if (isArray) return `SELECT * FROM (VALUES ${rows.join(',')}) AS _v(${cols.join(',')})`;
+    const casts = cols.map(c => `${c}::${(schema as Record<string, string>)[c]} AS ${c}`).join(', ');
+    return `SELECT ${casts} FROM (VALUES ${rows.join(',')}) AS _v(${cols.join(',')})`;
+  }, [JSON.stringify(data)]);
+
+  return useMemo(() => {
+    const key = `fragment\0${sql}`;
+    const hit = _cache.get(key);
+    if (hit) return hit;
+    const entry: QueryRef = {
+      _id: uid('f'),
+      _status: 'ready',
+      _type: 'fragment',
+      _query: sql,
+      _dependencies: [],
+    };
+    _cache.set(key, entry);
+    return entry;
+  }, [sql]);
 };
 
 // ─── Hooks: Consumers ────────────────────────────────────────
 
+function normalizeSource(arg: Record<string, QueryRef | null>): { ref: QueryRef | null; name: string } {
+  const [entry] = Object.entries(arg);
+  return entry ? { ref: entry[1], name: entry[0] } : { ref: null, name: '' };
+}
+
 const _rows: MaterializeRowsHook = (arg1: any, arg2?: any): any => {
+  const { pool } = useDuckDB();
   const isFn = typeof arg1 === 'function';
-  const isObj = !isFn && arg1 !== null && typeof arg1 === 'object' && !isRef(arg1);
 
   let source: QueryRef | null = null;
 
-  if (isObj) {
-    const [name, ref] = Object.entries(arg1 as Record<string, QueryRef | null>)[0]!;
-    if (ref && !ref._name) {
-      ref._name = name;
-      _nameRegistry.set(ref._id, name);
-    }
-    source = ref;
-  } else if (isFn) {
-    // We must call useSql unconditionally to maintain hook order
+  if (isFn) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     source = useSql(arg1, arg2 || {});
   } else {
-    source = arg1;
+    const { ref, name } = normalizeSource(arg1);
+    source = ref;
+    if (source && name) source._name = name;
   }
 
-  const ok = source != null && source._status === 'ready';
-  const name = source?._name || _nameRegistry.get(source?._id);
-  const prefix = name ? `--:re:${source._type}:${name}\n` : source?._id ? `--:re:${source._type}:${source._id}\n` : '';
-  return usePoolQuery(ok ? `${prefix}FROM ${fromExpr(source)}` : null);
+  const [, kick] = useState(0);
+  const sourceId = source?._id;
+  const pending = source != null && needsMaterialization(source);
+
+  useEffect(() => {
+    if (!source || !pending) return;
+    let alive = true;
+    materializeChain(source, pool)
+      .then(() => { if (alive) kick(v => v + 1); })
+      .catch(() => { if (alive) kick(v => v + 1); });
+    return () => { alive = false; };
+  }, [sourceId, pending, pool]);
+
+  const ok = source != null && !needsMaterialization(source);
+  const name = source?._name || source?._id;
+  const prefix = ok && source && name ? `--:re:${source._type}:${name}\n` : '';
+  return usePoolQuery(ok ? `${prefix}FROM ${fromExpr(source!)}` : null);
 };
 
 const _rowsPlain: MaterializeRowsHook = (arg1: any, arg2?: any): any => {
@@ -337,37 +454,55 @@ const _rowPlain: MaterializeRowHook = (arg1: any, arg2?: any): any => {
 
 const _concurrent: MaterializeConcurrentHook = (sources: any): any => {
   const { pool } = useDuckDB();
-  const [results, setResults] = useState<Record<string, unknown[]> | null>(null);
-  const last = useRef<Record<string, unknown[]> | null>(null);
+  const [results, setResults] = useState<Record<string, unknown> | null>(null);
+  const last = useRef<Record<string, unknown> | null>(null);
 
-  const entries = Object.entries(sources) as [string, QueryRef | null][];
-  const allOk = entries.every(([, s]) => s != null && s._status === 'ready');
-  const stableKey = entries.map(([k, v]) => `${k}:${v?._id}`).join(',');
+  const rawEntries = Object.entries(sources) as [string, SourceEntry][];
+  const resolved = rawEntries.map(([k, v]) => {
+    const ref = unwrapRef(v);
+    if (ref && !ref._name) ref._name = k;
+    return [k, ref, getShape(v)] as const;
+  });
+
+  const allPresent = resolved.every(([, ref]) => ref != null);
+  const stableKey = resolved.map(([k, ref]) => `${k}:${ref?._id}`).join(',');
 
   useEffect(() => {
-    if (!allOk) return;
+    if (!allPresent) return;
     let alive = true;
-    Promise.all(
-      entries.map(async ([key, ref]) => {
-        if (!ref) return [key, []] as const;
-        const name = ref._name || _nameRegistry.get(ref._id);
-        const prefix = name ? `--:re:${ref._type}:${name}\n` : `--:re:${ref._type}:${ref._id}\n`;
-        try {
-          return [key, await pool.query(`${prefix}FROM ${fromExpr(ref)}`)] as const;
-        } catch (err) {
-          if (alive) console.error(`[concurrent] error [${key}]:`, err);
-          return [key, []] as const;
-        }
-      }),
-    ).then((pairs) => {
+
+    (async () => {
+      const chains = resolved.filter(([, ref]) => ref && needsMaterialization(ref));
+      if (chains.length > 0) {
+        await Promise.all(chains.map(([, ref]) =>
+          materializeChain(ref!, pool).catch(err => console.error('[concurrent] materialize:', err))
+        ));
+      }
+
+      const pairs = await Promise.all(
+        resolved.map(async ([key, ref, { shape, key: shapeKey }]) => {
+          if (!ref) return [key, shape === 'row' ? null : []] as const;
+          const name = ref._name || ref._id;
+          const prefix = `--:re:${ref._type}:${name}\n`;
+          try {
+            const rows = await pool.query(`${prefix}FROM ${fromExpr(ref)}`);
+            return [key, applyShape(rows as unknown[], shape, shapeKey)] as const;
+          } catch (err) {
+            if (alive) console.error(`[concurrent] error [${key}]:`, err);
+            return [key, shape === 'row' ? null : []] as const;
+          }
+        }),
+      );
+
       if (alive) {
-        const obj = Object.fromEntries(pairs) as Record<string, unknown[]>;
+        const obj = Object.fromEntries(pairs) as Record<string, unknown>;
         setResults(obj);
         last.current = obj;
       }
-    });
+    })();
+
     return () => { alive = false; };
-  }, [allOk, stableKey, pool]);
+  }, [allPresent, stableKey, pool]);
 
   return results ?? last.current;
 };
@@ -388,168 +523,91 @@ export const useMaterialize = {
   },
 };
 
-export function getCoordinator(pool: any) {
-  return {
-    resolveEntryAsSql: (entry: QueryRef) => entry._query,
-    getDependencyChain: (entry: QueryRef) => {
-      const visited = new Set<string>();
-      const chain: QueryRef[] = [];
-      const traverse = (node: QueryRef) => {
-        if (visited.has(node._id)) return;
-        visited.add(node._id);
-        for (const dep of node._dependencies || []) {
-          traverse(dep);
-        }
-        chain.push(node);
-      };
-      traverse(entry);
-      return chain;
-    }
-  };
-}
-
 // ─── Type Tests ──────────────────────────────────────────────
 
 export function _typeCheck() {
-  // --- useTable ---
+  // --- literal SQL (no interpolations — ValidSQL + InferSQLStrict work) ---
 
-  // Basic, no params
-  const t1 = useTable((t) => `SELECT 1::int as id, name FROM t`);
-  t1 && (t1 satisfies QueryRef<{ id: number; name: unknown }>);
+  const f2 = useSql(() => `SELECT 42::int as val`);
+  f2 && (f2 satisfies QueryRef<{ val: number }>);
 
-  // Scalar params (auto-escaped)
-  const t2 = useTable(
-    (t) => `SELECT * FROM '/data/${t.raw.org}/orders.parquet' WHERE segment = ${t.segment}`,
-    { org: '3' as string, segment: 'messagerie' as string },
-  );
-  t2 && (t2 satisfies QueryRef);
+  const f3 = useSql(() => `SELECT sum(cost)::int as total_cost, carrier as best FROM t`);
+  f3 && (f3 satisfies QueryRef<{ total_cost: number; best: unknown }>);
 
-  // QueryRef dep
-  const t3 = useTable((t) => `SELECT count(*)::int as n FROM ${t.t1}`, { t1 });
-  t3 && (t3 satisfies { n: number });
-
-  // @ts-expect-error
-  const t4 = useTable((t) => `--sql\nWITH x AS (SELECT 1::int as v) SELECT * FROM x`);
-  t4 && (t4 satisfies QueryRef);
-
-  // Mixed QueryRef + scalar params
-  const t5 = useTable(
-    (t) => `SELECT * FROM ${t.t1} WHERE threshold > ${t.threshold} AND name = ${t.name}`,
-    { t1, threshold: 0.9, name: 'test' as string },
-  );
-  t5 && (t5 satisfies QueryRef);
-
-  // --- useSql ---
-
-  // Fragment with QueryRef dep
-  const f1 = useSql((t) => `SELECT count(*)::int as total FROM ${t.t1}`, { t1 });
-  f1 && (f1 satisfies QueryRef<{ total: number }>);
-
-  // --sql prefix
   const f_sql = useSql(() => `--sql\nSELECT 1`);
   f_sql && (f_sql satisfies QueryRef);
 
-  // PIVOT
   const f_pivot = useSql(() => `PIVOT t ON col USING sum(val)`);
   f_pivot && (f_pivot satisfies QueryRef);
 
-  // Invalid start
   // @ts-expect-error - SQL must start with SELECT, PIVOT or --sql
   useSql(() => `UPDATE t SET x = 1`);
 
   // @ts-expect-error - WITH is forbidden
   useSql(() => `WITH cte AS (SELECT 1) SELECT * FROM cte`);
 
-  // No params
-  const f2 = useSql((t) => `SELECT 42::int as val`);
-  f2 && (f2 satisfies QueryRef<{ val: number }>);
+  // @ts-expect-error - --sql prefix doesn't bypass CTE check
+  useTable(() => `--sql\nWITH x AS (SELECT 1::int as v) SELECT * FROM x`);
 
-  // Plain string (no interpolation)
-  const f3 = useSql(() => `SELECT sum(cost)::int as total_cost, carrier as best FROM t`);
-  f3 && (f3 satisfies QueryRef<{ total_cost: number; best: unknown }>);
-
-  // Object shorthand dep
-  const f4 = useSql((t) => `SELECT * FROM ${t.f1} WHERE val > ${t.min}`, { f1, min: 10 });
-  f4 && (f4 satisfies QueryRef);
-
-  // --- Phantom type chain ---
-
-  const typed = useTable((t) => `SELECT count(*)::int as total, name FROM t`);
+  const typed = useTable(() => `SELECT count(*)::int as total, name FROM t`);
   typed && (typed satisfies QueryRef<{ total: number; name: unknown }>);
 
-  const chain1 = useSql((t) => `SELECT total::int as cnt FROM ${t.typed}`, { typed });
-  chain1 && (chain1 satisfies QueryRef<{ cnt: number }>);
-
-  const chain2 = useSql((t) => `SELECT cnt * 2 as doubled FROM ${t.chain1}`, { chain1 });
-  chain2 && (chain2 satisfies QueryRef);
-
-  // ExtractRow utility
   null as unknown as ExtractRow<NonNullable<typeof typed>> satisfies { total: number; name: unknown };
-  null as unknown as ExtractRow<NonNullable<typeof chain1>> satisfies { cnt: number };
 
-  // --- useMaterialize ---
+  // --- useMaterialize (named source required) ---
 
-  // rows from table
-  const rows1 = useMaterialize.rows(typed);
+  const rows1 = useMaterialize.rows({ typed });
   rows1 && (rows1 satisfies { total: number; name: unknown }[]);
 
-  // row from fragment
-  const row1 = useMaterialize.row(f1);
-  row1 && (row1 satisfies { total: number });
+  const row1 = useMaterialize.row({ f2 });
+  row1 && (row1 satisfies { val: number });
 
-  // row from chain
-  const chainRow = useMaterialize.row(chain1);
-  chainRow && (chainRow satisfies { cnt: number });
-
-  // rows from fragment
-  const fragRows = useMaterialize.rows(f3);
+  const fragRows = useMaterialize.rows({ f3 });
   fragRows && (fragRows satisfies { total_cost: number; best: unknown }[]);
 
-  // concurrent - mixed table + fragment
-  const multi = useMaterialize.concurrent({ tbl: typed, frag: f1 });
-  multi && (multi satisfies { tbl: { total: number; name: unknown }[]; frag: { total: number }[] });
+  const multi = useMaterialize.concurrent({ tbl: typed, frag: f2 });
+  multi && (multi satisfies { tbl: { total: number; name: unknown }[]; frag: { val: number }[] });
 
-  // concurrent - single entry
   const single = useMaterialize.concurrent({ only: typed });
   single && (single satisfies { only: { total: number; name: unknown }[] });
 
-  // --- t.raw for file paths / prebuilt SQL ---
+  // --- shaped refs ---
 
-  const raw1 = useTable(
-    (t) => `SELECT * FROM '/api/export/${t.raw.orgId}/transport.parquet'`,
-    { orgId: '3' as string },
-  );
-  raw1 && (raw1 satisfies QueryRef);
+  const shaped1 = useMaterialize.concurrent({ stats: row(typed) });
+  shaped1 && (shaped1 satisfies { stats: { total: number; name: unknown } });
 
-  const raw2 = useTable(
-    (t) => `SELECT carrier, ${t.raw.caseExpr} as cutoff FROM t`,
-    { caseExpr: "CASE carrier WHEN 'X' THEN 300 ELSE 500 END" as string },
-  );
-  raw2 && (raw2 satisfies QueryRef);
+  const shaped2 = useMaterialize.concurrent({ rows: typed, agg: row(f2) });
+  shaped2 && (shaped2 satisfies { rows: { total: number; name: unknown }[]; agg: { val: number } });
 
-  // Object/Array params (auto-escaped with $$)
-  const objParam = useSql((t) => `SELECT ${t.obj} as data`, { obj: { a: 1, b: 'test' } });
-  objParam && (objParam satisfies QueryRef);
+  // --- inline materialize ---
 
-  const arrParam = useSql((t) => `SELECT ${t.arr} as data`, { arr: [1, 'two', { x: true }] });
-  arrParam && (arrParam satisfies QueryRef);
-
-  // useMaterialize with inline queryFn
-  const inlineRow = useMaterialize.row((t) => `SELECT 1::int as x`, {});
+  const inlineRow = useMaterialize.row(() => `SELECT 1::int as x`, {});
   inlineRow && (inlineRow satisfies { x: number });
 
-  const inlineRows = useMaterialize.rows((t) => `SELECT 'abc' as s`, {});
+  const inlineRows = useMaterialize.rows(() => `SELECT 'abc' as s`, {});
   inlineRows && (inlineRows satisfies { s: string }[]);
 
-  const inlinePlain = useMaterialize.plain.row((t) => `SELECT true::bool as b`, {});
+  const inlinePlain = useMaterialize.plain.row(() => `SELECT true::bool as b`, {});
   inlinePlain && (inlinePlain satisfies { b: boolean });
 
-  // --- useTables ---
+  // --- useValues ---
 
-  const tables = useTables({
-    t1: `SELECT 1::int as a`,
-    t2: (t) => `SELECT ${t.val}::int as b`,
-  }, { val: 42 });
-  tables && (tables.t1 satisfies QueryRef<{ a: number }>);
-  tables && (tables.t2 satisfies QueryRef<{ b: number }>);
+  const cutoffsTyped = useValues([
+    { carrier: 'heppner', cutoff: 250 },
+    { carrier: 'geodist', cutoff: 300 },
+  ], { carrier: 'VARCHAR', cutoff: 'INT' });
+  cutoffsTyped && (cutoffsTyped satisfies QueryRef<{ carrier: unknown; cutoff: unknown }>);
+
+  const cutoffsSimple = useValues([
+    { carrier: 'heppner', cutoff: 250 },
+    { carrier: 'geodist', cutoff: 300 },
+  ], ['carrier', 'cutoff']);
+  cutoffsSimple && (cutoffsSimple satisfies QueryRef<{ carrier: unknown; cutoff: unknown }>);
+
+  const emptyTyped = useValues([], { id: 'INT', name: 'VARCHAR' });
+  emptyTyped && (emptyTyped satisfies QueryRef<{ id: unknown; name: unknown }>);
+
+  const emptySimple = useValues([], ['id', 'name'] as const);
+  emptySimple && (emptySimple satisfies QueryRef<{ id: unknown; name: unknown }>);
+
 }

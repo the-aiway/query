@@ -108,7 +108,7 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
         opfs: {
           fileHandling: 'auto'
         },
-        path: '/abel.db',
+        // path: 'o',
         useDirectIO: true,
         filesystem: {
           reliableHeadRequests: true,
