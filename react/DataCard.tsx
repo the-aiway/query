@@ -18,6 +18,9 @@ interface ShapeHelpers {
 const shapeHelpers: ShapeHelpers = { row, map, values };
 
 type SourceProp<T extends Record<string, SourceEntry>> = T | ((m: ShapeHelpers) => T);
+const SOURCE_SWITCHER_HEIGHT = 36;
+const TABLE_TOOLBAR_HEIGHT = 42;
+const DEFAULT_TABLE_VIEWPORT_HEIGHT = 240;
 
 interface DataCardComponent {
   <T extends Record<string, SourceEntry>>(props: {
@@ -35,6 +38,11 @@ function unwrapFirstRef(source: Record<string, SourceEntry>): QueryRef | null {
   return '_ref' in first ? first._ref : first;
 }
 
+function unwrapRef(entry: SourceEntry | undefined): QueryRef | null {
+  if (!entry) return null;
+  return '_ref' in entry ? entry._ref : entry;
+}
+
 function DataCardImpl({ source: sourceProp, fallback, children, className }: {
   source: Record<string, SourceEntry> | ((m: ShapeHelpers) => Record<string, SourceEntry>);
   fallback?: ReactNode;
@@ -45,38 +53,87 @@ function DataCardImpl({ source: sourceProp, fallback, children, className }: {
   const [view, setView] = useState<'chart' | 'table'>('chart');
   const contentRef = useRef<HTMLDivElement>(null);
   const savedHeightRef = useRef<number | undefined>(undefined);
+  const savedWidthRef = useRef<number | undefined>(undefined);
 
   const data = useMaterialize.concurrent(source);
   const entries = Object.entries(source);
-  const isSingle = entries.length === 1;
+  const hasSource = entries.length > 0;
   const firstRef = unwrapFirstRef(source);
+  const firstKey = entries[0]?.[0] ?? null;
+  const [selectedSourceKey, setSelectedSourceKey] = useState<string | null>(null);
+  const activeSourceKey = selectedSourceKey && source[selectedSourceKey] ? selectedSourceKey : firstKey;
+  const activeSourceRef = activeSourceKey ? unwrapRef(source[activeSourceKey]) : firstRef;
+  const hasMultipleSources = entries.length > 1;
+  const cardHeight = savedHeightRef.current;
+  const cardWidth = savedWidthRef.current;
+  const tableHeight = cardHeight != null
+    ? cardHeight - TABLE_TOOLBAR_HEIGHT - (hasMultipleSources ? SOURCE_SWITCHER_HEIGHT : 0)
+    : DEFAULT_TABLE_VIEWPORT_HEIGHT;
 
   const handleSwitchToTable = () => {
     if (contentRef.current) {
-      const height = contentRef.current.offsetHeight;
+      const rect = contentRef.current.getBoundingClientRect();
+      const height = Math.round(rect.height);
+      const width = Math.round(rect.width);
       if (height > 0) savedHeightRef.current = height;
+      if (width > 0) savedWidthRef.current = width;
     }
     setView('table');
   };
 
   if (!data) return fallback ?? null;
 
-  if (view === 'table' && isSingle && firstRef) {
+  if (view === 'table' && activeSourceRef) {
     return (
-      <div style={{ height: savedHeightRef.current }} className={className}>
+      <div
+        style={{
+          height: cardHeight,
+          minHeight: cardHeight,
+          maxHeight: cardHeight,
+          width: cardWidth,
+          minWidth: cardWidth,
+          maxWidth: cardWidth,
+        }}
+        className={cn('flex min-h-0 flex-col overflow-hidden', className)}
+      >
         <QueryTable
-          id={firstRef._name || firstRef._id}
-          table={firstRef}
+          id={activeSourceRef._name || activeSourceRef._id}
+          table={activeSourceRef}
           onClose={() => setView('chart')}
-          height={savedHeightRef.current}
+          height={tableHeight}
+          footer={hasMultipleSources ? (
+            <div className="flex items-center gap-1 overflow-x-auto bg-background/95 px-2 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+              {entries.map(([key, entry]) => {
+                const ref = unwrapRef(entry);
+                if (!ref) return null;
+                const active = key === activeSourceKey;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSelectedSourceKey(key)}
+                    className={cn(
+                      'shrink-0 rounded border px-2 py-0.5 text-[9px] font-mono transition-colors',
+                      active
+                        ? 'border-primary/40 bg-primary/10 text-primary'
+                        : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground',
+                    )}
+                    title={ref._name || ref._id}
+                  >
+                    {key}
+                  </button>
+                );
+              })}
+            </div>
+          ) : undefined}
         />
       </div>
     );
   }
 
   return (
-    <div className={cn("relative h-1/5", className)} ref={contentRef}>
-      {isSingle && (
+    <div className={cn('relative', className)} ref={contentRef}>
+      {hasSource && activeSourceRef && (
         <button
           type="button"
           onClick={handleSwitchToTable}

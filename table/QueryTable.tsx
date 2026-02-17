@@ -114,7 +114,6 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
       className="overflow-auto flex-1 min-h-0 min-w-0 bg-background w-full"
       style={{
         height: typeof height === 'number' ? height : undefined,
-        contain: 'size layout paint',
       }}
     >
       <Headers />
@@ -204,6 +203,7 @@ export function QueryTable({
   rowHeight = 28,
   overscan = 12,
   pool: poolProp,
+  footer,
   ...props
 }: QueryTableProps) {
   const { pool: contextPool } = useDuckDB();
@@ -232,7 +232,7 @@ export function QueryTable({
       refreshing={resolved.refreshing}
       {...props}
     >
-      <QueryTableInternal height={height} rowHeight={rowHeight} overscan={overscan} />
+      <QueryTableInternal height={height} rowHeight={rowHeight} overscan={overscan} footer={footer} />
     </QueryTableProvider>
   );
 }
@@ -241,16 +241,18 @@ function QueryTableInternal({
   height,
   rowHeight,
   overscan,
+  footer,
 }: {
   height?: number;
   rowHeight: number;
   overscan: number;
+  footer?: React.ReactNode;
 }) {
   const { isFullscreen, schemaError, countError } = useQT();
 
   const tableContent = (
     <Card
-      className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full min-w-0'} flex flex-col overflow-hidden relative max-w-full flex-1 min-h-80`}
+      className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full min-w-0'} flex flex-col overflow-hidden relative max-w-full flex-1 ${height != null ? 'min-h-0' : 'min-h-80'}`}
     >
       <CardContent className="p-0 flex flex-col min-h-0 min-w-0 flex-1 relative overflow-hidden">
         <QueryTableToolbar />
@@ -260,6 +262,7 @@ function QueryTableInternal({
         ) : (
           <VirtualizedViewport height={height} rowHeight={rowHeight} overscan={overscan} />
         )}
+        {footer ? <div className="shrink-0 border-t border-border/60">{footer}</div> : null}
       </CardContent>
     </Card>
   );
