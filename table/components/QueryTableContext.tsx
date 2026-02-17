@@ -34,8 +34,10 @@ import {
   isRangeFilter,
   serializeQTLayout,
   parseQTLayout,
-  serializeQTUrlState,
-  parseQTUrlState,
+  serializeSort,
+  parseSort,
+  serializeFilters,
+  parseFilters,
 } from './sqlUtils';
 import { useDuckDB } from '../../react/DuckDBProvider';
 import { type QueryRef } from '../../react/reducks';
@@ -64,6 +66,7 @@ export type QueryTableProps = {
   showRowNumbers?: boolean;
   onClose?: () => void;
   title?: string;
+  footer?: ReactNode;
 };
 
 const COL_DEFAULT_WIDTH = 140;
@@ -114,31 +117,26 @@ function useQueryTableState({
     setOriginalSql(initOriginalSql ?? initSql);
   }, [initSql, initOriginalSql]);
 
-  // --- URL state: read once on mount, write back on change ---
-  const urlParamKey = `qt_${id}`;
+  // --- URL state: separate params per concern ---
+  const qsOpts = { shallow: true, history: 'replace' as const };
+  const [rawSort, setRawSort] = useQueryState(`qt_${id}_s`, qsOpts);
+  const [rawFilters, setRawFilters] = useQueryState(`qt_${id}_f`, qsOpts);
+  const [rawQ, setRawQ] = useQueryState(`qt_${id}_q`, qsOpts);
 
-  const [rawUrlParam, setRawUrlParam] = useQueryState(urlParamKey, {
-    shallow: true,
-    history: 'replace',
-    // throttleMs: 500,
-  });
-
-  const initialUrlState = useRef(parseQTUrlState(rawUrlParam));
+  const initSort = useRef(parseSort(rawSort));
+  const initFilters = useRef(parseFilters(rawFilters));
   const isFirstSync = useRef(true);
 
-  const [sorting, setSorting] = useState<SortingState>(initialUrlState.current.sorting);
-  const [globalFilter, setGlobalFilter] = useState(initialUrlState.current.globalFilter);
-  const [columnFilters, setColumnFilters] = useState<FiltersState>(initialUrlState.current.filters);
+  const [sorting, setSorting] = useState<SortingState>(initSort.current);
+  const [globalFilter, setGlobalFilter] = useState(rawQ ?? '');
+  const [columnFilters, setColumnFilters] = useState<FiltersState>(initFilters.current);
 
   useEffect(() => {
-    if (isFirstSync.current) {
-      isFirstSync.current = false;
-      return;
-    }
-
-    const serialized = serializeQTUrlState(sorting, columnFilters, globalFilter);
-    setRawUrlParam(serialized);
-  }, [sorting, columnFilters, globalFilter, setRawUrlParam]);
+    if (isFirstSync.current) { isFirstSync.current = false; return; }
+    setRawSort(serializeSort(sorting));
+    setRawFilters(serializeFilters(columnFilters));
+    setRawQ(globalFilter.trim() || null);
+  }, [sorting, columnFilters, globalFilter, setRawSort, setRawFilters, setRawQ]);
 
   // --- localStorage: column sizing + visibility ---
   const layoutKey = `qt_layout_${id}`;
@@ -292,7 +290,7 @@ function useQueryTableState({
       const effMin = enableFilters ? colMinWidth : Math.min(colMinWidth, 44);
       const effMax = enableFilters ? colMaxWidth : Math.min(colMaxWidth, 110);
 
-      const savedLayout = parseQTLayout(localStorage.getItem(layoutKey), fieldNames);
+      const savedLayout = parseQTLayout(localStorage.getItem(layoutKey));
 
       const newSizing: ColumnSizingState = { ...(savedLayout?.sizing ?? {}) };
       if (showRowNumbers) newSizing['_row_index'] = 60;
@@ -311,7 +309,7 @@ function useQueryTableState({
     }
 
     if (schemaKey && columnSummaries.length > 0 && initializedVisibilityRef.current !== schemaKey) {
-      const savedLayout = parseQTLayout(localStorage.getItem(layoutKey), fieldNames);
+      const savedLayout = parseQTLayout(localStorage.getItem(layoutKey));
       if (savedLayout?.visibility && Object.keys(savedLayout.visibility).length > 0) {
         setColumnVisibility(savedLayout.visibility);
         initializedVisibilityRef.current = schemaKey;
@@ -365,6 +363,7 @@ function useQueryTableState({
   const totalFilterCount = (globalFilterActive ? 1 : 0) + activeColumnFilters.length;
 
   return {
+    id,
     pool,
     sql,
     originalSql,

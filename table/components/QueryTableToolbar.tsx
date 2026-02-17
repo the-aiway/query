@@ -49,6 +49,7 @@ export function QueryTableToolbar() {
     onClearCol,
     clearAllFilters,
     table,
+    columnVisibility,
     isSearchExpanded,
     setIsSearchExpanded,
     searchInputRef,
@@ -58,6 +59,10 @@ export function QueryTableToolbar() {
 
   const searchInputRefInternal = React.useRef<HTMLInputElement>(null);
   const searchInputRefToUse = searchInputRef || searchInputRefInternal;
+  const hiddenColumnCount = React.useMemo(
+    () => Object.values(columnVisibility).filter((isVisible) => isVisible === false).length,
+    [columnVisibility]
+  );
 
   return (
     <div className="px-3 py-2 border-b bg-muted/30 flex items-center gap-3 min-w-0">
@@ -153,7 +158,14 @@ export function QueryTableToolbar() {
 
       <div className="flex items-center gap-2">
         <Popover>
-          <PopoverTrigger asChild><Button variant="ghost" size="sm" className="h-7 w-7 p-0"><Settings2 className="h-3.5 w-3.5" /></Button></PopoverTrigger>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 relative">
+              <Settings2 className="h-3.5 w-3.5" />
+              {hiddenColumnCount > 0 && (
+                <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-orange-500 ring-1 ring-background" />
+              )}
+            </Button>
+          </PopoverTrigger>
           <PopoverContent align="end" className="w-50 p-2">
             <div className="text-xs font-semibold mb-2 text-muted-foreground">Columns</div>
             <ScrollArea className="h-50">
