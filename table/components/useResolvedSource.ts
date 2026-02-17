@@ -159,7 +159,7 @@ export function useResolvedSource(
   } else if (sqlToMaterialize) {
     if (!materialized) {
       if (lastGood.current) return { ...lastGood.current, entry, refreshing: true };
-      result = { sql: null, originalSql, entry, loading: true, loadingMessage: 'materializing...' };
+      result = { sql: null, originalSql, entry, loading: true, loadingMessage: 'Fetching Data...' };
     } else {
       result = { sql: materialized.baseSql, originalSql, entry, loading: false };
     }
