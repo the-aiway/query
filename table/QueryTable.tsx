@@ -9,13 +9,15 @@ import { getTableDataPageQueryOptions } from './components/Datasource';
 import { Headers } from './components/Headers';
 import { QueryTableToolbar } from './components/QueryTableToolbar';
 import { useResolvedSource } from './components/useResolvedSource';
-import { QueryTableProvider, useQT, type QueryTableProps } from './components/QueryTableContext';
+import { QueryTableProvider, useQT, type QueryTableProps, type QueryTableSourceMap } from './components/QueryTableContext';
 
 import { Card, CardContent } from './ui/Card';
 import { useDuckDB } from '../react/DuckDBProvider';
+import { type QueryRef, type SourceEntry } from '../react/reducks';
 
 const PAGE_SIZE = 1000;
 const MAX_VIEWPORT_ROWS = 200;
+const SOURCE_SWITCHER_HEIGHT = 36;
 
 const KEYWORD_RE = /\b(SELECT|FROM|JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|CROSS\s+JOIN|FULL\s+JOIN|LATERAL|WHERE|GROUP\s+BY|ORDER\s+BY|LIMIT|HAVING|UNION|PIVOT|UNPIVOT)\b/gi;
 
@@ -234,6 +236,16 @@ const QueryError = ({ error }: { error: unknown }) => (
 
 // --- Main Components ---
 
+function toQueryRef(entry: SourceEntry | undefined): QueryRef | null {
+  if (!entry) return null;
+  return '_ref' in entry ? entry._ref : entry;
+}
+
+function isNamedSourceMap(input: QueryTableProps['table']): input is QueryTableSourceMap {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || input instanceof Table) return false;
+  return !('_type' in input);
+}
+
 export function QueryTable({
   id,
   table: tableInput,
@@ -248,8 +260,62 @@ export function QueryTable({
   const pool = poolProp ?? contextPool;
 
   const [editedSql, setEditedSql] = useState<string | null>(null);
-  const resolved = useResolvedSource(editedSql ?? tableInput, pool);
-  const resolvedId = id ?? resolved.entry?._id;
+  const [selectedSourceKey, setSelectedSourceKey] = useState<string | null>(null);
+
+  const sourceMap = isNamedSourceMap(tableInput) ? tableInput : null;
+  const sourceEntries = sourceMap
+    ? Object.entries(sourceMap)
+        .map(([key, entry]) => [key, toQueryRef(entry)] as const)
+        .filter(([, ref]) => !!ref)
+    : [];
+  const activeSourceKey = sourceEntries.some(([key]) => key === selectedSourceKey)
+    ? selectedSourceKey
+    : (sourceEntries[0]?.[0] ?? null);
+  const activeSourceRef = activeSourceKey ? (sourceEntries.find(([key]) => key === activeSourceKey)?.[1] ?? null) : null;
+
+  const singleInput = sourceMap ? undefined : tableInput as string | Record<string, unknown>[] | Table | QueryRef | null | undefined;
+  const resolvedInput = editedSql ?? (sourceMap ? activeSourceRef : singleInput);
+  const resolved = useResolvedSource(resolvedInput, pool);
+  const resolvedId = id ?? activeSourceKey ?? resolved.entry?._id;
+  const title = props.title ?? activeSourceKey ?? resolved.entry?._name ?? (resolved.sql ? condenseSql(resolved.sql) : undefined);
+
+  const hasMultipleSources = sourceEntries.length > 1;
+  const sourceTabs = hasMultipleSources ? (
+    <div className="flex items-center gap-1 overflow-x-auto bg-background/95 px-2 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+      {sourceEntries.map(([key, entry]) => {
+        const ref = entry;
+        if (!ref) return null;
+        const active = key === activeSourceKey;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => {
+              setEditedSql(null);
+              setSelectedSourceKey(key);
+            }}
+            className={`shrink-0 rounded border px-2 py-0.5 text-[9px] font-mono transition-colors ${
+              active
+                ? 'border-primary/40 bg-primary/10 text-primary'
+                : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+            }`}
+            title={ref._name || ref._id}
+          >
+            {key}
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
+  const mergedFooter = sourceTabs || footer
+    ? (
+      <div className="flex flex-col">
+        {sourceTabs}
+        {footer}
+      </div>
+    )
+    : undefined;
 
   if (resolved.loading) {
     return <LoadingCard message={resolved.loadingMessage} />;
@@ -257,12 +323,12 @@ export function QueryTable({
 
   if (!resolved.sql) return null;
   if (!resolvedId) {
-    return <QueryError error="QueryTable requires `id` unless `table` is a QueryRef entry." />;
+    return <QueryError error="QueryTable requires `id` unless `table` is a QueryRef entry or a named source map." />;
   }
 
   return (
     <QueryTableProvider
-      key={resolved.sql}
+      key={`${resolvedId}:${resolved.sql}`}
       id={resolvedId}
       initSql={resolved.sql}
       initOriginalSql={resolved.originalSql ?? undefined}
@@ -270,11 +336,17 @@ export function QueryTable({
       params={resolved.params}
       pool={pool}
       onEditSql={setEditedSql}
-      title={props.title ?? resolved.entry?._name ?? condenseSql(resolved.sql)}
+      title={title}
       refreshing={resolved.refreshing}
       {...props}
     >
-      <QueryTableInternal height={height} rowHeight={rowHeight} overscan={overscan} footer={footer} />
+      <QueryTableInternal
+        height={height}
+        rowHeight={rowHeight}
+        overscan={overscan}
+        footer={mergedFooter}
+        footerHeight={hasMultipleSources ? SOURCE_SWITCHER_HEIGHT : 0}
+      />
     </QueryTableProvider>
   );
 }
@@ -284,13 +356,18 @@ function QueryTableInternal({
   rowHeight,
   overscan,
   footer,
+  footerHeight,
 }: {
   height?: number;
   rowHeight: number;
   overscan: number;
   footer?: React.ReactNode;
+  footerHeight?: number;
 }) {
   const { isFullscreen, schemaError, countError } = useQT();
+  const viewportHeight = typeof height === 'number' && footerHeight
+    ? Math.max(120, height - footerHeight)
+    : height;
 
   const tableContent = (
     <Card
@@ -302,7 +379,7 @@ function QueryTableInternal({
         {schemaError || countError ? (
           <QueryError error={schemaError || countError} />
         ) : (
-          <VirtualizedViewport height={height} rowHeight={rowHeight} overscan={overscan} />
+          <VirtualizedViewport height={viewportHeight} rowHeight={rowHeight} overscan={overscan} />
         )}
         {footer ? <div className="shrink-0 border-t border-border/60">{footer}</div> : null}
       </CardContent>
