@@ -40,7 +40,7 @@ import {
   parseFilters,
 } from './sqlUtils';
 import { useDuckDB } from '../../react/DuckDBProvider';
-import { type QueryRef } from '../../react/reducks';
+import { type QueryRef, type SourceEntry } from '../../react/reducks';
 import { useQueryState } from 'nuqs';
 
 type QueryTableCommonProps = {
@@ -68,6 +68,7 @@ type QueryTableCommonProps = {
 };
 
 type QueryTableNonEntryInput = string | Record<string, unknown>[] | Table;
+export type QueryTableSourceMap = Record<string, SourceEntry>;
 
 export type QueryTableProps =
   | (QueryTableCommonProps & {
@@ -81,6 +82,10 @@ export type QueryTableProps =
   | (QueryTableCommonProps & {
       table?: QueryTableNonEntryInput;
       id: string;
+    })
+  | (QueryTableCommonProps & {
+      table: QueryTableSourceMap;
+      id?: string;
     });
 
 const COL_DEFAULT_WIDTH = 140;
