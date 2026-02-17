@@ -32,15 +32,16 @@ export function normalizeSelectSql(sql: string) {
 
   return cleaned;
 }
-
-export function fnv1a32Hex(input: string) {
-  // Small stable hash for cache keys (hex only, safe to inline in SQL strings).
+export function fnv1a32(input: string) {
   let hash = 0x811c9dc5;
   for (let i = 0; i < input.length; i++) {
     hash ^= input.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193);
   }
-  return (hash >>> 0).toString(16).padStart(8, '0');
+  return hash >>> 0;
+}
+export function fnv1a32Hex(input: string) {
+  return fnv1a32(input).toString(16).padStart(8, '0');
 }
 
 export function buildWhereClause(opts: {

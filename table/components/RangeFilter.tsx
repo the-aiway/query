@@ -37,7 +37,7 @@ function useColumnStats(opts: {
     queryFn: async () => {
       if (!opts.baseSql || !opts.col || !opts.open) return null;
 
-      const { whereClause, whereParams } = buildWhereClause({
+      const { whereClause } = buildWhereClause({
         globalFilter: opts.globalFilter,
         fieldNamesForGlobal: opts.fieldNamesForGlobal,
         columnFilters: opts.columnFilters,
@@ -98,8 +98,7 @@ function useColumnStats(opts: {
         ORDER BY bucket
       `;
 
-      const fullParams = [...(opts.params ?? []), ...whereParams];
-      const rows = await opts.pool.query(q, fullParams);
+      const rows = await opts.pool.query(q, opts.params ?? []);
 
       if (rows.length === 0) return null;
 
