@@ -32,6 +32,16 @@ function extractPathSources(sql: string): string[] {
   return [...new Set(paths)];
 }
 
+function extractDirectPathSources(entry: QueryRef): string[] {
+  if (!entry._query) return [];
+  let sql = entry._query;
+  for (const dep of entry._dependencies || []) {
+    if (dep._type !== 'fragment' || !dep._query) continue;
+    sql = sql.split(dep._query).join(' ');
+  }
+  return extractPathSources(sql);
+}
+
 function toDisplaySql(entry: QueryRef): string {
   if (!entry._query) {
     return entry._type === 'table' ? `SELECT * FROM ${entry._name || entry._id}` : '';
@@ -47,7 +57,7 @@ function toDisplaySql(entry: QueryRef): string {
 function buildTree(entry: QueryRef, visited = new Set<string>()): TreeNode {
   const children: TreeNode[] = [];
 
-  const paths = extractPathSources(entry._query || '');
+  const paths = extractDirectPathSources(entry);
   for (const p of paths) {
     children.push({
       id: `path:${p}`,
@@ -256,13 +266,18 @@ export function DependencyTree({ entry, onReplay }: DependencyTreeProps) {
           <GitBranch className="h-3.5 w-3.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
+      <PopoverContent
+        align="start"
+        sideOffset={8}
+        collisionPadding={12}
+        className="w-[min(28rem,calc(100vw-1rem))] max-h-[85vh] overflow-hidden p-0"
+      >
         <div className="border-b border-border bg-muted/30 px-3 py-2 flex items-center justify-between">
           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Dependency Graph
           </span>
         </div>
-        <ScrollArea className="max-h-[400px]">
+        <ScrollArea className="max-h-[min(60vh,420px)]">
           <div className="p-1">
             <TreeNodeRow
               node={tree}
