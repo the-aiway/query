@@ -17,6 +17,36 @@ import { useDuckDB } from '../react/DuckDBProvider';
 const PAGE_SIZE = 1000;
 const MAX_VIEWPORT_ROWS = 200;
 
+const KEYWORD_RE = /\b(SELECT|FROM|JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|CROSS\s+JOIN|FULL\s+JOIN|LATERAL|WHERE|GROUP\s+BY|ORDER\s+BY|LIMIT|HAVING|UNION|PIVOT|UNPIVOT)\b/gi;
+
+function condenseSql(sql: string): string {
+  const cleaned = sql.replace(/--[^\n]*/g, '').replace(/\s+/g, ' ').trim();
+  const parts: string[] = [];
+  let lastIdx = 0;
+
+  for (const m of cleaned.matchAll(KEYWORD_RE)) {
+    const kw = m[0].replace(/\s+/g, ' ').toUpperCase();
+    const between = cleaned.slice(lastIdx, m.index).trim();
+    if (parts.length > 0 && between) parts.push('...');
+    parts.push(kw);
+    lastIdx = m.index! + m[0].length;
+
+    if (kw === 'FROM' || kw.includes('JOIN')) {
+      const after = cleaned.slice(lastIdx).trimStart();
+      const srcMatch = after.match(/^'([^']+)'|^"([^"]+)"|^(\S+)/);
+      if (srcMatch) {
+        const src = srcMatch[1] ?? srcMatch[2] ?? srcMatch[3]!;
+        const short = src.includes('/') ? src.split('/').pop()! : src;
+        parts.push(short);
+        lastIdx += (after.length - after.trimStart().length) + srcMatch[0].length;
+      }
+    }
+  }
+
+  const result = parts.join(' ');
+  return result.length > 80 ? result.slice(0, 77) + '...' : result;
+}
+
 // --- Loading Card ---
 
 const LoadingCard = ({ message }: { message?: string }) => (
@@ -237,7 +267,7 @@ export function QueryTable({
       params={resolved.params}
       pool={pool}
       onEditSql={setEditedSql}
-      title={props.title ?? resolved.entry?._name ?? resolvedId}
+      title={props.title ?? resolved.entry?._name ?? condenseSql(resolved.sql)}
       refreshing={resolved.refreshing}
       {...props}
     >
