@@ -26,7 +26,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { useDuckDB } from './DuckDBProvider';
 import type { InferSQLStrict } from '../duck/inferSqlReturntype';
 import { type SqlConditionValue, buildWhere, eq, neq, gt, gte, lt, lte, between, $in, like, ilike } from '../sqlConditions';
-import type { ConnectionPool } from '#query/duck/ConnectionPool';
+import type { ConnectionPool } from '../duck/ConnectionPool';
 
 // ─── Core Types ──────────────────────────────────────────────
 
