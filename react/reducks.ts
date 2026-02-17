@@ -130,7 +130,7 @@ type ValidSQL<T extends string> = ForbiddenCTE<T> extends `ERROR${string}`
   ? ForbiddenCTE<T>
   : T extends `${' ' | '\n' | '\t'}${infer Rest}`
     ? ValidSQL<Rest>
-    : T extends `${'SELECT' | 'select' | 'PIVOT' | 'pivot' | '--sql' | '--SQL'}${string}`
+    : T extends `${'SELECT' | 'FROM' | 'PIVOT' | '--sql'}${string}`
       ? T
       : "ERROR: SQL must start with SELECT, PIVOT or --sql";
 
