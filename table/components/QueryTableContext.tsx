@@ -43,9 +43,7 @@ import { useDuckDB } from '../../react/DuckDBProvider';
 import { type QueryRef } from '../../react/reducks';
 import { useQueryState } from 'nuqs';
 
-export type QueryTableProps = {
-  id: string;
-  table?: string | Record<string, unknown>[] | QueryRef | Table | null;
+type QueryTableCommonProps = {
   height?: number;
   rowHeight?: number;
   overscan?: number;
@@ -68,6 +66,18 @@ export type QueryTableProps = {
   title?: string;
   footer?: ReactNode;
 };
+
+type QueryTableNonEntryInput = string | Record<string, unknown>[] | Table | null | undefined;
+
+export type QueryTableProps =
+  | (QueryTableCommonProps & {
+      table: QueryRef;
+      id?: string;
+    })
+  | (QueryTableCommonProps & {
+      table?: QueryTableNonEntryInput;
+      id: string;
+    });
 
 const COL_DEFAULT_WIDTH = 140;
 const COL_MIN_WIDTH = 80;

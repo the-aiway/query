@@ -216,24 +216,28 @@ export function QueryTable({
 
   const [editedSql, setEditedSql] = useState<string | null>(null);
   const resolved = useResolvedSource(editedSql ?? tableInput, pool);
+  const resolvedId = id ?? resolved.entry?._id;
 
   if (resolved.loading) {
     return <LoadingCard message={resolved.loadingMessage} />;
   }
 
   if (!resolved.sql) return null;
+  if (!resolvedId) {
+    throw new Error('QueryTable requires `id` unless `table` is a QueryRef entry.');
+  }
 
   return (
     <QueryTableProvider
       key={resolved.sql}
-      id={id}
+      id={resolvedId}
       initSql={resolved.sql}
       initOriginalSql={resolved.originalSql ?? undefined}
       entry={resolved.entry}
       params={resolved.params}
       pool={pool}
       onEditSql={setEditedSql}
-      title={props.title ?? id}
+      title={props.title ?? resolvedId}
       refreshing={resolved.refreshing}
       {...props}
     >
