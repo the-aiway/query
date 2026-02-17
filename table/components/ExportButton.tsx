@@ -13,7 +13,7 @@ import {
 import { useQT } from './QueryTableContext';
 
 export function ExportButton({ disabled }: { disabled?: boolean }) {
-  const { pool, queryParts } = useQT();
+  const { id, pool, queryParts } = useQT();
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleExport = useCallback(
@@ -32,6 +32,7 @@ export function ExportButton({ disabled }: { disabled?: boolean }) {
         `;
 
         const extension = format;
+        const safeId = id.trim().replace(/[^a-zA-Z0-9_-]+/g, '_') || 'table';
         let copyOptions = '(FORMAT CSV, HEADER true)';
         if (format === 'json') copyOptions = '(FORMAT JSON, ARRAY true)';
         else if (format === 'parquet') copyOptions = '(FORMAT PARQUET)';
@@ -63,7 +64,7 @@ export function ExportButton({ disabled }: { disabled?: boolean }) {
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = `export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${extension}`;
+            link.download = `${safeId}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${extension}`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -81,7 +82,7 @@ export function ExportButton({ disabled }: { disabled?: boolean }) {
         setIsDownloading(false);
       }
     },
-    [pool, queryParts.baseSql, queryParts.whereClause, queryParts.fullParams]
+    [id, pool, queryParts.baseSql, queryParts.whereClause, queryParts.fullParams]
   );
 
   return (
