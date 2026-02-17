@@ -35,8 +35,11 @@ function condenseSql(sql: string): string {
       const after = cleaned.slice(lastIdx).trimStart();
       const srcMatch = after.match(/^'([^']+)'|^"([^"]+)"|^(\S+)/);
       if (srcMatch) {
-        const src = srcMatch[1] ?? srcMatch[2] ?? srcMatch[3]!;
-        const short = src.includes('/') ? src.split('/').pop()! : src;
+        const raw = srcMatch[1] ?? srcMatch[2] ?? srcMatch[3]!;
+        const segment = raw.includes('/') ? raw.split('/').pop()! : raw;
+        const short = segment
+          .replace(/\.[tf]_\d+_[a-z0-9]+\.parquet$/, '.parquet')
+          .replace(/^[tf]_\d+_[a-z0-9]+\.parquet$/, 'ref');
         parts.push(short);
         lastIdx += (after.length - after.trimStart().length) + srcMatch[0].length;
       }
