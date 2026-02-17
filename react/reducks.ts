@@ -26,6 +26,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { useDuckDB } from './DuckDBProvider';
 import type { InferSQLStrict } from '../duck/inferSqlReturntype';
 import { type SqlConditionValue, buildWhere, eq, neq, gt, gte, lt, lte, between, $in, like, ilike } from '../sqlConditions';
+import type { ConnectionPool } from '#query/duck/ConnectionPool';
 
 // ─── Core Types ──────────────────────────────────────────────
 
@@ -189,6 +190,19 @@ interface MaterializeConcurrentHook {
 
 const _cache = new Map<string, QueryRef>();
 const _materializing = new Map<string, Promise<void>>();
+const _inflightQueries = new Map<string, Promise<unknown[]>>();
+
+function runSharedQuery(pool: ConnectionPool, sql: string): Promise<unknown[]> {
+  const existing = _inflightQueries.get(sql);
+  if (existing) return existing;
+  const queryPromise = (pool.query(sql) as Promise<unknown[]>).finally(() => {
+    if (_inflightQueries.get(sql) === queryPromise) {
+      _inflightQueries.delete(sql);
+    }
+  });
+  _inflightQueries.set(sql, queryPromise);
+  return queryPromise;
+}
 
 function isRef(v: unknown): v is QueryRef {
   return v != null && typeof v === 'object' && '_type' in v && '_id' in v;
@@ -256,7 +270,7 @@ function getDependencyChain(ref: QueryRef): QueryRef[] {
   return chain;
 }
 
-async function materializeRef(ref: QueryRef, pool: any): Promise<void> {
+async function materializeRef(ref: QueryRef, pool: ConnectionPool): Promise<void> {
   if (ref._status === 'ready' || ref._type === 'fragment') return;
   if (ref._status === 'error') throw ref._error;
 
@@ -307,7 +321,7 @@ function usePoolQuery(sql: string | null): unknown[] | null {
   useEffect(() => {
     if (!sql) return;
     let alive = true;
-    pool.query(sql).then((res: any) => {
+    runSharedQuery(pool, sql).then((res) => {
       if (alive) { setData(res); last.current = res; }
     }).catch((err: unknown) => {
       if (alive) console.error('[reducks] query error:', err);
@@ -485,7 +499,7 @@ const _concurrent: MaterializeConcurrentHook = (sources: any): any => {
           const name = ref._name || ref._id;
           const prefix = `--:re:${ref._type}:${name}\n`;
           try {
-            const rows = await pool.query(`${prefix}FROM ${fromExpr(ref)}`);
+            const rows = await runSharedQuery(pool, `${prefix}FROM ${fromExpr(ref)}`);
             return [key, applyShape(rows as unknown[], shape, shapeKey)] as const;
           } catch (err) {
             if (alive) console.error(`[concurrent] error [${key}]:`, err);
