@@ -1,4 +1,5 @@
 import { type AsyncDuckDB, type Logger, type LogEntryVariant, LogTopic, LogEvent, LogLevel, TokenType } from '@duckdb/duckdb-wasm';
+import type { ConnectionPool } from './ConnectionPool';
 
 const ANSI_RESET = '\x1b[0m';
 const rgbToAnsi = (r: number, g: number, b: number) => `\x1b[38;2;${r};${g};${b}m`;
@@ -41,14 +42,10 @@ function highlightAnsi(query: string, tokens: any): string {
 export class DumpLogger implements Logger {
   private count = 0;
   private level: LogLevel;
-  private tokenizeFn?: AsyncDuckDB['tokenize'];
   private queryStates = new Map<string, any>();
 
   constructor(level: LogLevel = LogLevel.INFO) {
     this.level = level;
-  }
-  public setTokenizer(t: any) {
-    this.tokenizeFn = t;
   }
 
   public log(entry: LogEntryVariant) {
@@ -87,11 +84,13 @@ export class DumpLogger implements Logger {
       let highlighted = cleanSql;
       let previewFmt = '%c' + cleanSql.slice(0, 135);
       let previewArgs = ['color: inherit'];
+      const pool = typeof window === 'undefined' ? undefined : (window as Window & { pool?: ConnectionPool }).pool;
+      const tokenizeFn = pool?.db?.tokenize?.bind(pool.db) as AsyncDuckDB['tokenize'] | undefined;
 
-      if (this.tokenizeFn) {
+      if (tokenizeFn) {
         try {
           const previewSql = cleanSql.slice(0, 120);
-          const [pTokens, fullTokens] = await Promise.all([this.tokenizeFn(previewSql), this.tokenizeFn(state.query)]);
+          const [pTokens, fullTokens] = await Promise.all([tokenizeFn(previewSql), tokenizeFn(state.query)]);
 
           previewFmt = '';
           previewArgs = [];
@@ -102,7 +101,9 @@ export class DumpLogger implements Logger {
           });
 
           highlighted = highlightAnsi(state.query, fullTokens);
-        } catch (e) {}
+        } catch (error) {
+          console.debug('[DumpLogger] Tokenizer unavailable', error);
+        }
       }
 
       const log = event === LogEvent.OK ? console.groupCollapsed : console.group;

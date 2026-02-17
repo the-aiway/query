@@ -1,11 +1,16 @@
-import type { AsyncDuckDB } from '@duckdb/duckdb-wasm';
+import type { AsyncDuckDB, Logger } from '@duckdb/duckdb-wasm';
 import * as DuckDBBrowser from '../dist/duckdb-browser';
 import React, { createContext, useContext, type ReactNode } from 'react';
 
 import { ConnectionPool } from '../duck/ConnectionPool';
-import { DumpLogger } from '../duck/DumpLogger';
 
 const duckdb = DuckDBBrowser as unknown as typeof import('@duckdb/duckdb-wasm') & {};
+
+type DuckDBOpenConfig = Parameters<AsyncDuckDB['open']>[0];
+
+type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends Record<string, unknown> ? DeepPartial<T[K]> : T[K];
+};
 
 export interface DuckDBConfig {
   bundlePath?: string;
@@ -13,6 +18,14 @@ export interface DuckDBConfig {
   maxConnections?: number;
   onInit?: (pool: ConnectionPool) => Promise<void>;
   customHttpHeaders?: Record<string, string>;
+  logger?: Logger;
+  path?: DuckDBOpenConfig['path'];
+  accessMode?: DuckDBOpenConfig['accessMode'];
+  maximumThreads?: DuckDBOpenConfig['maximumThreads'];
+  opfs?: DeepPartial<DuckDBOpenConfig['opfs']>;
+  useDirectIO?: DuckDBOpenConfig['useDirectIO'];
+  filesystem?: DeepPartial<DuckDBOpenConfig['filesystem']>;
+  query?: DeepPartial<DuckDBOpenConfig['query']>;
 }
 
 export interface DBResource {
@@ -23,6 +36,26 @@ export interface DBResource {
 }
 
 const DEFAULT_MAX_CONNECTIONS = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function deepMerge<T extends Record<string, unknown>>(base: T, override: Partial<T>): T {
+  const result: Record<string, unknown> = { ...base };
+  for (const [key, overrideValue] of Object.entries(override)) {
+    if (overrideValue === undefined) {
+      continue;
+    }
+    const baseValue = result[key];
+    if (isObject(baseValue) && isObject(overrideValue)) {
+      result[key] = deepMerge(baseValue, overrideValue);
+      continue;
+    }
+    result[key] = overrideValue;
+  }
+  return result as T;
+}
 
 function resolveBundleBasePath(bundlePath: string) {
   if (bundlePath.startsWith('http://') || bundlePath.startsWith('https://')) {
@@ -88,9 +121,8 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
       debug('[DuckDB] Creating instance...');
       const worker = new Worker(workerUrl);
 
-      const logger = new DumpLogger();
+      const logger = config?.logger ?? new duckdb.VoidLogger();
       const database = new duckdb.AsyncDuckDB(logger, worker);
-      logger.setTokenizer(database.tokenize.bind(database));
 
       // Instantiate with the bundle (pthreadWorker enables multi-threading)
       debug('[DuckDB] Instantiating...', bundle.mainModule);
@@ -102,13 +134,12 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
       debug('[DuckDB] Auth token:', authToken);
 
       debug('[DuckDB] Opening database...');
-      await database.open({
+      const defaultOpenConfig: DuckDBOpenConfig = {
         maximumThreads,
         accessMode: duckdb.DuckDBAccessMode.READ_WRITE,
         opfs: {
           fileHandling: 'auto'
         },
-        // path: 'o',
         useDirectIO: true,
         filesystem: {
           reliableHeadRequests: true,
@@ -120,7 +151,18 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
           castTimestampToDate: true,
           castDecimalToDouble: true,
         },
-      });
+      };
+      const {
+        bundlePath: _bundlePath,
+        debug: _debug,
+        maxConnections: _maxConnections,
+        onInit: _onInit,
+        customHttpHeaders: _customHttpHeaders,
+        logger: _logger,
+        ...openOverrides
+      } = config ?? {};
+      const openConfig = deepMerge(defaultOpenConfig as Record<string, unknown>, openOverrides as Record<string, unknown>) as DuckDBOpenConfig;
+      await database.open(openConfig);
       debug('[DuckDB] Database opened.');
       URL.revokeObjectURL(workerUrl);
       return database;
@@ -128,6 +170,9 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
 
     const database = await createInstance();
     const pool = new ConnectionPool(database, maxConnections);
+    if (typeof window !== 'undefined') {
+      (window as Window & { pool?: ConnectionPool }).pool = pool;
+    }
     await config?.onInit?.(pool);
     const resource = {
       instance: database,
@@ -168,8 +213,6 @@ export function useDuckDB() {
   return context;
 }
 
-import { DuckQueryProvider } from './DuckQueryContext';
-
 export function DuckQueryWasmProvider({
   children,
   ...config
@@ -179,5 +222,5 @@ export function DuckQueryWasmProvider({
   // This will suspend until DB is ready and files are registered
   const resource = dbResource.read(config);
 
-  return React.createElement(DuckDBContext.Provider, { value: resource }, React.createElement(DuckQueryProvider, null, children));
+  return React.createElement(DuckDBContext.Provider, { value: resource }, children);
 }

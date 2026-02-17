@@ -13,4 +13,3 @@ export { DataTable, query, fromJSON, type DataTableSource } from './table/QueryT
 export type { InferSQL, Materialize, InferSQLStrict } from './duck/inferSqlReturntype';
 
 export default QueryTable;
-export * from './react/DuckQueryContext';
