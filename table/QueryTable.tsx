@@ -224,7 +224,7 @@ export function QueryTable({
 
   if (!resolved.sql) return null;
   if (!resolvedId) {
-    throw new Error('QueryTable requires `id` unless `table` is a QueryRef entry.');
+    return <QueryError error="QueryTable requires `id` unless `table` is a QueryRef entry." />;
   }
 
   return (
@@ -237,7 +237,7 @@ export function QueryTable({
       params={resolved.params}
       pool={pool}
       onEditSql={setEditedSql}
-      title={props.title ?? resolvedId}
+      title={props.title ?? resolved.entry?._name ?? resolvedId}
       refreshing={resolved.refreshing}
       {...props}
     >
