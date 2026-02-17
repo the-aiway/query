@@ -148,6 +148,9 @@ export interface UseSqlHook {
     queryFn: (t: ParamProxy<TParams>) => ValidSQL<TQuery>,
     params?: TParams,
   ): QueryRef<InferSQLStrict<TQuery>[number]> | null;
+  <TQuery extends string>(
+    sql: ValidSQL<TQuery>,
+  ): QueryRef<InferSQLStrict<TQuery>[number]> | null;
 }
 
 type DuckDBType = 'VARCHAR' | 'INT' | 'INTEGER' | 'BIGINT' | 'FLOAT' | 'DOUBLE' | 'BOOLEAN' | 'DATE' | 'TIMESTAMP' | 'DECIMAL' | 'HUGEINT' | (string & {});
@@ -358,7 +361,7 @@ export const useTable: UseTableHook = (queryFn: any, params: any = {}): any => {
 
 export const useSql: UseSqlHook = (queryFn: any, params: any = {}): any => {
   const ready = depsResolved(params);
-  const sql: string | null = ready ? queryFn(buildProxy(params)) : null;
+  const sql: string | null = ready ? (typeof queryFn === 'function' ? queryFn(buildProxy(params)) : queryFn) : null;
 
   return useMemo(() => {
     if (!sql) return null;
@@ -541,6 +544,9 @@ export const useMaterialize = {
 
 export function _typeCheck() {
   // --- literal SQL (no interpolations — ValidSQL + InferSQLStrict work) ---
+
+  const f1_plain = useSql(`SELECT * FROM '/api/export/*/reference_carriers.parquet'`);
+  f1_plain && (f1_plain satisfies QueryRef);
 
   const f2 = useSql(() => `SELECT 42::int as val`);
   f2 && (f2 satisfies QueryRef<{ val: number }>);
