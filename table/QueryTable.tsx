@@ -15,6 +15,7 @@ import { Card, CardContent } from './ui/Card';
 import { useDuckDB } from '../react/DuckDBProvider';
 
 const PAGE_SIZE = 1000;
+const MAX_VIEWPORT_ROWS = 200;
 
 // --- Loading Card ---
 
@@ -79,8 +80,12 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
     overscan,
   });
 
-  const virtualItems = virtualizer.getVirtualItems();
+  const rawVirtualItems = virtualizer.getVirtualItems();
   const totalSize = virtualizer.getTotalSize();
+
+  const virtualItems = rawVirtualItems.length > MAX_VIEWPORT_ROWS
+    ? rawVirtualItems.slice(0, MAX_VIEWPORT_ROWS)
+    : rawVirtualItems;
 
   const neededPages = useMemo(() => {
     const first = virtualItems[0];
@@ -111,7 +116,7 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
   return (
     <div
       ref={parentRef}
-      className="overflow-auto flex-1 min-h-0 min-w-0 bg-background w-full"
+      className={`overflow-auto flex-1 min-h-0 min-w-0 bg-background w-full${typeof height !== 'number' ? ' max-h-screen' : ''}`}
       style={{
         height: typeof height === 'number' ? height : undefined,
       }}
