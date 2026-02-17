@@ -67,11 +67,15 @@ type QueryTableCommonProps = {
   footer?: ReactNode;
 };
 
-type QueryTableNonEntryInput = string | Record<string, unknown>[] | Table | null | undefined;
+type QueryTableNonEntryInput = string | Record<string, unknown>[] | Table;
 
 export type QueryTableProps =
   | (QueryTableCommonProps & {
       table: QueryRef;
+      id?: string;
+    })
+  | (QueryTableCommonProps & {
+      table: null | undefined;
       id?: string;
     })
   | (QueryTableCommonProps & {
