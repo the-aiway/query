@@ -68,7 +68,8 @@ export class DumpLogger implements Logger {
 
       state.timer = setTimeout(() => {
         const { fmt, args } = this.formatHeader(state, 0);
-        console.log(`${fmt} %c⏳ Hanging: ${this.clean(state.query).slice(0, 60)}`, ...args, 'color: #f59e0b; font-style: italic');
+        const cleaned = this.clean(state.query);
+        console.log(`${fmt} %c⏳ Hanging: ${cleaned.slice(0, 60)} ... ${cleaned.slice(-60)}`, ...args, 'color: #f59e0b; font-style: italic');
       }, 1492);
       this.queryStates.set(id, state);
     } else if (event === LogEvent.OK || event === LogEvent.ERROR) {
