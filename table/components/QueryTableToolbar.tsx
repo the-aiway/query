@@ -22,6 +22,7 @@ import { DependencyTree } from './DependencyTree';
 import { ExportButton } from './ExportButton';
 import { SqlQueryEditorPopover } from './SqlQueryEditorPopover';
 import { useQT } from './QueryTableContext';
+import { useTab } from './TabContext';
 import { isSetFilter, isRangeFilter } from './sqlUtils';
 
 export function QueryTableToolbar() {
@@ -53,6 +54,8 @@ export function QueryTableToolbar() {
     onClose,
     refreshing,
   } = useQT();
+
+  const { onSqlEdit } = useTab();
 
   const searchInputRefInternal = React.useRef<HTMLInputElement>(null);
   const searchInputRefToUse = searchInputRef || searchInputRefInternal;
@@ -88,8 +91,8 @@ export function QueryTableToolbar() {
 
       <div className="min-w-0 flex-1 overflow-hidden flex items-center gap-1">
         {title && <span className="text-[11px] font-mono text-muted-foreground truncate">{title}</span>}
-        <SqlQueryEditorPopover title={title} sql={originalSql ?? sql}>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" title="View SQL">
+        <SqlQueryEditorPopover title={title} sql={originalSql ?? sql} onSave={onSqlEdit}>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" title="Edit SQL">
             <Code2 className="h-3.5 w-3.5" />
           </Button>
         </SqlQueryEditorPopover>
