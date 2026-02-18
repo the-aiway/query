@@ -49,49 +49,6 @@ export function useResolvedSource(
     return null;
   }, [tableInput]);
 
-  const sqlToMaterialize = useMemo(() => {
-    if (typeof tableInput === 'string' && tableInput.trim()) {
-      return normalizeSelectSql(tableInput);
-    }
-    if (isQueryRef(tableInput) && tableInput._type === 'fragment' && depsReady) {
-      return tableInput._query;
-    }
-    return null;
-  }, [tableInput, depsReady]);
-
-  const [materialized, setMaterialized] = useState<{ baseSql: string } | null>(null);
-
-  useEffect(() => {
-    if (!sqlToMaterialize) {
-      setMaterialized(null);
-      return;
-    }
-
-    let cancelled = false;
-    const name = getNextTableName();
-    const path = `opfs://${name}.parquet`;
-
-    (async () => {
-      try {
-        await pool.db.registerOPFSFileName(path);
-        await pool.queryIPCTable(`COPY (${sqlToMaterialize}) TO '${path}' (FORMAT PARQUET)`);
-        if (!cancelled) {
-          setMaterialized({ baseSql: `SELECT * FROM '${path}'` });
-        }
-      } catch (err) {
-        console.error('[QueryTable] Materialization failed, using raw SQL:', err);
-        if (!cancelled) {
-          setMaterialized({ baseSql: sqlToMaterialize });
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      pool.db.dropFile(path).catch(() => {});
-    };
-  }, [sqlToMaterialize, pool]);
-
   const [registered, setRegistered] = useState<{ sql: string } | null>(null);
 
   useEffect(() => {
@@ -156,13 +113,6 @@ export function useResolvedSource(
 
   if (tableRefSql) {
     result = { sql: tableRefSql, originalSql, entry, loading: false };
-  } else if (sqlToMaterialize) {
-    if (!materialized) {
-      if (lastGood.current) return { ...lastGood.current, entry, refreshing: true };
-      result = { sql: null, originalSql, entry, loading: true, loadingMessage: 'Fetching Data...' };
-    } else {
-      result = { sql: materialized.baseSql, originalSql, entry, loading: false };
-    }
   } else if (Array.isArray(tableInput) || tableInput instanceof Table) {
     if (!registered) {
       result = { sql: null, originalSql: null, loading: true, loadingMessage: 'registering data...' };
@@ -170,7 +120,13 @@ export function useResolvedSource(
       result = { sql: registered.sql, originalSql: registered.sql, loading: false };
     }
   } else {
-    result = { sql: null, originalSql: null, loading: false };
+    if (typeof tableInput === 'string' && tableInput.trim()) {
+      result = { sql: normalizeSelectSql(tableInput), originalSql, entry, loading: false };
+    } else if (isQueryRef(tableInput) && tableInput._type === 'fragment' && depsReady) {
+      result = { sql: tableInput._query, originalSql, entry, loading: false };
+    } else {
+      result = { sql: null, originalSql: null, loading: false };
+    }
   }
 
   if (result.sql) lastGood.current = result;
