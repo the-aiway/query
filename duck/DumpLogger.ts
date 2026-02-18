@@ -68,8 +68,8 @@ export class DumpLogger implements Logger {
 
       state.timer = setTimeout(() => {
         const { fmt, args } = this.formatHeader(state, 0);
-        const cleaned = this.clean(state.query);
-        console.log(`${fmt} %c⏳ Hanging: ${cleaned.slice(0, 60)} ... ${cleaned.slice(-60)}`, ...args, 'color: #f59e0b; font-style: italic');
+        const cleaned = this.preview(this.clean(state.query));
+        console.log(`${fmt} %c⏳ Hanging: ${cleaned.text}`, ...args, 'color: #f59e0b; font-style: italic');
       }, 1492);
       this.queryStates.set(id, state);
     } else if (event === LogEvent.OK || event === LogEvent.ERROR) {
@@ -80,28 +80,38 @@ export class DumpLogger implements Logger {
 
       const duration = Math.round(performance.now() - state.start);
       const cleanSql = this.clean(state.query);
+      const preview = this.preview(cleanSql);
       const { fmt, args } = this.formatHeader(state, duration);
 
       let highlighted = cleanSql;
-      let previewFmt = '%c' + cleanSql.slice(0, 135);
+      let previewFmt = '%c' + preview.text;
       let previewArgs = ['color: inherit'];
       const pool = typeof window === 'undefined' ? undefined : (window as Window & { pool?: ConnectionPool }).pool;
       const tokenizeFn = pool?.db?.tokenize?.bind(pool.db) as AsyncDuckDB['tokenize'] | undefined;
 
       if (tokenizeFn) {
         try {
-          const previewSql = cleanSql.slice(0, 120);
-          const [pTokens, fullTokens] = await Promise.all([tokenizeFn(previewSql), tokenizeFn(state.query)]);
-
-          previewFmt = '';
-          previewArgs = [];
-          pTokens.offsets.forEach((offset: number, i: number) => {
-            const nextOffset = pTokens.offsets[i + 1] ?? previewSql.length;
-            previewFmt += '%c' + previewSql.substring(offset, nextOffset);
-            previewArgs.push(`color: ${COLORS[pTokens.types[i] as TokenType] || 'inherit'}`);
-          });
-
-          highlighted = highlightAnsi(state.query, fullTokens);
+          const fullTokensPromise = tokenizeFn(state.query);
+          if (preview.isCompact) {
+            const [headTokens, tailTokens, fullTokens] = await Promise.all([tokenizeFn(preview.head), tokenizeFn(preview.tail), fullTokensPromise]);
+            const previewFmtParts: string[] = [];
+            const previewArgParts: string[] = [];
+            this.pushTokenizedPreview(previewFmtParts, previewArgParts, preview.head, headTokens);
+            previewFmtParts.push('%c ... ');
+            previewArgParts.push('color: inherit');
+            this.pushTokenizedPreview(previewFmtParts, previewArgParts, preview.tail, tailTokens);
+            previewFmt = previewFmtParts.join('');
+            previewArgs = previewArgParts;
+            highlighted = highlightAnsi(state.query, fullTokens);
+          } else {
+            const [pTokens, fullTokens] = await Promise.all([tokenizeFn(preview.head), fullTokensPromise]);
+            const previewFmtParts: string[] = [];
+            const previewArgParts: string[] = [];
+            this.pushTokenizedPreview(previewFmtParts, previewArgParts, preview.head, pTokens);
+            previewFmt = previewFmtParts.join('');
+            previewArgs = previewArgParts;
+            highlighted = highlightAnsi(state.query, fullTokens);
+          }
         } catch (error) {
           console.debug('[DumpLogger] Tokenizer unavailable', error);
         }
@@ -121,6 +131,30 @@ export class DumpLogger implements Logger {
       .replace(/\-\-:re:\w+:[\w\-]+/g, '')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  private preview(sql: string) {
+    const HEAD_CHARS = 60;
+    const TAIL_CHARS = 60;
+    const ELLIPSIS = ' ... ';
+    const isCompact = sql.length > HEAD_CHARS + TAIL_CHARS + ELLIPSIS.length;
+    const head = isCompact ? sql.slice(0, HEAD_CHARS) : sql;
+    const tail = isCompact ? sql.slice(-TAIL_CHARS) : '';
+    const text = isCompact ? `${head}${ELLIPSIS}${tail}` : sql;
+    return { text, head, tail, isCompact };
+  }
+
+  private pushTokenizedPreview(
+    fmtParts: string[],
+    argParts: string[],
+    sql: string,
+    tokens: Awaited<ReturnType<AsyncDuckDB['tokenize']>>,
+  ) {
+    tokens.offsets.forEach((offset: number, i: number) => {
+      const nextOffset = tokens.offsets[i + 1] ?? sql.length;
+      fmtParts.push('%c' + sql.substring(offset, nextOffset));
+      argParts.push(`color: ${COLORS[tokens.types[i] as TokenType] || 'inherit'}`);
+    });
   }
 
   private formatHeader(s: any, ms: number) {
