@@ -102,19 +102,19 @@ export type ResolveShape<TEntry> =
 type ScalarValue = string | number | boolean | null | undefined;
 
 /** `t.*` = auto-escaped, `t.raw.*` = raw interpolation, `t.where(...)` = WHERE clause, `t.eq(col, val)` etc = inline conditions */
-type ParamProxy<T> = { [K in keyof T]: string } & {
-  raw: { [K in keyof T]: string };
-  where: (conditions: Record<string, SqlConditionValue>) => string;
-  eq: (col: string, val: ScalarValue) => string;
-  neq: (col: string, val: ScalarValue) => string;
-  gt: (col: string, val: ScalarValue) => string;
-  gte: (col: string, val: ScalarValue) => string;
-  lt: (col: string, val: ScalarValue) => string;
-  lte: (col: string, val: ScalarValue) => string;
-  between: (col: string, a: ScalarValue, b: ScalarValue) => string;
-  in: (col: string, vals: (string | number)[]) => string;
-  like: (col: string, val: string) => string;
-  ilike: (col: string, val: string) => string;
+type ParamProxy<T> = { [K in keyof T]: '' } & {
+  raw: { [K in keyof T]: '' };
+  where: (conditions: Record<string, SqlConditionValue>) => '';
+  eq: (col: string, val: ScalarValue) => '';
+  neq: (col: string, val: ScalarValue) => '';
+  gt: (col: string, val: ScalarValue) => '';
+  gte: (col: string, val: ScalarValue) => '';
+  lt: (col: string, val: ScalarValue) => '';
+  lte: (col: string, val: ScalarValue) => '';
+  between: (col: string, a: ScalarValue, b: ScalarValue) => '';
+  in: (col: string, vals: (string | number)[]) => '';
+  like: (col: string, val: string) => '';
+  ilike: (col: string, val: string) => '';
 };
 
 type StripPrefix<T extends string> = T extends `${' ' | '\n' | '\t'}${infer Rest}`
