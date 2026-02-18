@@ -2,7 +2,7 @@ import { useQueries } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { type Vector, Table } from 'apache-arrow';
 import { Database, Loader2, AlertCircle } from 'lucide-react';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Cell } from './components/Cell';
 import { getTableDataPageQueryOptions } from './components/Datasource';
@@ -13,7 +13,7 @@ import { QueryTableProvider, useQT, type QueryTableProps, type QueryTableSourceM
 
 import { Card, CardContent } from './ui/Card';
 import { useDuckDB } from '../react/DuckDBProvider';
-import { type QueryRef, type SourceEntry } from '../react/reducks';
+import { type QueryRef } from '../react/reducks';
 
 const PAGE_SIZE = 1000;
 const MAX_VIEWPORT_ROWS = 200;
@@ -87,6 +87,7 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
     summaryMap,
     queryParts,
     sorting,
+    setSorting,
     getRowClassName,
     renderCell,
   } = useQT();
@@ -138,6 +139,11 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
       getTableDataPageQueryOptions(pool, queryParts, sorting, PAGE_SIZE, pageIndex * PAGE_SIZE)
     ),
   });
+
+  const pageError = pageQueries.find((q) => q.error)?.error;
+  useEffect(() => {
+    if (pageError && sorting.length > 0) setSorting([]);
+  }, [pageError, sorting, setSorting]);
 
   const pageDataMap = useMemo(() => {
     const map = new Map<number, { vectors: Map<string, Vector>; rowCount: number } | undefined>();
@@ -236,9 +242,8 @@ const QueryError = ({ error }: { error: unknown }) => (
 
 // --- Main Components ---
 
-function toQueryRef(entry: SourceEntry | undefined): QueryRef | null {
-  if (!entry) return null;
-  return '_ref' in entry ? entry._ref : entry;
+function toQueryRef(entry: QueryRef | null | undefined): QueryRef | null {
+  return entry ?? null;
 }
 
 function isNamedSourceMap(input: QueryTableProps['table']): input is QueryTableSourceMap {
@@ -259,7 +264,6 @@ export function QueryTable({
   const { pool: contextPool } = useDuckDB();
   const pool = poolProp ?? contextPool;
 
-  const [editedSql, setEditedSql] = useState<string | null>(null);
   const [selectedSourceKey, setSelectedSourceKey] = useState<string | null>(null);
 
   const sourceMap = isNamedSourceMap(tableInput) ? tableInput : null;
@@ -274,7 +278,7 @@ export function QueryTable({
   const activeSourceRef = activeSourceKey ? (sourceEntries.find(([key]) => key === activeSourceKey)?.[1] ?? null) : null;
 
   const singleInput = sourceMap ? undefined : tableInput as string | Record<string, unknown>[] | Table | QueryRef | null | undefined;
-  const resolvedInput = editedSql ?? (sourceMap ? activeSourceRef : singleInput);
+  const resolvedInput = sourceMap ? activeSourceRef : singleInput;
   const resolved = useResolvedSource(resolvedInput, pool);
   const resolvedId = id ?? activeSourceKey ?? resolved.entry?._id;
   const title = props.title ?? activeSourceKey ?? resolved.entry?._name ?? (resolved.sql ? condenseSql(resolved.sql) : undefined);
@@ -290,10 +294,7 @@ export function QueryTable({
           <button
             key={key}
             type="button"
-            onClick={() => {
-              setEditedSql(null);
-              setSelectedSourceKey(key);
-            }}
+            onClick={() => setSelectedSourceKey(key)}
             className={`shrink-0 rounded border px-2 py-0.5 text-[9px] font-mono transition-colors ${
               active
                 ? 'border-primary/40 bg-primary/10 text-primary'
@@ -335,7 +336,6 @@ export function QueryTable({
       entry={resolved.entry}
       params={resolved.params}
       pool={pool}
-      onEditSql={setEditedSql}
       title={title}
       refreshing={resolved.refreshing}
       {...props}

@@ -28,15 +28,12 @@ export function QueryTableToolbar() {
   const {
     isFullscreen,
     setIsFullscreen,
-    pool,
     title,
     queryParts,
     isInitialLoad,
     rowCount,
     sql,
     originalSql,
-    hasCustomSql,
-    onSaveSql,
     resetAll,
     hasChanges,
     entry,
@@ -91,17 +88,17 @@ export function QueryTableToolbar() {
 
       <div className="min-w-0 flex-1 overflow-hidden flex items-center gap-1">
         {title && <span className="text-[11px] font-mono text-muted-foreground truncate">{title}</span>}
-        <SqlQueryEditorPopover title={title} sql={hasCustomSql ? sql : originalSql} onSave={onSaveSql}>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" title="Edit SQL">
+        <SqlQueryEditorPopover title={title} sql={originalSql ?? sql}>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" title="View SQL">
             <Code2 className="h-3.5 w-3.5" />
           </Button>
         </SqlQueryEditorPopover>
         {hasChanges && (
-          <Button variant="ghost" size="sm" className="h-7 px-2 gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground shrink-0" onClick={resetAll} title="Reset SQL, filters & sorting">
+          <Button variant="ghost" size="sm" className="h-7 px-2 gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground shrink-0" onClick={resetAll} title="Reset filters & sorting">
             <RotateCcw className="h-3 w-3" />reset
           </Button>
         )}
-        {entry && <DependencyTree entry={entry} pool={pool} onReplay={onSaveSql} />}
+        {entry && <DependencyTree entry={entry} />}
       </div>
 
       {enableFilters && (activeColumnFilters.length > 0 || globalFilterActive) && (
