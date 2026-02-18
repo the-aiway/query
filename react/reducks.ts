@@ -102,19 +102,21 @@ export type ResolveShape<TEntry> =
 type ScalarValue = string | number | boolean | null | undefined;
 
 /** `t.*` = auto-escaped, `t.raw.*` = raw interpolation, `t.where(...)` = WHERE clause, `t.eq(col, val)` etc = inline conditions */
-type ParamProxy<T> = { [K in keyof T]: '' } & {
-  raw: { [K in keyof T]: '' };
-  where: (conditions: Record<string, SqlConditionValue>) => '';
-  eq: (col: string, val: ScalarValue) => '';
-  neq: (col: string, val: ScalarValue) => '';
-  gt: (col: string, val: ScalarValue) => '';
-  gte: (col: string, val: ScalarValue) => '';
-  lt: (col: string, val: ScalarValue) => '';
-  lte: (col: string, val: ScalarValue) => '';
-  between: (col: string, a: ScalarValue, b: ScalarValue) => '';
-  in: (col: string, vals: (string | number)[]) => '';
-  like: (col: string, val: string) => '';
-  ilike: (col: string, val: string) => '';
+type ParamString<T> = string extends keyof T ? string : '';
+
+type ParamProxy<T> = { [K in keyof T]: ParamString<T> } & {
+  raw: { [K in keyof T]: ParamString<T> };
+  where: (conditions: Record<string, SqlConditionValue>) => ParamString<T>;
+  eq: (col: string, val: ScalarValue) => ParamString<T>;
+  neq: (col: string, val: ScalarValue) => ParamString<T>;
+  gt: (col: string, val: ScalarValue) => ParamString<T>;
+  gte: (col: string, val: ScalarValue) => ParamString<T>;
+  lt: (col: string, val: ScalarValue) => ParamString<T>;
+  lte: (col: string, val: ScalarValue) => ParamString<T>;
+  between: (col: string, a: ScalarValue, b: ScalarValue) => ParamString<T>;
+  in: (col: string, vals: (string | number)[]) => ParamString<T>;
+  like: (col: string, val: string) => ParamString<T>;
+  ilike: (col: string, val: string) => ParamString<T>;
 };
 
 type StripPrefix<T extends string> = T extends `${' ' | '\n' | '\t'}${infer Rest}`
@@ -139,8 +141,11 @@ type ValidSQL<T extends string> = ForbiddenCTE<T> extends `ERROR${string}`
 
 export interface UseTableHook {
   <TParams extends Record<string, any>, TQuery extends string>(
-    queryFn: ((t: ParamProxy<TParams>) => ValidSQL<TQuery>) | ValidSQL<TQuery>,
+    queryFn: (t: ParamProxy<TParams>) => ValidSQL<TQuery>,
     params?: TParams,
+  ): QueryRef<InferSQLStrict<TQuery>[number]> | null;
+  <TQuery extends string>(
+    sql: ValidSQL<TQuery>,
   ): QueryRef<InferSQLStrict<TQuery>[number]> | null;
 }
 
