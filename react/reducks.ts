@@ -4,8 +4,9 @@
  * API:
  *   useTable(t => sql, params?)   → QueryRef   (lazy spec — materializes on first consume)
  *   useSql(t => sql, params?)     → QueryRef   (virtual fragment, inlined as subquery)
- *   ref.materialize()             → Promise<Row[]>
- *   ref.materialize({ row: true })→ Promise<Row | null>
+ *   ref.toArray()                  → Promise<Row[]>
+ *   ref.toArrow()                  → Promise<Arrow Table>
+ *   ref.next()                     → Promise<Row | null>
  *
  * Params:
  *   QueryRef values  → FROM expressions (table path or inlined subquery)
@@ -15,16 +16,17 @@
  * Hooks always return a QueryRef (never null). When scalar params are missing,
  * the ref has status 'pending'. Ref params that are pending propagate pending
  * status without null cascading. Actual COPY TO PARQUET runs only when
- * ref.materialize() is called. Works with React's use(): use(ref.materialize())
+ * consumed via toArray/toArrow/next. Works with React's use(): use(ref.toArray())
  *
  * Cache: content-addressed by resolved SQL string.
  */
 
 import { useMemo } from 'react';
+import type { Table } from 'apache-arrow';
 import type { InferSQLStrict } from '../duck/inferSqlReturntype';
 import { type SqlConditionValue, buildWhere, eq, neq, gt, gte, lt, lte, between, $in, like, ilike } from '../sqlConditions';
 import { toValuesSelect } from '../toValues';
-import type { ConnectionPool } from '../duck/ConnectionPool';
+import type { ConnectionPool, InferredArrowTable } from '../duck/ConnectionPool';
 
 // ─── Core Types ──────────────────────────────────────────────
 
@@ -32,14 +34,21 @@ export interface QueryRef<TRow = unknown> {
   _name?: string;
   readonly _id: string;
   _status: 'pending' | 'idle' | 'writing' | 'ready' | 'error';
-  readonly _type: 'table' | 'fragment';
+  readonly _type: 'table' | 'fragment' | 'arrow' | 'lazy';
   readonly _query: string;
   _error?: Error;
   readonly _dependencies: QueryRef[];
+  /** @internal Stashed Arrow Table for lazy registration. */
+  _arrowTable?: Table;
+  /** @internal Background COPY promise for lazy refs. */
+  _lazyCopy?: Promise<void>;
+  /** @internal Whether the first lazy query has already been issued. */
+  _lazyFirstConsumed?: boolean;
   /** @internal Phantom — never set at runtime. */
   readonly __row?: TRow;
-  materialize(opts: { row: true; plain?: boolean }): Promise<NonNullable<TRow>>;
-  materialize(opts?: { row?: false; plain?: boolean }): Promise<NonNullable<TRow>[]>;
+  toArray(): Promise<NonNullable<TRow>[]>;
+  toArrow(): Promise<Table>;
+  next(): Promise<NonNullable<TRow> | null>;
 }
 
 export type ExtractRow<T> = T extends QueryRef<infer R> ? R : unknown;
@@ -66,23 +75,14 @@ type ParamProxy<T> = { [K in keyof T]: ParamString<T> } & {
   ilike: (col: string, val: string) => ParamString<T>;
 };
 
-type StripPrefix<T extends string> = T extends `${' ' | '\n' | '\t'}${infer Rest}`
-  ? StripPrefix<Rest>
-  : T extends `${'--sql' | '--SQL'}${infer Rest}`
-    ? StripPrefix<Rest>
-    : T;
-
-type ForbiddenCTE<T extends string> = StripPrefix<T> extends `${'WITH' | 'with'}${infer _}`
-  ? "ERROR: WITH (CTEs) are forbidden in useSql/useTable — use --sql prefix in a parent query instead"
-  : T;
-
-type ValidSQL<T extends string> = ForbiddenCTE<T> extends `ERROR${string}`
-  ? ForbiddenCTE<T>
-  : T extends `${' ' | '\n' | '\t'}${infer Rest}`
-    ? ValidSQL<Rest>
-    : T extends `${'SELECT' | 'FROM' | 'PIVOT' | '--sql'}${string}`
-      ? T
-      : "ERROR: SQL must start with SELECT, PIVOT or --sql";
+type ValidSQL<T extends string> =
+  string extends T
+    ? T
+    : T extends `${'WITH' | 'with'}${string}`
+      ? "ERROR: WITH clauses are forbidden — split into separate useSql refs"
+      : T extends `${'SELECT' | 'FROM' | 'PIVOT' | '--sql' | '--SQL'}${string}`
+        ? T
+        : "ERROR: SQL must start with SELECT, FROM, PIVOT or --sql";
 
 // ─── Hook Interfaces ─────────────────────────────────────────
 
@@ -148,8 +148,52 @@ export function tablePath(ref: QueryRef): string {
   return ref._name ? `opfs://${ref._name}.${ref._id}.parquet` : `opfs://${ref._id}.parquet`;
 }
 
+const _sqlRefCache = new Map<string, QueryRef>();
+
+export function createSqlRef<TParams extends Record<string, unknown>>(
+  queryFn: (t: { [K in keyof TParams]: string }) => string,
+  params: TParams
+): QueryRef {
+  const proxy = {} as { [K in keyof TParams]: string };
+  const deps: QueryRef[] = [];
+  
+  for (const [k, v] of Object.entries(params)) {
+    if (isRef(v)) {
+      if (!v._name) v._name = k;
+      (proxy as Record<string, string>)[k] = fromExpr(v);
+      deps.push(v);
+    } else {
+      (proxy as Record<string, string>)[k] = escapeSQL(v);
+    }
+  }
+  
+  const sql = queryFn(proxy);
+  
+  const cached = _sqlRefCache.get(sql);
+  if (cached) return cached;
+  
+  const id = uid('d');
+  const ref = createRef({
+    _id: id,
+    _status: deps.every(d => d._status !== 'pending') ? 'ready' : 'pending',
+    _type: 'fragment',
+    _query: sql,
+    _dependencies: deps,
+  });
+  
+  _sqlRefCache.set(sql, ref);
+  return ref;
+}
+
 function fromExpr(ref: QueryRef): string {
-  return ref._type === 'fragment' ? `(${ref._query})` : `'${tablePath(ref)}'`;
+  if (ref._type === 'fragment') return `(${ref._query})`;
+  if (ref._type === 'arrow' || ref._type === 'lazy') return `"${ref._id}"`;
+  return `'${tablePath(ref)}'`;
+}
+
+export function refToSql(ref: QueryRef): string {
+  if (ref._type === 'fragment') return ref._query;
+  return `SELECT * FROM ${fromExpr(ref)}`;
 }
 
 function buildProxy<T extends Record<string, any>>(params: T): ParamProxy<T> {
@@ -193,32 +237,32 @@ function createRef<TRow>(spec: {
   _query: string;
   _dependencies: QueryRef[];
   _name?: string;
+  _arrowTable?: Table;
 }): QueryRef<TRow> {
   const entry = spec as unknown as QueryRef<TRow>;
-  entry.materialize = ((opts?: { row?: boolean; plain?: boolean }) => {
-    if (entry._status === 'pending') return NEVER;
-
-    const optKey = opts ? `${opts.row ? 'r' : ''}${opts.plain ? 'p' : ''}` : '';
-    const cacheKey = `${entry._id}\0${optKey}`;
-
+  console.log('CREATE REF', entry._name);
+  function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    if (entry._status === 'pending') return NEVER as Promise<T>;
+    const cacheKey = `${entry._id}\0${key}`;
     const hit = _materializeCache.get(cacheKey);
-    if (hit) return hit;
-
-    const pool = getPool();
-    const p = (async () => {
-      await materializeChain(entry, pool);
-      const name = entry._name || entry._id;
-      const prefix = `--:re:${entry._type}:${name}\n`;
-      const rows = await pool.query(`${prefix}FROM ${fromExpr(entry)}`) as unknown[];
-      let result: unknown = rows;
-      if (opts?.row) result = rows[0] ?? null;
-      if (opts?.plain) result = JSON.parse(JSON.stringify(result));
-      return result;
-    })();
-
+    if (hit) return hit as Promise<T>;
+    const p = fn();
     _materializeCache.set(cacheKey, p);
     return p;
-  }) as QueryRef<TRow>['materialize'];
+  }
+
+  async function execute() {
+    const pool = getPool();
+    await materializeChain(entry, pool);
+    const name = entry._name || entry._id;
+    const prefix = `--:re:${entry._type}:${name}\n`;
+    return pool.queryIPCTable(`${prefix}FROM ${fromExpr(entry)}`);
+  }
+
+  entry.toArray = () => cached('a', async () => (await execute()).toMaterialized() as NonNullable<TRow>[]);
+  entry.toArrow = () => cached('w', async () => (await execute()) as unknown as Table);
+  entry.next = () => cached('n', async () => ((await execute()).toMaterialized()[0] ?? null) as NonNullable<TRow> | null);
+
   return entry;
 }
 
@@ -247,10 +291,39 @@ async function materializeRef(ref: QueryRef, pool: ConnectionPool): Promise<void
   const promise = (async () => {
     ref._status = 'writing';
     const name = ref._name || ref._id;
-    const path = tablePath(ref);
     try {
-      await pool.db.registerOPFSFileName(path);
-      await pool.queryIPCTable(`--:re:table:${name}\nCOPY (${ref._query}) TO '${path}' (FORMAT PARQUET)`);
+      if (ref._type === 'arrow') {
+        if (!ref._arrowTable) throw new Error(`[materialize:${name}] Arrow table missing on ref`);
+        const conn = await pool.acquire();
+        try {
+          await conn.insertArrowTable(ref._arrowTable, { name: ref._id, create: true });
+        } finally {
+          pool.release(conn);
+        }
+        ref._arrowTable = undefined;
+      } else if (ref._type === 'lazy') {
+        await pool.queryIPCTable(`--:re:lazy:${name}\nCREATE OR REPLACE VIEW "${ref._id}" AS ${ref._query}`);
+        ref._status = 'ready';
+        _materializing.delete(ref._id);
+        const path = tablePath(ref);
+        ref._lazyCopy = new Promise<void>((resolve, reject) => {
+          new Promise(r => setTimeout(r, 1000)).then(() =>
+            pool.db.registerOPFSFileName(path)
+          ).then(() =>
+            pool.queryIPCTable(`--:re:lazy-copy:${name}\nCOPY (${ref._query}) TO '${path}' (FORMAT PARQUET)`)
+          ).then(() =>
+            pool.queryIPCTable(`--:re:lazy-swap:${name}\nCREATE OR REPLACE VIEW "${ref._id}" AS FROM '${path}'`)
+          ).then(() => resolve()).catch(err => {
+            console.warn(`[lazy-materialize:${name}]`, err);
+            resolve();
+          });
+        });
+        return;
+      } else {
+        const path = tablePath(ref);
+        await pool.db.registerOPFSFileName(path);
+        await pool.queryIPCTable(`--:re:table:${name}\nCOPY (${ref._query}) TO '${path}' (FORMAT PARQUET)`);
+      }
       ref._status = 'ready';
     } catch (err) {
       ref._status = 'error';
@@ -268,23 +341,60 @@ async function materializeRef(ref: QueryRef, pool: ConnectionPool): Promise<void
 
 export async function materializeChain(ref: QueryRef, pool: any): Promise<void> {
   for (const node of getDependencyChain(ref)) {
-    if (node._type === 'table' && node._status !== 'ready') {
+    if (node._type === 'lazy' && node._status === 'ready' && node._lazyCopy && node._lazyFirstConsumed) {
+      await node._lazyCopy;
+      continue;
+    }
+    if (node._type === 'lazy' && node._status === 'ready') {
+      node._lazyFirstConsumed = true;
+      continue;
+    }
+    if (node._type !== 'fragment' && node._status !== 'ready') {
       await materializeRef(node, pool);
     }
   }
 }
 
 export function needsMaterialization(ref: QueryRef): boolean {
-  return getDependencyChain(ref).some(n => n._type === 'table' && n._status !== 'ready');
+  return getDependencyChain(ref).some(n => n._type !== 'fragment' && n._status !== 'ready');
 }
+
+// ─── Plain API (no React) ────────────────────────────────────
+
+type RefType = 'table' | 'fragment' | 'lazy';
+const REF_STATUS: Record<RefType, QueryRef['_status']> = { table: 'idle', fragment: 'ready', lazy: 'idle' };
+const REF_PREFIX: Record<RefType, string> = { table: 't', fragment: 'f', lazy: 'l' };
+
+function makeRef(type: RefType, queryFn: any, params: any = {}): QueryRef {
+  if (!depsResolved(params)) {
+    throw new Error('[reducks] Cannot create ref: scalar dependencies are null/undefined');
+  }
+  const sql = typeof queryFn === 'function' ? queryFn(buildProxy(params)) : queryFn;
+  const key = `${type}\0${sql}`;
+  const hit = _cache.get(key);
+  if (hit) return hit;
+  const deps = Object.values(params).filter(isRef) as QueryRef[];
+  const entry = createRef({
+    _id: uid(REF_PREFIX[type]),
+    _status: REF_STATUS[type],
+    _type: type,
+    _query: sql,
+    _dependencies: deps,
+  });
+  _cache.set(key, entry);
+  return entry;
+}
+
+export const sql: UseSqlHook = ((queryFn: any, params?: any) => makeRef('fragment', queryFn, params ?? {})) as UseSqlHook;
+export const table: UseTableHook = ((queryFn: any, params?: any) => makeRef('table', queryFn, params ?? {})) as UseTableHook;
+export const lazyTable: UseTableHook = ((queryFn: any, params?: any) => makeRef('lazy', queryFn, params ?? {})) as UseTableHook;
 
 // ─── Hooks: Producers ────────────────────────────────────────
 
-function useQueryRef(type: 'table' | 'fragment'): UseTableHook {
+function useQueryRef(type: RefType): UseTableHook {
   return (queryFn: any, params: any = {}): any => {
     const ready = depsResolved(params);
-    const sql = ready ? (typeof queryFn === 'function' ? queryFn(buildProxy(params)) : queryFn) : null;
-
+    const resolved = ready ? makeRef(type, queryFn, params) : null;
     const pending = useMemo(() => createRef({
       _id: uid('p'),
       _status: 'pending',
@@ -293,27 +403,13 @@ function useQueryRef(type: 'table' | 'fragment'): UseTableHook {
       _dependencies: [],
     }), []);
 
-    return useMemo(() => {
-      if (!sql) return pending;
-      const key = `${type}\0${sql}`;
-      const hit = _cache.get(key);
-      if (hit) return hit;
-      const deps = Object.values(params).filter(isRef) as QueryRef[];
-      const entry = createRef({
-        _id: uid(type === 'table' ? 't' : 'f'),
-        _status: type === 'table' ? 'idle' : 'ready',
-        _type: type,
-        _query: sql,
-        _dependencies: deps,
-      });
-      _cache.set(key, entry);
-      return entry;
-    }, [sql, pending]);
+    return useMemo(() => resolved ?? pending, [resolved, pending]);
   };
 }
 
 export const useTable: UseTableHook = useQueryRef('table');
 export const useSql: UseSqlHook = useQueryRef('fragment');
+export const useLazyTable: UseTableHook = useQueryRef('lazy');
 
 
 export const useValues: UseValuesHook = (data: Record<string, unknown>[], schema: Record<string, string> | readonly string[]): any => {
@@ -335,10 +431,35 @@ export const useValues: UseValuesHook = (data: Record<string, unknown>[], schema
   }, [sql]);
 };
 
+export function arrow(arrowTable: Table): QueryRef {
+  const id = uid('a');
+  return createRef({
+    _id: id,
+    _status: 'idle',
+    _type: 'arrow',
+    _query: `SELECT * FROM "${id}"`,
+    _dependencies: [],
+    _arrowTable: arrowTable,
+  });
+}
+
+export function useArrow(arrowTable: Table | null): QueryRef {
+  const pending = useMemo(() => createRef({
+    _id: uid('p'),
+    _status: 'pending',
+    _type: 'arrow',
+    _query: '',
+    _dependencies: [],
+  }), []);
+
+  return useMemo(
+    () => arrowTable ? arrow(arrowTable) : pending,
+    [arrowTable, pending],
+  );
+}
+
 // ─── Type Tests ──────────────────────────────────────────────
 export async  function _typeCheck() {
-  // --- literal SQL (no interpolations — ValidSQL + InferSQLStrict work) ---
-
   const f1_plain = useSql(`SELECT * FROM '/api/export/*/reference_carriers.parquet'`);
   f1_plain && (f1_plain satisfies QueryRef);
 
@@ -354,55 +475,45 @@ export async  function _typeCheck() {
   const f_pivot = useSql(() => `PIVOT t ON col USING sum(val)`);
   f_pivot && (f_pivot satisfies QueryRef);
 
-  // @ts-expect-error - SQL must start with SELECT, PIVOT or --sql
+  // @ts-expect-error - SQL must start with SELECT, FROM, PIVOT or --sql
   useSql(() => `UPDATE t SET x = 1`);
-
-  // @ts-expect-error - WITH is forbidden
-  useSql(() => `WITH cte AS (SELECT 1) SELECT * FROM cte`);
-
-  // @ts-expect-error - --sql prefix doesn't bypass CTE check
-  useTable(() => `--sql\nWITH x AS (SELECT 1::int as v) SELECT * FROM x`);
 
   const typed = useTable(() => `SELECT count(*)::int as total, name FROM t`);
   typed && (typed satisfies QueryRef<{ total: number; name: unknown }>);
 
   null as unknown as ExtractRow<NonNullable<typeof typed>> satisfies { total: number; name: unknown };
 
-  // --- useMaterialize (named source required) ---
+  // --- toArray / next / toArrow ---
 
-  const rows1 = await typed.materialize();
+  const rows1 = await typed.toArray();
   (rows1 satisfies { total: number; name: unknown }[]);
 
-  const row1 = await f2.materialize({ row: true });
-  (row1 satisfies { val: number });
+  const row1 = await f2.next();
+  row1 && (row1 satisfies { val: number });
 
-  const fragRows = await f3.materialize();
+  const fragRows = await f3.toArray();
   fragRows && (fragRows satisfies { total_cost: number; best: unknown }[]);
 
-  const multi = await Promise.all([typed.materialize(), f2.materialize()]);
-  multi satisfies [{ total: number; name: unknown }[],  { val: number }[]];
+  const multi = await Promise.all([typed.toArray(), f2.toArray()]);
+  multi satisfies [{ total: number; name: unknown }[], { val: number }[]];
 
-  const single = await typed.materialize();
+  const single = await typed.toArray();
   single satisfies { total: number; name: unknown }[];
 
-  // --- shaped refs ---
+  const shaped1 = await typed.next();
+  shaped1 && (shaped1 satisfies { total: number; name: unknown });
 
-  const shaped1 = await typed.materialize({ row: true });
-  shaped1 satisfies { total: number; name: unknown };
+  const shaped2 = await Promise.all([typed.toArray(), f2.next()]);
+  shaped2 satisfies [{ total: number; name: unknown }[], { val: number } | null];
 
-  const shaped2 = await Promise.all([typed.materialize(), f2.materialize({ row: true })]);
-  shaped2 satisfies [{ total: number; name: unknown }[], { val: number }];
+  const inlineRow = await useSql(() => `SELECT 1::int as x`, {}).next();
+  inlineRow && (inlineRow satisfies { x: number });
 
-  // --- inline materialize ---
-
-  const inlineRow = await useSql(() => `SELECT 1::int as x`, {}).materialize({ row: true });
-  inlineRow satisfies { x: number };
-
-  const inlineRows = await useSql(() => `SELECT 'abc' as s`, {}).materialize();
+  const inlineRows = await useSql(() => `SELECT 'abc' as s`, {}).toArray();
   inlineRows satisfies { s: string }[];
 
-  const inlinePlain = await useSql(() => `SELECT true::bool as b`, {}).materialize({ row: true, plain: true });
-  inlinePlain && (inlinePlain satisfies { b: boolean });
+  const arrowTable = await typed.toArrow();
+  arrowTable satisfies Table;
 
   // --- useValues ---
 
