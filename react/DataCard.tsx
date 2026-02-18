@@ -1,28 +1,20 @@
-import { useState, useRef, createElement, type ReactNode } from 'react';
+import { use, useMemo, useState, useRef, Suspense, createElement, type ReactNode } from 'react';
 import { Table2 } from 'lucide-react';
 
-import { useMaterialize, row, map, values, type SourceEntry, type ResolveShape, type QueryRef } from './reducks';
+import { type QueryRef } from './reducks';
 import { QueryTable } from '../table/QueryTable';
 import { cn } from '../table/ui/utils';
 
-type ResolvedData<T extends Record<string, SourceEntry>> = {
-  [K in keyof T]: ResolveShape<T[K]>;
+type SourceValue = QueryRef | Promise<unknown>;
+type SourceProp<T extends Record<string, SourceValue>> = T | (() => T);
+type ResolvedData<T extends Record<string, SourceValue>> = {
+  [K in keyof T]: T[K] extends Promise<infer R> ? R : unknown[];
 };
-
-interface ShapeHelpers {
-  row: typeof row;
-  map: typeof map;
-  values: typeof values;
-}
-
-const shapeHelpers: ShapeHelpers = { row, map, values };
-
-type SourceProp<T extends Record<string, SourceEntry>> = T | ((m: ShapeHelpers) => T);
 const TABLE_TOOLBAR_HEIGHT = 42;
 const DEFAULT_TABLE_VIEWPORT_HEIGHT = 240;
 
 interface DataCardComponent {
-  <T extends Record<string, SourceEntry>>(props: {
+  <T extends Record<string, SourceValue>>(props: {
     source: SourceProp<T>;
     fallback?: ReactNode;
     className?: string;
@@ -31,27 +23,37 @@ interface DataCardComponent {
   }): ReactNode;
 }
 
-function unwrapFirstRef(source: Record<string, SourceEntry>): QueryRef | null {
-  const first = Object.values(source)[0];
-  if (!first) return null;
-  return '_ref' in first ? first._ref : first;
+function isQueryRef(value: SourceValue): value is QueryRef {
+  return typeof value === 'object' && value !== null && '_id' in value && '_type' in value;
 }
 
-function DataCardImpl({ source: sourceProp, fallback, children, className }: {
-  source: Record<string, SourceEntry> | ((m: ShapeHelpers) => Record<string, SourceEntry>);
-  fallback?: ReactNode;
+function resolveSource(source: Record<string, SourceValue>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(source)) {
+    out[key] = isQueryRef(value) ? use(value.materialize()) : use(value);
+  }
+  return out;
+}
+
+function toQueryTableSource(source: Record<string, SourceValue>): Record<string, QueryRef> {
+  return Object.fromEntries(
+    Object.entries(source).filter(([, value]) => isQueryRef(value)),
+  ) as Record<string, QueryRef>;
+}
+
+function DataCardImpl({ source: sourceProp, children, className }: {
+  source: Record<string, SourceValue> | (() => Record<string, SourceValue>);
   children: (data: Record<string, unknown>) => ReactNode;
   className?: string;
 }): ReactNode {
-  const source = typeof sourceProp === 'function' ? sourceProp(shapeHelpers) : sourceProp;
+  const source = typeof sourceProp === 'function' ? sourceProp() : sourceProp;
   const [view, setView] = useState<'chart' | 'table'>('chart');
   const contentRef = useRef<HTMLDivElement>(null);
   const savedHeightRef = useRef<number | undefined>(undefined);
   const savedWidthRef = useRef<number | undefined>(undefined);
+  const queryTableSource = useMemo(() => toQueryTableSource(source), [source]);
 
-  const data = useMaterialize.concurrent(source);
-  const hasSource = Object.keys(source).length > 0;
-  const firstRef = unwrapFirstRef(source);
+  const hasSource = Object.keys(queryTableSource).length > 0;
   const cardHeight = savedHeightRef.current;
   const cardWidth = savedWidthRef.current;
   const tableHeight = cardHeight != null
@@ -69,7 +71,7 @@ function DataCardImpl({ source: sourceProp, fallback, children, className }: {
     setView('table');
   };
 
-  if (!data) return fallback ?? null;
+  const data = resolveSource(source);
 
   if (view === 'table' && hasSource) {
     return (
@@ -85,7 +87,7 @@ function DataCardImpl({ source: sourceProp, fallback, children, className }: {
         className={cn('flex min-h-0 flex-col overflow-hidden', className)}
       >
         <QueryTable
-          table={source}
+          table={queryTableSource}
           onClose={() => setView('chart')}
           height={tableHeight}
         />
@@ -95,7 +97,7 @@ function DataCardImpl({ source: sourceProp, fallback, children, className }: {
 
   return (
     <div className={cn('relative', className)} ref={contentRef}>
-      {hasSource && firstRef && (
+      {hasSource && (
         <button
           type="button"
           onClick={handleSwitchToTable}
@@ -111,15 +113,19 @@ function DataCardImpl({ source: sourceProp, fallback, children, className }: {
 }
 
 /**
- * Reactive data boundary. Materializes QueryRef sources and renders
- * children with typed named data. Isolates re-renders to the consuming subtree.
+ * Reactive data boundary. Resolves QueryRef/Promise sources with Suspense and
+ * renders children with typed named data. Isolates re-renders to the subtree.
  *
  * Usage:
- *   <DataCard source={{myTable}}>{({myTable}) => ...}</DataCard>
- *   <DataCard source={{stats: row(statsRef)}}>{({stats}) => stats.total}</DataCard>
- *   <DataCard source={m => ({ stats: m.row(statsRef) })}>{({stats}) => stats.total}</DataCard>
+ *   <DataCard source={{ rows: myRef }}>{({rows}) => ...}</DataCard>
+ *   <DataCard source={{ stats: statsRef.materialize({ row: true }) }}>{({stats}) => stats?.total}</DataCard>
+ *   <DataCard source={() => ({ rows: myRef })}>{({rows}) => ...}</DataCard>
  */
 export const DataCard: DataCardComponent = (props: any): any => {
   if (props?.disabled) return <div>disabled</div>;
-  return createElement(DataCardImpl, props);
+  return (
+    <Suspense fallback={props?.fallback ?? null}>
+      {createElement(DataCardImpl, props)}
+    </Suspense>
+  );
 };

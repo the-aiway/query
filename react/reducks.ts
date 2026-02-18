@@ -2,28 +2,25 @@
  * reducks — self-contained reactive SQL hooks for DuckDB-WASM.
  *
  * API:
- *   useTable(t => sql, params?)   → QueryRef | null   (lazy spec — materializes on first consume)
- *   useSql(t => sql, params?)     → QueryRef | null   (virtual fragment, inlined as subquery)
- *   useMaterialize.rows(ref)      → Row[] | null
- *   useMaterialize.row(ref)       → Row | null
- *   useMaterialize.concurrent({}) → { key: Row[] }[] | null
+ *   useTable(t => sql, params?)   → QueryRef   (lazy spec — materializes on first consume)
+ *   useSql(t => sql, params?)     → QueryRef   (virtual fragment, inlined as subquery)
+ *   ref.materialize()             → Promise<Row[]>
+ *   ref.materialize({ row: true })→ Promise<Row | null>
  *
  * Params:
  *   QueryRef values  → FROM expressions (table path or inlined subquery)
  *   Scalars          → auto-escaped SQL literals (strings quoted, numbers raw, booleans TRUE/FALSE)
  *   t.raw.*          → raw interpolation (for file paths, identifiers, prebuilt SQL expressions)
  *
- * Lazy materialization:
- *   useTable creates a spec without executing. Actual COPY TO PARQUET runs
- *   only when a consumer (useMaterialize) triggers materializeChain().
- *   Names are always resolved before materialization, so no a-posteriori lookup.
- *   Unused tables skip execution entirely.
+ * Hooks always return a QueryRef (never null). When scalar params are missing,
+ * the ref has status 'pending'. Ref params that are pending propagate pending
+ * status without null cascading. Actual COPY TO PARQUET runs only when
+ * ref.materialize() is called. Works with React's use(): use(ref.materialize())
  *
  * Cache: content-addressed by resolved SQL string.
  */
 
-import { useEffect, useMemo, useState, useRef } from 'react';
-import { useDuckDB } from './DuckDBProvider';
+import { useMemo } from 'react';
 import type { InferSQLStrict } from '../duck/inferSqlReturntype';
 import { type SqlConditionValue, buildWhere, eq, neq, gt, gte, lt, lte, between, $in, like, ilike } from '../sqlConditions';
 import { toValuesSelect } from '../toValues';
@@ -34,68 +31,18 @@ import type { ConnectionPool } from '../duck/ConnectionPool';
 export interface QueryRef<TRow = unknown> {
   _name?: string;
   readonly _id: string;
-  _status: 'idle' | 'writing' | 'ready' | 'error';
+  _status: 'pending' | 'idle' | 'writing' | 'ready' | 'error';
   readonly _type: 'table' | 'fragment';
   readonly _query: string;
   _error?: Error;
   readonly _dependencies: QueryRef[];
   /** @internal Phantom — never set at runtime. */
   readonly __row?: TRow;
+  materialize(opts: { row: true; plain?: boolean }): Promise<NonNullable<TRow>>;
+  materialize(opts?: { row?: false; plain?: boolean }): Promise<NonNullable<TRow>[]>;
 }
 
 export type ExtractRow<T> = T extends QueryRef<infer R> ? R : unknown;
-
-// ─── Shaped Refs ─────────────────────────────────────────────
-
-export type ShapedRef<TShape extends string = 'rows', TRow = unknown> = {
-  readonly _ref: QueryRef<TRow>;
-  readonly _shape: TShape;
-  readonly _key?: string;
-};
-
-export type SourceEntry<TRow = unknown> = QueryRef<TRow> | ShapedRef<string, TRow> | null;
-
-export function row<TRow>(ref: QueryRef<TRow> | null): ShapedRef<'row', TRow> | null {
-  return ref ? { _ref: ref, _shape: 'row' } : null;
-}
-
-export function map<TRow>(ref: QueryRef<TRow> | null, key: string & keyof NonNullable<TRow>): ShapedRef<'map', TRow> | null {
-  return ref ? { _ref: ref, _shape: 'map', _key: key } : null;
-}
-
-export function values<TRow, K extends string & keyof NonNullable<TRow>>(ref: QueryRef<TRow> | null, key: K): ShapedRef<'values', TRow> | null {
-  return ref ? { _ref: ref, _shape: 'values', _key: key } : null;
-}
-
-function isShapedRef(v: unknown): v is ShapedRef {
-  return v != null && typeof v === 'object' && '_ref' in v && '_shape' in v;
-}
-
-function unwrapRef(v: SourceEntry): QueryRef | null {
-  if (v == null) return null;
-  if (isShapedRef(v)) return v._ref;
-  return v as QueryRef;
-}
-
-function getShape(v: SourceEntry): { shape: string; key?: string } {
-  if (isShapedRef(v)) return { shape: v._shape, key: v._key };
-  return { shape: 'rows' };
-}
-
-function applyShape(rows: unknown[], shape: string, key?: string): unknown {
-  if (shape === 'row') return rows[0] ?? null;
-  if (shape === 'map' && key) return new Map(rows.map(r => [(r as Record<string, unknown>)[key], r]));
-  if (shape === 'values' && key) return rows.map(r => (r as Record<string, unknown>)[key]);
-  return rows;
-}
-
-export type ResolveShape<TEntry> =
-  TEntry extends null ? never :
-  TEntry extends ShapedRef<'row', infer R> ? NonNullable<R> :
-  TEntry extends ShapedRef<'map', infer R> ? Map<string, NonNullable<R>> :
-  TEntry extends ShapedRef<'values', infer R> ? (R extends Record<string, infer V> ? V[] : unknown[]) :
-  TEntry extends QueryRef<infer R> ? NonNullable<R>[] :
-  unknown[];
 
 // ─── Param Proxy Types ───────────────────────────────────────
 
@@ -143,20 +90,20 @@ export interface UseTableHook {
   <TParams extends Record<string, any>, TQuery extends string>(
     queryFn: (t: ParamProxy<TParams>) => ValidSQL<TQuery>,
     params?: TParams,
-  ): QueryRef<InferSQLStrict<TQuery>[number]> | null;
+  ): QueryRef<InferSQLStrict<TQuery>[number]>;
   <TQuery extends string>(
     sql: ValidSQL<TQuery>,
-  ): QueryRef<InferSQLStrict<TQuery>[number]> | null;
+  ): QueryRef<InferSQLStrict<TQuery>[number]>;
 }
 
 export interface UseSqlHook {
   <TParams extends Record<string, any>, TQuery extends string>(
     queryFn: (t: ParamProxy<TParams>) => ValidSQL<TQuery>,
     params?: TParams,
-  ): QueryRef<InferSQLStrict<TQuery>[number]> | null;
+  ): QueryRef<InferSQLStrict<TQuery>[number]>;
   <TQuery extends string>(
     sql: ValidSQL<TQuery>,
-  ): QueryRef<InferSQLStrict<TQuery>[number]> | null;
+  ): QueryRef<InferSQLStrict<TQuery>[number]>;
 }
 
 type DuckDBType = 'VARCHAR' | 'INT' | 'INTEGER' | 'BIGINT' | 'FLOAT' | 'DOUBLE' | 'BOOLEAN' | 'DATE' | 'TIMESTAMP' | 'DECIMAL' | 'HUGEINT' | (string & {});
@@ -165,53 +112,18 @@ export interface UseValuesHook {
   <TSchema extends Record<string, DuckDBType>>(
     data: { [K in keyof TSchema]?: unknown }[],
     schema: TSchema,
-  ): QueryRef<{ [K in keyof TSchema]: unknown }> | null;
+  ): QueryRef<{ [K in keyof TSchema]: unknown }>;
   <TKey extends string>(
     data: Record<string, unknown>[],
     columns: readonly TKey[],
-  ): QueryRef<{ [K in TKey]: unknown }> | null;
+  ): QueryRef<{ [K in TKey]: unknown }>;
 }
 
-
-interface MaterializeRowsHook {
-  <T extends Record<string, QueryRef | null>>(source: T): ExtractRow<NonNullable<T[keyof T]>>[] | null;
-  <TParams extends Record<string, any>, TQuery extends string>(
-    queryFn: (t: ParamProxy<TParams>) => ValidSQL<TQuery>,
-    params?: TParams,
-  ): InferSQLStrict<TQuery> | null;
-}
-
-interface MaterializeRowHook {
-  <T extends Record<string, QueryRef | null>>(source: T): ExtractRow<NonNullable<T[keyof T]>> | null;
-  <TParams extends Record<string, any>, TQuery extends string>(
-    queryFn: (t: ParamProxy<TParams>) => ValidSQL<TQuery>,
-    params?: TParams,
-  ): InferSQLStrict<TQuery>[number] | null;
-}
-
-interface MaterializeConcurrentHook {
-  <T extends Record<string, SourceEntry>>(sources: T): {
-    [K in keyof T]: ResolveShape<T[K]>;
-  } | null;
-}
 
 // ─── Internals ───────────────────────────────────────────────
 
 const _cache = new Map<string, QueryRef>();
 const _materializing = new Map<string, Promise<void>>();
-const _inflightQueries = new Map<string, Promise<unknown[]>>();
-
-function runSharedQuery(pool: ConnectionPool, sql: string): Promise<unknown[]> {
-  const existing = _inflightQueries.get(sql);
-  if (existing) return existing;
-  const queryPromise = (pool.query(sql) as Promise<unknown[]>).finally(() => {
-    if (_inflightQueries.get(sql) === queryPromise) {
-      _inflightQueries.delete(sql);
-    }
-  });
-  _inflightQueries.set(sql, queryPromise);
-  return queryPromise;
-}
 
 function isRef(v: unknown): v is QueryRef {
   return v != null && typeof v === 'object' && '_type' in v && '_id' in v;
@@ -257,12 +169,58 @@ function buildProxy<T extends Record<string, any>>(params: T): ParamProxy<T> {
   return Object.assign(escaped, { raw, where: buildWhere, eq, neq, gt, gte, lt, lte, between, in: $in, like, ilike }) as ParamProxy<T>;
 }
 
-function depsResolved(params: Record<string, any>): boolean {
-  return Object.values(params).every(v => v != null);
+function depsResolved(params: Record<string, unknown>): boolean {
+  return Object.values(params).every(v => {
+    if (isRef(v)) return v._status !== 'pending';
+    return v != null;
+  });
 }
 
 let _seq = 0;
 const uid = (prefix: string) => `${prefix}_${++_seq}_${Math.random().toString(36).slice(2, 6)}`;
+
+const NEVER = new Promise<never>(() => {});
+const _materializeCache = new Map<string, Promise<unknown>>();
+
+function getPool(): ConnectionPool {
+  return (window as unknown as { pool: ConnectionPool }).pool;
+}
+
+function createRef<TRow>(spec: {
+  _id: string;
+  _status: QueryRef['_status'];
+  _type: QueryRef['_type'];
+  _query: string;
+  _dependencies: QueryRef[];
+  _name?: string;
+}): QueryRef<TRow> {
+  const entry = spec as unknown as QueryRef<TRow>;
+  entry.materialize = ((opts?: { row?: boolean; plain?: boolean }) => {
+    if (entry._status === 'pending') return NEVER;
+
+    const optKey = opts ? `${opts.row ? 'r' : ''}${opts.plain ? 'p' : ''}` : '';
+    const cacheKey = `${entry._id}\0${optKey}`;
+
+    const hit = _materializeCache.get(cacheKey);
+    if (hit) return hit;
+
+    const pool = getPool();
+    const p = (async () => {
+      await materializeChain(entry, pool);
+      const name = entry._name || entry._id;
+      const prefix = `--:re:${entry._type}:${name}\n`;
+      const rows = await pool.query(`${prefix}FROM ${fromExpr(entry)}`) as unknown[];
+      let result: unknown = rows;
+      if (opts?.row) result = rows[0] ?? null;
+      if (opts?.plain) result = JSON.parse(JSON.stringify(result));
+      return result;
+    })();
+
+    _materializeCache.set(cacheKey, p);
+    return p;
+  }) as QueryRef<TRow>['materialize'];
+  return entry;
+}
 
 // ─── Materialization ─────────────────────────────────────────
 
@@ -322,70 +280,40 @@ export function needsMaterialization(ref: QueryRef): boolean {
 
 // ─── Hooks: Producers ────────────────────────────────────────
 
-function usePoolQuery(sql: string | null): unknown[] | null {
-  const { pool } = useDuckDB();
-  const [data, setData] = useState<unknown[] | null>(null);
-  const last = useRef<unknown[] | null>(null);
+function useQueryRef(type: 'table' | 'fragment'): UseTableHook {
+  return (queryFn: any, params: any = {}): any => {
+    const ready = depsResolved(params);
+    const sql = ready ? (typeof queryFn === 'function' ? queryFn(buildProxy(params)) : queryFn) : null;
 
-  useEffect(() => {
-    if (!sql) return;
-    let alive = true;
-    runSharedQuery(pool, sql).then((res) => {
-      if (alive) { setData(res); last.current = res; }
-    }).catch((err: unknown) => {
-      if (alive) console.error('[reducks] query error:', err);
-    });
-    return () => { alive = false; };
-  }, [sql, pool]);
+    const pending = useMemo(() => createRef({
+      _id: uid('p'),
+      _status: 'pending',
+      _type: type,
+      _query: '',
+      _dependencies: [],
+    }), []);
 
-  return data ?? last.current;
+    return useMemo(() => {
+      if (!sql) return pending;
+      const key = `${type}\0${sql}`;
+      const hit = _cache.get(key);
+      if (hit) return hit;
+      const deps = Object.values(params).filter(isRef) as QueryRef[];
+      const entry = createRef({
+        _id: uid(type === 'table' ? 't' : 'f'),
+        _status: type === 'table' ? 'idle' : 'ready',
+        _type: type,
+        _query: sql,
+        _dependencies: deps,
+      });
+      _cache.set(key, entry);
+      return entry;
+    }, [sql, pending]);
+  };
 }
 
-export const useTable: UseTableHook = (queryFn: any, params: any = {}): any => {
-  const ready = depsResolved(params);
-  const sql = ready ? (typeof queryFn === 'function' ? queryFn(buildProxy(params)) : queryFn) : null;
-
-  return useMemo(() => {
-    if (!sql) return null;
-    const key = `table\0${sql}`;
-    const hit = _cache.get(key);
-    if (hit) return hit;
-
-    const id = uid('t');
-    const deps = Object.values(params).filter(isRef) as QueryRef[];
-    const entry: QueryRef = {
-      _id: id,
-      _status: 'idle',
-      _type: 'table',
-      _query: sql,
-      _dependencies: deps,
-    };
-    _cache.set(key, entry);
-    return entry;
-  }, [sql]);
-};
-
-export const useSql: UseSqlHook = (queryFn: any, params: any = {}): any => {
-  const ready = depsResolved(params);
-  const sql: string | null = ready ? (typeof queryFn === 'function' ? queryFn(buildProxy(params)) : queryFn) : null;
-
-  return useMemo(() => {
-    if (!sql) return null;
-    const key = `fragment\0${sql}`;
-    const hit = _cache.get(key);
-    if (hit) return hit;
-    const deps = Object.values(params).filter(isRef) as QueryRef[];
-    const entry: QueryRef = {
-      _id: uid('f'),
-      _status: 'ready',
-      _type: 'fragment',
-      _query: sql,
-      _dependencies: deps,
-    };
-    _cache.set(key, entry);
-    return entry;
-  }, [sql]);
-};
+export const useTable: UseTableHook = useQueryRef('table');
+export const useSql: UseSqlHook = useQueryRef('fragment');
 
 
 export const useValues: UseValuesHook = (data: Record<string, unknown>[], schema: Record<string, string> | readonly string[]): any => {
@@ -395,148 +323,20 @@ export const useValues: UseValuesHook = (data: Record<string, unknown>[], schema
     const key = `fragment\0${sql}`;
     const hit = _cache.get(key);
     if (hit) return hit;
-    const entry: QueryRef = {
+    const entry = createRef({
       _id: uid('f'),
       _status: 'ready',
       _type: 'fragment',
       _query: sql,
       _dependencies: [],
-    };
+    });
     _cache.set(key, entry);
     return entry;
   }, [sql]);
 };
 
-// ─── Hooks: Consumers ────────────────────────────────────────
-
-function normalizeSource(arg: Record<string, QueryRef | null>): { ref: QueryRef | null; name: string } {
-  const [entry] = Object.entries(arg);
-  return entry ? { ref: entry[1], name: entry[0] } : { ref: null, name: '' };
-}
-
-const _rows: MaterializeRowsHook = (arg1: any, arg2?: any): any => {
-  const { pool } = useDuckDB();
-  const isFn = typeof arg1 === 'function';
-
-  let source: QueryRef | null = null;
-
-  if (isFn) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    source = useSql(arg1, arg2 || {});
-  } else {
-    const { ref, name } = normalizeSource(arg1);
-    source = ref;
-    if (source && name) source._name = name;
-  }
-
-  const [, kick] = useState(0);
-  const sourceId = source?._id;
-  const pending = source != null && needsMaterialization(source);
-
-  useEffect(() => {
-    if (!source || !pending) return;
-    let alive = true;
-    materializeChain(source, pool)
-      .then(() => { if (alive) kick(v => v + 1); })
-      .catch(() => { if (alive) kick(v => v + 1); });
-    return () => { alive = false; };
-  }, [sourceId, pending, pool]);
-
-  const ok = source != null && !needsMaterialization(source);
-  const name = source?._name || source?._id;
-  const prefix = ok && source && name ? `--:re:${source._type}:${name}\n` : '';
-  return usePoolQuery(ok ? `${prefix}FROM ${fromExpr(source!)}` : null);
-};
-
-const _rowsPlain: MaterializeRowsHook = (arg1: any, arg2?: any): any => {
-  const rows = _rows(arg1, arg2);
-  return useMemo(() => (rows ? JSON.parse(JSON.stringify(rows)) : null), [rows]);
-};
-
-const _row: MaterializeRowHook = (arg1: any, arg2?: any): any => {
-  const rows = _rows(arg1, arg2);
-  return rows && rows.length > 0 ? rows[0] : null;
-};
-
-const _rowPlain: MaterializeRowHook = (arg1: any, arg2?: any): any => {
-  const row = _row(arg1, arg2);
-  return useMemo(() => (row ? JSON.parse(JSON.stringify(row)) : null), [row]);
-};
-
-const _concurrent: MaterializeConcurrentHook = (sources: any): any => {
-  const { pool } = useDuckDB();
-  const [results, setResults] = useState<Record<string, unknown> | null>(null);
-  const last = useRef<Record<string, unknown> | null>(null);
-
-  const rawEntries = Object.entries(sources) as [string, SourceEntry][];
-  const resolved = rawEntries.map(([k, v]) => {
-    const ref = unwrapRef(v);
-    if (ref && !ref._name) ref._name = k;
-    return [k, ref, getShape(v)] as const;
-  });
-
-  const allPresent = resolved.every(([, ref]) => ref != null);
-  const stableKey = resolved.map(([k, ref]) => `${k}:${ref?._id}`).join(',');
-
-  useEffect(() => {
-    if (!allPresent) return;
-    let alive = true;
-
-    (async () => {
-      const chains = resolved.filter(([, ref]) => ref && needsMaterialization(ref));
-      if (chains.length > 0) {
-        await Promise.all(chains.map(([, ref]) =>
-          materializeChain(ref!, pool).catch(err => console.error('[concurrent] materialize:', err))
-        ));
-      }
-
-      const pairs = await Promise.all(
-        resolved.map(async ([key, ref, { shape, key: shapeKey }]) => {
-          if (!ref) return [key, shape === 'row' ? null : []] as const;
-          const name = ref._name || ref._id;
-          const prefix = `--:re:${ref._type}:${name}\n`;
-          try {
-            const rows = await runSharedQuery(pool, `${prefix}FROM ${fromExpr(ref)}`);
-            return [key, applyShape(rows as unknown[], shape, shapeKey)] as const;
-          } catch (err) {
-            if (alive) console.error(`[concurrent] error [${key}]:`, err);
-            return [key, shape === 'row' ? null : []] as const;
-          }
-        }),
-      );
-
-      if (alive) {
-        const obj = Object.fromEntries(pairs) as Record<string, unknown>;
-        setResults(obj);
-        last.current = obj;
-      }
-    })();
-
-    return () => { alive = false; };
-  }, [allPresent, stableKey, pool]);
-
-  return results ?? last.current;
-};
-
-const _concurrentPlain: MaterializeConcurrentHook = (sources: any): any => {
-  const results = _concurrent(sources);
-  return useMemo(() => (results ? JSON.parse(JSON.stringify(results)) : null), [results]);
-};
-
-export const useMaterialize = {
-  rows: _rows,
-  row: _row,
-  concurrent: _concurrent,
-  plain: {
-    rows: _rowsPlain,
-    row: _rowPlain,
-    concurrent: _concurrentPlain,
-  },
-};
-
 // ─── Type Tests ──────────────────────────────────────────────
-
-export function _typeCheck() {
+export async  function _typeCheck() {
   // --- literal SQL (no interpolations — ValidSQL + InferSQLStrict work) ---
 
   const f1_plain = useSql(`SELECT * FROM '/api/export/*/reference_carriers.parquet'`);
@@ -570,38 +370,38 @@ export function _typeCheck() {
 
   // --- useMaterialize (named source required) ---
 
-  const rows1 = useMaterialize.rows({ typed });
-  rows1 && (rows1 satisfies { total: number; name: unknown }[]);
+  const rows1 = await typed.materialize();
+  (rows1 satisfies { total: number; name: unknown }[]);
 
-  const row1 = useMaterialize.row({ f2 });
-  row1 && (row1 satisfies { val: number });
+  const row1 = await f2.materialize({ row: true });
+  (row1 satisfies { val: number });
 
-  const fragRows = useMaterialize.rows({ f3 });
+  const fragRows = await f3.materialize();
   fragRows && (fragRows satisfies { total_cost: number; best: unknown }[]);
 
-  const multi = useMaterialize.concurrent({ tbl: typed, frag: f2 });
-  multi && (multi satisfies { tbl: { total: number; name: unknown }[]; frag: { val: number }[] });
+  const multi = await Promise.all([typed.materialize(), f2.materialize()]);
+  multi satisfies [{ total: number; name: unknown }[],  { val: number }[]];
 
-  const single = useMaterialize.concurrent({ only: typed });
-  single && (single satisfies { only: { total: number; name: unknown }[] });
+  const single = await typed.materialize();
+  single satisfies { total: number; name: unknown }[];
 
   // --- shaped refs ---
 
-  const shaped1 = useMaterialize.concurrent({ stats: row(typed) });
-  shaped1 && (shaped1 satisfies { stats: { total: number; name: unknown } });
+  const shaped1 = await typed.materialize({ row: true });
+  shaped1 satisfies { total: number; name: unknown };
 
-  const shaped2 = useMaterialize.concurrent({ rows: typed, agg: row(f2) });
-  shaped2 && (shaped2 satisfies { rows: { total: number; name: unknown }[]; agg: { val: number } });
+  const shaped2 = await Promise.all([typed.materialize(), f2.materialize({ row: true })]);
+  shaped2 satisfies [{ total: number; name: unknown }[], { val: number }];
 
   // --- inline materialize ---
 
-  const inlineRow = useMaterialize.row(() => `SELECT 1::int as x`, {});
-  inlineRow && (inlineRow satisfies { x: number });
+  const inlineRow = await useSql(() => `SELECT 1::int as x`, {}).materialize({ row: true });
+  inlineRow satisfies { x: number };
 
-  const inlineRows = useMaterialize.rows(() => `SELECT 'abc' as s`, {});
-  inlineRows && (inlineRows satisfies { s: string }[]);
+  const inlineRows = await useSql(() => `SELECT 'abc' as s`, {}).materialize();
+  inlineRows satisfies { s: string }[];
 
-  const inlinePlain = useMaterialize.plain.row(() => `SELECT true::bool as b`, {});
+  const inlinePlain = await useSql(() => `SELECT true::bool as b`, {}).materialize({ row: true, plain: true });
   inlinePlain && (inlinePlain satisfies { b: boolean });
 
   // --- useValues ---
