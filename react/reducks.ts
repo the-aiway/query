@@ -26,6 +26,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { useDuckDB } from './DuckDBProvider';
 import type { InferSQLStrict } from '../duck/inferSqlReturntype';
 import { type SqlConditionValue, buildWhere, eq, neq, gt, gte, lt, lte, between, $in, like, ilike } from '../sqlConditions';
+import { toValuesSelect } from '../toValues';
 import type { ConnectionPool } from '../duck/ConnectionPool';
 
 // ─── Core Types ──────────────────────────────────────────────
@@ -383,19 +384,7 @@ export const useSql: UseSqlHook = (queryFn: any, params: any = {}): any => {
 
 
 export const useValues: UseValuesHook = (data: Record<string, unknown>[], schema: Record<string, string> | readonly string[]): any => {
-  const isArray = Array.isArray(schema);
-  const cols = isArray ? schema as string[] : Object.keys(schema);
-  const sql = useMemo(() => {
-    if (data.length === 0) {
-      if (isArray) return `SELECT ${cols.map(c => `NULL AS ${c}`).join(', ')} WHERE FALSE`;
-      const selects = cols.map(c => `NULL::${(schema as Record<string, string>)[c]} AS ${c}`).join(', ');
-      return `SELECT ${selects} WHERE FALSE`;
-    }
-    const rows = data.map(r => `(${cols.map(c => escapeSQL(r[c])).join(',')})`);
-    if (isArray) return `SELECT * FROM (VALUES ${rows.join(',')}) AS _v(${cols.join(',')})`;
-    const casts = cols.map(c => `${c}::${(schema as Record<string, string>)[c]} AS ${c}`).join(', ');
-    return `SELECT ${casts} FROM (VALUES ${rows.join(',')}) AS _v(${cols.join(',')})`;
-  }, [JSON.stringify(data)]);
+  const sql = useMemo(() => toValuesSelect(data, schema), [JSON.stringify(data)]);
 
   return useMemo(() => {
     const key = `fragment\0${sql}`;
