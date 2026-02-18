@@ -43,6 +43,8 @@ export function Headers() {
             const colSchema = schema?.find((s) => s.name === colName);
             const typeStr = colSchema?.type?.toUpperCase() ?? '';
             const isNumeric = typeStr.match(/INT|DOUBLE|FLOAT|DECIMAL|REAL|NUMERIC/);
+            const isDateLike = typeStr.match(/DATE|TIME|TIMESTAMP/);
+            const useRangeFilter = Boolean(isNumeric || isDateLike);
             const fullTitle = isRowIndex
               ? 'Row Number'
               : typeStr
@@ -111,7 +113,7 @@ export function Headers() {
                           hasFilter ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'
                         } ${compact ? 'scale-90 origin-right' : ''}`}
                       >
-                        {isNumeric ? (
+                        {useRangeFilter ? (
                           <RangeFilter
                             col={colName}
                             icon={

@@ -1,57 +1,37 @@
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { format } from 'sql-formatter';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 
 import { Dialog, DialogContent, DialogTrigger } from '../ui/Dialog';
 
 type SqlQueryEditorPopoverProps = {
   sql: string;
-  onSave: (nextSql: string) => void;
   title?: string;
   children?: React.ReactNode;
 };
 
 export function SqlQueryEditorPopover({
   sql,
-  onSave,
-  title = 'SQL Editor',
+  title = 'SQL',
   children,
 }: SqlQueryEditorPopoverProps) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(sql);
-  const editorRef = useRef<any>(null);
 
-  const lineCount = useMemo(() => draft.split('\n').length, [draft]);
-  const editorHeight = Math.min(Math.max(lineCount * 19 + 20, 150), 500);
-
-  const toFormattedSql = useCallback((inputSql: string) => {
+  const formatted = useMemo(() => {
     try {
-      return format(inputSql, { language: 'sql' , dialect: 'duckdb' });
+      return format(sql, { language: 'sql', dialect: 'duckdb' });
     } catch {
-      return inputSql;
+      return sql;
     }
-  }, []);
+  }, [sql]);
 
-  useEffect(() => {
-    if (open) {
-      setDraft(toFormattedSql(sql));
-    }
-  }, [sql, open, toFormattedSql]);
-
-  const execute = useCallback(() => {
-    const trimmed = draft.trim();
-    if (trimmed && trimmed !== sql.trim()) {
-      onSave(trimmed);
-    }
-    setOpen(false);
-  }, [onSave, sql, draft]);
+  const lineCount = useMemo(() => formatted.split('\n').length, [formatted]);
+  const editorHeight = Math.min(Math.max(lineCount * 19 + 20, 150), 500);
 
   const handleEditorMount: OnMount = useCallback(
     (editor, monaco) => {
-      editorRef.current = editor;
-
       monaco.languages.registerDocumentFormattingEditProvider('sql', {
-        provideDocumentFormattingEdits(model: any) {
+        provideDocumentFormattingEdits(model: unknown & { getValue: () => string; getFullModelRange: () => unknown }) {
           try {
             const formatted = format(model.getValue(), { language: 'sql' });
             return [{ range: model.getFullModelRange(), text: formatted }];
@@ -61,32 +41,9 @@ export function SqlQueryEditorPopover({
         },
       });
 
-      editor.addAction({
-        id: 'execute-query',
-        label: 'Execute Query',
-        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
-        run: () => {
-          const trimmed = editor.getValue().trim();
-          if (!trimmed) return;
-          onSave(trimmed);
-          setOpen(false);
-        },
-      });
-
-      editor.addAction({
-        id: 'format-sql',
-        label: 'Format SQL',
-        keybindings: [
-          monaco.KeyMod.CtrlCmd | monaco.KeyCode.Semicolon,
-          monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Comma,
-        ],
-        run: () => editor.getAction('editor.action.formatDocument')?.run(),
-      });
-
       editor.getAction('editor.action.formatDocument')?.run();
-      editor.focus();
     },
-    [onSave],
+    [],
   );
 
   return (
@@ -108,18 +65,16 @@ export function SqlQueryEditorPopover({
             <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
               {title}
             </span>
-            <span className="text-[10px] text-muted-foreground font-mono">
-              {navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Enter run
-            </span>
           </div>
           <Editor
             height={editorHeight}
             defaultLanguage="sql"
-            value={draft}
-            onChange={(v) => setDraft(v ?? '')}
+            value={formatted}
             onMount={handleEditorMount}
             theme="vs-dark"
             options={{
+              readOnly: true,
+              domReadOnly: true,
               minimap: { enabled: false },
               fontSize: 13,
               lineNumbers: 'on',
@@ -129,7 +84,7 @@ export function SqlQueryEditorPopover({
               wordWrap: 'on',
               folding: false,
               glyphMargin: false,
-              renderLineHighlight: 'line',
+              renderLineHighlight: 'none',
               scrollbar: {
                 vertical: 'auto',
                 horizontal: 'auto',
@@ -144,24 +99,9 @@ export function SqlQueryEditorPopover({
               overviewRulerLanes: 0,
               hideCursorInOverviewRuler: true,
               overviewRulerBorder: false,
+              contextmenu: false,
             }}
           />
-          <div className="border-t border-border bg-muted/30 px-3 py-1.5 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => editorRef.current?.getAction('editor.action.formatDocument')?.run()}
-              className="text-[11px] font-mono font-medium text-muted-foreground hover:text-foreground px-3 py-1 rounded hover:bg-accent transition-colors"
-            >
-              Format SQL
-            </button>
-            <button
-              type="button"
-              onClick={execute}
-              className="text-[11px] font-mono font-medium text-primary hover:text-primary/80 px-3 py-1 rounded hover:bg-primary/10 transition-colors"
-            >
-              Run Query
-            </button>
-          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -6,8 +6,6 @@ import { type QueryRef } from '../../react/reducks';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { Button } from '../ui/Button';
 import { ScrollArea } from '../ui/ScrollArea';
-import type { ConnectionPool } from '../../duck/ConnectionPool';
-import { useQT } from './QueryTableContext';
 
 // --- Tree types ---
 
@@ -228,12 +226,9 @@ function SqlPreview({ sql }: { sql: string }) {
 
 type DependencyTreeProps = {
   entry: QueryRef;
-  pool: ConnectionPool;
-  onReplay: (sql: string) => void;
 };
 
-export function DependencyTree({ entry, onReplay }: DependencyTreeProps) {
-  const { resetAll } = useQT();
+export function DependencyTree({ entry }: DependencyTreeProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const tree = useMemo(() => buildTree(entry), [entry]);
@@ -244,19 +239,7 @@ export function DependencyTree({ entry, onReplay }: DependencyTreeProps) {
   }, [selectedId, tree]);
 
   const handleSelect = (node: TreeNode) => {
-    if (node.kind === 'path') {
-      setSelectedId(node.id);
-      onReplay(`SELECT * FROM '${node.path}'`);
-      return;
-    }
-    const ref = node.entry!;
-    if (ref._id === entry._id) {
-      resetAll();
-      setSelectedId(null);
-      return;
-    }
-    setSelectedId(node.id);
-    if (ref._query) onReplay(ref._query);
+    setSelectedId(selectedId === node.id ? null : node.id);
   };
 
   return (

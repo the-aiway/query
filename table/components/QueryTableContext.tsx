@@ -40,7 +40,7 @@ import {
   parseFilters,
 } from './sqlUtils';
 import { useDuckDB } from '../../react/DuckDBProvider';
-import { type QueryRef, type SourceEntry } from '../../react/reducks';
+import { type QueryRef } from '../../react/reducks';
 import { useQueryState } from 'nuqs';
 
 type QueryTableCommonProps = {
@@ -68,7 +68,7 @@ type QueryTableCommonProps = {
 };
 
 type QueryTableNonEntryInput = string | Record<string, unknown>[] | Table;
-export type QueryTableSourceMap = Record<string, SourceEntry>;
+export type QueryTableSourceMap = Record<string, QueryRef | null>;
 
 export type QueryTableProps =
   | (QueryTableCommonProps & {
@@ -111,7 +111,6 @@ function useQueryTableState({
   getRowClassName,
   renderCell,
   onClose,
-  onEditSql,
   title,
   refreshing = false,
 }: {
@@ -119,22 +118,13 @@ function useQueryTableState({
   title?: string,
   initSql: string;
   initOriginalSql?: string;
-  onEditSql?: (sql: string) => void;
   entry?: QueryRef;
   params?: unknown[];
   pool: ReturnType<typeof useDuckDB>['pool'];
   refreshing?: boolean;
 } & Omit<QueryTableProps, 'table' | 'pool' | 'height' | 'rowHeight' | 'overscan'>) {
-  const [sql, setSql] = useState(initSql);
-  const [originalSql, setOriginalSql] = useState(initOriginalSql ?? initSql);
-  const lastInitSqlRef = useRef(initSql);
-
-  useEffect(() => {
-    if (lastInitSqlRef.current === initSql) return;
-    lastInitSqlRef.current = initSql;
-    setSql(initSql);
-    setOriginalSql(initOriginalSql ?? initSql);
-  }, [initSql, initOriginalSql]);
+  const sql = initSql;
+  const originalSql = initOriginalSql ?? initSql;
 
   // --- URL state: separate params per concern ---
   const qsOpts = { shallow: true, history: 'replace' as const };
@@ -286,24 +276,11 @@ function useQueryTableState({
     manualSorting: true,
   });
 
-  const lastSqlRef = useRef<string>(initSql);
   const initializedSchemaRef = useRef<string>('');
   const initializedVisibilityRef = useRef<string>('');
 
   useEffect(() => {
     const schemaKey = fieldNames.join(',');
-
-    if (lastSqlRef.current !== sql) {
-      lastSqlRef.current = sql;
-      setColumnSizing({});
-      setColumnVisibility({});
-      setColumnPinning({});
-      setOpenFilterCol(null);
-      setFilterSearch('');
-      initializedSchemaRef.current = '';
-      initializedVisibilityRef.current = '';
-      return;
-    }
 
     if (schemaKey && columnSizes.length > 0 && initializedSchemaRef.current !== schemaKey) {
       const effMin = enableFilters ? colMinWidth : Math.min(colMinWidth, 44);
@@ -340,17 +317,11 @@ function useQueryTableState({
         initializedVisibilityRef.current = schemaKey;
       }
     }
-  }, [sql, fieldNames, columnSizes, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, columnVisibility, layoutKey]);
+  }, [fieldNames, columnSizes, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, columnVisibility, layoutKey]);
 
-  const onSaveSql = useCallback((nextSql: string) => {
-    setSql(nextSql);
-  }, []);
-
-  const hasCustomSql = sql !== initSql;
-  const hasChanges = hasCustomSql || hasActiveFiltersOrSorting;
+  const hasChanges = hasActiveFiltersOrSorting;
 
   const resetAll = useCallback(() => {
-    setSql(initSql);
     setSorting([]);
     setColumnFilters({});
     setGlobalFilter('');
@@ -361,7 +332,7 @@ function useQueryTableState({
     setColumnPinning({});
     initializedSchemaRef.current = '';
     initializedVisibilityRef.current = '';
-  }, [initSql]);
+  }, []);
 
   const fieldNamesForGlobal = useMemo(
     () => (globalFilter.trim() ? fieldNames : []),
@@ -428,10 +399,8 @@ function useQueryTableState({
     totalFilterCount,
     globalFilterActive,
 
-    onSaveSql,
     resetAll,
     hasChanges,
-    hasCustomSql,
     table,
 
     enableFilters,
@@ -461,7 +430,6 @@ export function QueryTableProvider({
   children: ReactNode;
   initSql: string;
   initOriginalSql?: string;
-  onEditSql?: (sql: string) => void;
   entry?: QueryRef;
   params?: unknown[];
   pool: ReturnType<typeof useDuckDB>['pool'];

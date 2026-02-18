@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { use, useEffect, useMemo, useRef, useState } from 'react';
 import { tableFromJSON, Table } from 'apache-arrow';
-import { type QueryRef, needsMaterialization, materializeChain, tablePath } from '../../react/reducks';
+import { type QueryRef, tablePath, useTable } from '../../react/reducks';
 import type { ConnectionPool } from '../../duck/ConnectionPool';
 import { normalizeSelectSql } from './sqlUtils';
 
@@ -27,27 +27,8 @@ export function useResolvedSource(
   pool: ConnectionPool,
 ): ResolvedSource {
   const entry = isQueryRef(tableInput) ? tableInput : undefined;
-
-  const depsReady = !isQueryRef(tableInput) || !needsMaterialization(tableInput);
-  const [materializingDeps, setMaterializingDeps] = useState(false);
-
-  useEffect(() => {
-    if (!isQueryRef(tableInput) || depsReady) return;
-    let alive = true;
-    setMaterializingDeps(true);
-    materializeChain(tableInput, pool)
-      .finally(() => { if (alive) setMaterializingDeps(false); });
-    return () => { alive = false; };
-  }, [tableInput, depsReady, pool]);
-
-  const tableRefSql = useMemo(() => {
-    if (!isQueryRef(tableInput)) return null;
-    if (tableInput._status !== 'ready') return null;
-    if (tableInput._type === 'table') {
-      return `SELECT * FROM '${tablePath(tableInput)}'`;
-    }
-    return null;
-  }, [tableInput]);
+  const fragmentRef = isQueryRef(tableInput) && tableInput._type === 'fragment' ? tableInput : undefined;
+  const wrappedRef = useTable((t) => `SELECT * FROM ${t._src}`, { _src: fragmentRef });
 
   const [registered, setRegistered] = useState<{ sql: string } | null>(null);
 
@@ -98,37 +79,49 @@ export function useResolvedSource(
 
   const lastGood = useRef<ResolvedSource | null>(null);
 
-  const depsPending = isQueryRef(tableInput) && (!depsReady || materializingDeps);
-
-  if (isQueryRef(tableInput) && tableInput._status !== 'ready' && !depsPending) {
-    return { sql: null, originalSql: null, entry, loading: true, loadingMessage: 'waiting for data...' };
+  if (isQueryRef(tableInput) && tableInput._type === 'table') {
+    use(tableInput.materialize());
+    const result: ResolvedSource = {
+      sql: `SELECT * FROM '${tablePath(tableInput)}'`,
+      originalSql,
+      entry,
+      loading: false,
+    };
+    if (result.sql) lastGood.current = result;
+    return result;
   }
 
-  if (depsPending) {
-    if (lastGood.current) return { ...lastGood.current, entry, refreshing: true };
-    return { sql: null, originalSql: null, entry, loading: true, loadingMessage: 'materializing dependencies...' };
+  if (isQueryRef(tableInput) && tableInput._type === 'fragment') {
+    use(wrappedRef.materialize());
+    const result: ResolvedSource = {
+      sql: `SELECT * FROM '${tablePath(wrappedRef)}'`,
+      originalSql,
+      entry,
+      loading: false,
+    };
+    if (result.sql) lastGood.current = result;
+    return result;
   }
 
-  let result: ResolvedSource;
-
-  if (tableRefSql) {
-    result = { sql: tableRefSql, originalSql, entry, loading: false };
-  } else if (Array.isArray(tableInput) || tableInput instanceof Table) {
+  if (Array.isArray(tableInput) || tableInput instanceof Table) {
     if (!registered) {
-      result = { sql: null, originalSql: null, loading: true, loadingMessage: 'registering data...' };
-    } else {
-      result = { sql: registered.sql, originalSql: registered.sql, loading: false };
+      return { sql: null, originalSql: null, loading: true, loadingMessage: 'registering data...' };
     }
-  } else {
-    if (typeof tableInput === 'string' && tableInput.trim()) {
-      result = { sql: normalizeSelectSql(tableInput), originalSql, entry, loading: false };
-    } else if (isQueryRef(tableInput) && tableInput._type === 'fragment' && depsReady) {
-      result = { sql: tableInput._query, originalSql, entry, loading: false };
-    } else {
-      result = { sql: null, originalSql: null, loading: false };
-    }
+    const result: ResolvedSource = { sql: registered.sql, originalSql: registered.sql, loading: false };
+    lastGood.current = result;
+    return result;
   }
 
-  if (result.sql) lastGood.current = result;
-  return result;
+  if (typeof tableInput === 'string' && tableInput.trim()) {
+    const result: ResolvedSource = {
+      sql: normalizeSelectSql(tableInput),
+      originalSql,
+      entry,
+      loading: false,
+    };
+    if (result.sql) lastGood.current = result;
+    return result;
+  }
+
+  return { sql: null, originalSql: null, loading: false };
 }
