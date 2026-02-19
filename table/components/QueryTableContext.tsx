@@ -53,6 +53,7 @@ type QueryTableCommonProps = {
   rowHeight?: number;
   compact?: boolean;
   resolutionStrategy?: QueryResolutionStrategy;
+  persistStateInUrl?: boolean;
   overscan?: number;
   getRowClassName?: (ctx: { get: (col: string) => unknown; rowIndex: number }) => string;
   renderCell?: (ctx: {
@@ -89,7 +90,7 @@ export type QueryTableProps =
     })
   | (QueryTableCommonProps & {
       table?: QueryTableNonEntryInput;
-      id: string;
+      id?: string;
     })
   | (QueryTableCommonProps & {
       table: QueryTableSourceMap;
@@ -109,6 +110,7 @@ function useQueryTableState({
   tableRef,
   pool,
   compact = true,
+  persistStateInUrl = true,
   enableFilters = true,
   showRowNumbers = false,
   colDefaultWidth = COL_DEFAULT_WIDTH,
@@ -133,20 +135,21 @@ function useQueryTableState({
   const [rawFilters, setRawFilters] = useQueryState(`qt_${id}_f`, qsOpts);
   const [rawQ, setRawQ] = useQueryState(`qt_${id}_q`, qsOpts);
 
-  const initSort = useRef(parseSort(rawSort));
-  const initFilters = useRef(parseFilters(rawFilters));
+  const initSort = useRef(persistStateInUrl ? parseSort(rawSort) : []);
+  const initFilters = useRef(persistStateInUrl ? parseFilters(rawFilters) : {});
   const isFirstSync = useRef(true);
 
   const [sorting, setSorting] = useState<SortingState>(initSort.current);
-  const [globalFilter, setGlobalFilter] = useState(rawQ ?? '');
+  const [globalFilter, setGlobalFilter] = useState(persistStateInUrl ? (rawQ ?? '') : '');
   const [columnFilters, setColumnFilters] = useState<FiltersState>(initFilters.current);
 
   useEffect(() => {
     if (isFirstSync.current) { isFirstSync.current = false; return; }
+    if (!persistStateInUrl) return;
     setRawSort(serializeSort(sorting));
     setRawFilters(serializeFilters(columnFilters));
     setRawQ(globalFilter.trim() || null);
-  }, [sorting, columnFilters, globalFilter, setRawSort, setRawFilters, setRawQ]);
+  }, [persistStateInUrl, sorting, columnFilters, globalFilter, setRawSort, setRawFilters, setRawQ]);
 
   // --- localStorage: column sizing + visibility ---
   const layoutKey = `qt_layout_${id}`;
