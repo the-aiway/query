@@ -201,19 +201,27 @@ export function QueryTable({
   const effectiveRowHeight = rowHeight ?? (compact ? 24 : 28);
   const sourceMap = isNamedSourceMap(tableInput) ? tableInput : null;
   const arrowRefCache = useRef(new Map<object, QueryRef>());
+  const generatedIdRef = useRef(`qt_${Math.random().toString(36).slice(2, 10)}`);
+  const isUnnamedCompatMode = !sourceMap && !id;
 
   const sourceTabs = useMemo(() => {
-    if (!sourceMap) return [];
-    return Object.entries(sourceMap)
-      .map(([key, entry]) => {
-        const ref = tableInputToRef(entry as QueryRef | null | undefined, arrowRefCache.current);
-        if (ref) ref.ensureName(key);
-        return { key, ref };
-      })
-      .filter(({ ref }) => !!ref);
-  }, [sourceMap]);
+    if (sourceMap) {
+      return Object.entries(sourceMap)
+        .map(([key, entry]) => {
+          const ref = tableInputToRef(entry as QueryRef | null | undefined, arrowRefCache.current);
+          if (ref) ref.ensureName(key);
+          return { key, ref };
+        })
+        .filter(({ ref }) => !!ref);
+    }
+    const ref = tableInputToRef(tableInput as QueryRef | null | undefined, arrowRefCache.current);
+    if (!ref) return [];
+    const key = id ?? generatedIdRef.current;
+    if (!ref.name) ref.ensureName(key);
+    return [{ key, ref }];
+  }, [sourceMap, tableInput, id]);
 
-  const baseId = id ?? sourceTabs[0]?.key ?? 'default';
+  const baseId = id ?? sourceTabs[0]?.key ?? generatedIdRef.current;
 
   return (
     <TabProvider sourceTabs={sourceTabs}>
@@ -223,6 +231,7 @@ export function QueryTable({
         overscan={overscan}
         baseId={baseId}
         compact={compact}
+        persistStateInUrl={!isUnnamedCompatMode}
         {...props}
       />
     </TabProvider>
