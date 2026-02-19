@@ -6,5 +6,6 @@ export { DataTable } from './table/DataTable';
 export type { InferSQL, Materialize, InferSQLStrict } from './duck/inferSqlReturntype';
 export { toValues, toValuesSelect, type ValuesSchema } from './toValues';
 export { DumpLogger } from './duck/DumpLogger';
+export { useTable, useSql, useArrow, useValues, type QueryRef, type ExtractRow } from './react/reducks';
 
 export { QueryTable as default } from './table/QueryTable';
