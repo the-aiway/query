@@ -20,6 +20,7 @@ export function Headers() {
   const {
     table,
     schema,
+    summaryMap,
     columnFilters,
     enableFilters,
     openFilterCol,
@@ -44,7 +45,8 @@ export function Headers() {
             const typeStr = colSchema?.type?.toUpperCase() ?? '';
             const isNumeric = typeStr.match(/INT|DOUBLE|FLOAT|DECIMAL|REAL|NUMERIC/);
             const isDateLike = typeStr.match(/DATE|TIME|TIMESTAMP/);
-            const useRangeFilter = Boolean(isNumeric || isDateLike);
+            const distinctCount = summaryMap.get(colName)?.uniq ?? Infinity;
+            const useRangeFilter = Boolean((isNumeric || isDateLike) && distinctCount >= 100);
             const fullTitle = isRowIndex
               ? 'Row Number'
               : typeStr
