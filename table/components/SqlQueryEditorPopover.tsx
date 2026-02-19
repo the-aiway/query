@@ -1,6 +1,6 @@
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { format } from 'sql-formatter';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Dialog, DialogContent, DialogTrigger } from '../ui/Dialog';
 
