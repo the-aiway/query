@@ -20,7 +20,9 @@ import React, {
 } from 'react';
 
 import {
+  type ColumnDescribe,
   type ColumnSummary,
+  useColumnDescribe,
   useColumnSummaries,
   useColumnSizes,
   useQueryParts,
@@ -30,6 +32,7 @@ import {
 import {
   type FilterValue,
   type FiltersState,
+  buildWhereClause,
   isSetFilter,
   isRangeFilter,
   serializeQTLayout,
@@ -40,12 +43,16 @@ import {
   parseFilters,
 } from './sqlUtils';
 import { useDuckDB } from '../../react/DuckDBProvider';
-import { type QueryRef } from '../../react/reducks';
+import { useSql, type QueryRef } from '../../react/reducks';
 import { useQueryState } from 'nuqs';
+
+export type QueryResolutionStrategy = 'direct' | 'materialized' | 'lazy';
 
 type QueryTableCommonProps = {
   height?: number;
   rowHeight?: number;
+  compact?: boolean;
+  resolutionStrategy?: QueryResolutionStrategy;
   overscan?: number;
   getRowClassName?: (ctx: { get: (col: string) => unknown; rowIndex: number }) => string;
   renderCell?: (ctx: {
@@ -65,10 +72,11 @@ type QueryTableCommonProps = {
   onClose?: () => void;
   title?: string;
   footer?: ReactNode;
+  dependencyRootRef?: QueryRef;
 };
 
 type QueryTableNonEntryInput = string | Record<string, unknown>[] | Table;
-export type QueryTableSourceMap = Record<string, QueryRef | null>;
+export type QueryTableSourceMap = Record<string, QueryRef | QueryTableNonEntryInput | null | undefined>;
 
 export type QueryTableProps =
   | (QueryTableCommonProps & {
@@ -98,11 +106,9 @@ const LAYOUT_DEBOUNCE_MS = 500;
 
 function useQueryTableState({
   id,
-  initSql,
-  initOriginalSql,
-  entry,
-  params,
+  tableRef,
   pool,
+  compact = true,
   enableFilters = true,
   showRowNumbers = false,
   colDefaultWidth = COL_DEFAULT_WIDTH,
@@ -112,19 +118,14 @@ function useQueryTableState({
   renderCell,
   onClose,
   title,
-  refreshing = false,
+  dependencyRootRef,
 }: {
   id: string;
-  title?: string,
-  initSql: string;
-  initOriginalSql?: string;
-  entry?: QueryRef;
-  params?: unknown[];
+  title?: string;
+  tableRef: QueryRef;
+  dependencyRootRef?: QueryRef;
   pool: ReturnType<typeof useDuckDB>['pool'];
-  refreshing?: boolean;
 } & Omit<QueryTableProps, 'table' | 'pool' | 'height' | 'rowHeight' | 'overscan'>) {
-  const sql = initSql;
-  const originalSql = initOriginalSql ?? initSql;
 
   // --- URL state: separate params per concern ---
   const qsOpts = { shallow: true, history: 'replace' as const };
@@ -209,23 +210,36 @@ function useQueryTableState({
     setFilterSearch('');
   }, []);
 
-  const schemaQuery = useTableSchema({ sql, params, globalFilter, columnFilters });
+  const schemaQuery = useTableSchema(tableRef);
   const schema = schemaQuery.data ?? [];
   const fieldNames = useMemo(() => schema.map((f) => f.name), [schema]);
 
-  const countQuery = useTableCount({ sql, params, globalFilter, columnFilters });
+  const queryParts = useQueryParts({ tableRef, globalFilter, columnFilters, fieldNames });
+
+  const countQuery = useTableCount(queryParts.filteredRef);
   const rowCount = countQuery.data ?? 0;
   const isInitialLoad = schemaQuery.isLoading || (countQuery.isLoading && schema.length === 0);
 
-  const summariesQuery = useColumnSummaries({ sql, params, globalFilter, columnFilters });
+  const summariesQuery = useColumnSummaries(tableRef);
   const columnSummaries = summariesQuery.data ?? [];
   const summaryMap = useMemo(() => new Map(columnSummaries.map((s) => [s.name, s])), [columnSummaries]);
 
-  const sizesQuery = useColumnSizes({ sql, params, globalFilter, columnFilters });
+  const describeQuery = useColumnDescribe(tableRef);
+  const columnDescribe = describeQuery.data ?? [];
+  const describeMap = useMemo(
+    () => new Map<string, ColumnDescribe>(columnDescribe.map((d) => [d.name, d])),
+    [columnDescribe]
+  );
+
+  const sizesQuery = useColumnSizes(tableRef);
   const columnSizes = sizesQuery.data ?? [];
   const sizeMap = useMemo(() => new Map(columnSizes.map((s) => [s.name, s])), [columnSizes]);
 
-  const queryParts = useQueryParts({ sql, params, globalFilter, columnFilters, fieldNames });
+  const refreshing =
+    countQuery.isFetching ||
+    summariesQuery.isFetching ||
+    describeQuery.isFetching ||
+    sizesQuery.isFetching;
 
   const hasActiveFiltersOrSorting = sorting.length > 0 || Object.keys(columnFilters).length > 0 || globalFilter.trim().length > 0;
 
@@ -282,7 +296,7 @@ function useQueryTableState({
   useEffect(() => {
     const schemaKey = fieldNames.join(',');
 
-    if (schemaKey && columnSizes.length > 0 && initializedSchemaRef.current !== schemaKey) {
+    if (schemaKey && !sizesQuery.isLoading && initializedSchemaRef.current !== schemaKey) {
       const effMin = enableFilters ? colMinWidth : Math.min(colMinWidth, 44);
       const effMax = enableFilters ? colMaxWidth : Math.min(colMaxWidth, 110);
 
@@ -317,9 +331,15 @@ function useQueryTableState({
         initializedVisibilityRef.current = schemaKey;
       }
     }
-  }, [fieldNames, columnSizes, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, columnVisibility, layoutKey]);
+  }, [fieldNames, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, columnVisibility, layoutKey, sizesQuery.isLoading]);
 
   const hasChanges = hasActiveFiltersOrSorting;
+  const isCompactColumnSizingReady = useMemo(() => {
+    if (!compact) return true;
+    if (schema.length === 0) return true;
+    if (showRowNumbers && columnSizing['_row_index'] === undefined) return false;
+    return fieldNames.every((name) => columnSizing[name] !== undefined);
+  }, [compact, schema.length, showRowNumbers, columnSizing, fieldNames]);
 
   const resetAll = useCallback(() => {
     setSorting([]);
@@ -355,14 +375,16 @@ function useQueryTableState({
   return {
     id,
     pool,
-    sql,
-    originalSql,
-    params,
-    entry,
+    sql: tableRef.query ?? `SELECT * FROM '${tableRef.id}'`,
+    originalSql: tableRef.query ?? `SELECT * FROM '${tableRef.id}'`,
+    entry: tableRef,
+    dependencyRootRef,
     schema,
     rowCount,
     columnSummaries,
     summaryMap,
+    columnDescribe,
+    describeMap,
     queryParts,
     fieldNames,
     isInitialLoad,
@@ -402,6 +424,8 @@ function useQueryTableState({
     resetAll,
     hasChanges,
     table,
+    compact,
+    isCompactColumnSizingReady,
 
     enableFilters,
     showRowNumbers,
@@ -422,18 +446,28 @@ export function useQT() {
   return ctx;
 }
 
+export function useFilteredRef(excludeCol?: string): QueryRef {
+  const { queryParts, globalFilter, fieldNamesForGlobal, columnFilters } = useQT();
+  const { whereClause } = buildWhereClause({
+    globalFilter,
+    fieldNamesForGlobal,
+    columnFilters,
+    excludeCol,
+  });
+  return useSql(
+    (t) => `SELECT * FROM ${t.base}${whereClause}`,
+    { base: queryParts.tableRef },
+  );
+}
+
 export function QueryTableProvider({
   children,
   ...stateProps
 }: {
   id: string;
   children: ReactNode;
-  initSql: string;
-  initOriginalSql?: string;
-  entry?: QueryRef;
-  params?: unknown[];
+  tableRef: QueryRef;
   pool: ReturnType<typeof useDuckDB>['pool'];
-  refreshing?: boolean;
 } & Omit<QueryTableProps, 'table' | 'pool' | 'height' | 'rowHeight' | 'overscan'>) {
   const value = useQueryTableState(stateProps);
   return <QTContext.Provider value={value}>{children}</QTContext.Provider>;
