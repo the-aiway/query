@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTrigger } from '../ui/Dialog';
 
 type SqlQueryEditorPopoverProps = {
-  sql: string;
+  sql: string | (() => Promise<string>);
   title?: string;
   children?: React.ReactNode;
   onSave?: (sql: string) => void;
@@ -18,24 +18,40 @@ export function SqlQueryEditorPopover({
   onSave,
 }: SqlQueryEditorPopoverProps) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(sql);
+  const [draft, setDraft] = useState('');
+  const [resolvedSql, setResolvedSql] = useState('');
   const editorRef = useRef<unknown>(null);
 
   const isReadOnly = !onSave;
 
-  const formatted = useMemo(() => {
-    try {
-      return format(sql, { language: 'sql', dialect: 'duckdb' });
-    } catch {
-      return sql;
-    }
-  }, [sql]);
-
   useEffect(() => {
     if (open) {
-      setDraft(isReadOnly ? formatted : sql);
+      if (typeof sql === 'function') {
+        sql().then(res => {
+          setResolvedSql(res);
+          setDraft(res);
+        });
+      } else {
+        setResolvedSql(sql);
+        setDraft(sql);
+      }
     }
-  }, [sql, formatted, open, isReadOnly]);
+  }, [sql, open]);
+
+  const formatted = useMemo(() => {
+    if (!resolvedSql) return '';
+    try {
+      return format(resolvedSql, { language: 'sql', dialect: 'duckdb' });
+    } catch {
+      return resolvedSql;
+    }
+  }, [resolvedSql]);
+
+  useEffect(() => {
+    if (open && resolvedSql) {
+      setDraft(isReadOnly ? formatted : resolvedSql);
+    }
+  }, [resolvedSql, formatted, open, isReadOnly]);
 
   const value = isReadOnly ? formatted : draft;
   const lineCount = useMemo(() => value.split('\n').length, [value]);
