@@ -1,6 +1,6 @@
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { format } from 'sql-formatter';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Dialog, DialogContent, DialogTrigger } from '../ui/Dialog';
 
@@ -117,7 +117,7 @@ export function SqlQueryEditorPopover({
         {children || (
           <button
             type="button"
-            className="text-[11px] font-mono text-muted-foreground truncate cursor-pointer hover:text-foreground"
+            className="text-[11px] text-muted-foreground truncate cursor-pointer hover:text-foreground"
             title={title}
           >
             {title}

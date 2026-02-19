@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { useQT, useFilteredRef } from './QueryTableContext';
-import { quoteIdent, isRangeFilter } from './sqlUtils';
+import { isRangeFilter, quoteIdent } from './sqlUtils';
 import { useSql } from '../../react/reducks';
 import { Materialize } from '../../react/Materialize';
 
@@ -263,8 +263,8 @@ function RangeFilterContent({
           ] as const
         ).map(([k, v]) => (
           <div key={k} className="rounded-md border bg-background/40 px-2 py-1">
-            <div className="text-[10px] font-mono text-muted-foreground uppercase">{k}</div>
-            <div className="text-[11px] font-mono font-semibold tabular-nums">
+            <div className="text-[10px] text-muted-foreground uppercase">{k}</div>
+            <div className="text-[11px] font-semibold tabular-nums">
               {fmtNum(v)}
             </div>
           </div>
@@ -273,10 +273,10 @@ function RangeFilterContent({
 
       <div className="rounded-lg border bg-background/40 p-2 relative">
         <div className="flex items-center justify-between mb-2">
-          <div className="text-[10px] font-mono text-muted-foreground uppercase">
+          <div className="text-[10px] text-muted-foreground uppercase">
             distribution (log)
           </div>
-          <div className="text-[10px] font-mono text-muted-foreground">
+          <div className="text-[10px] text-muted-foreground">
             non-null: {stats.total.toLocaleString()}
           </div>
         </div>
@@ -293,8 +293,8 @@ function RangeFilterContent({
 
       <div className="rounded-lg border bg-background/40 p-2 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-[10px] font-mono text-muted-foreground uppercase">range</div>
-          <div className="text-[10px] font-mono text-muted-foreground">
+          <div className="text-[10px] text-muted-foreground uppercase">range</div>
+          <div className="text-[10px] text-muted-foreground">
             avg: {fmtNum(stats.avg)} · total: {stats.total.toLocaleString()}
           </div>
         </div>
@@ -310,7 +310,7 @@ function RangeFilterContent({
           />
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <div className="text-[10px] text-muted-foreground font-mono uppercase">
+              <div className="text-[10px] text-muted-foreground uppercase">
                 from
               </div>
               <Input
@@ -329,11 +329,11 @@ function RangeFilterContent({
                     handleRangeCommit(newPos);
                   }
                 }}
-                className="h-8 text-xs font-mono"
+                className="h-8 text-xs"
               />
             </div>
             <div className="space-y-1">
-              <div className="text-[10px] text-muted-foreground font-mono uppercase text-right">
+              <div className="text-[10px] text-muted-foreground uppercase text-right">
                 to
               </div>
               <Input
@@ -352,7 +352,7 @@ function RangeFilterContent({
                     handleRangeCommit(newPos);
                   }
                 }}
-                className="h-8 text-xs font-mono text-right"
+                className="h-8 text-xs text-right"
               />
             </div>
           </div>
@@ -425,8 +425,8 @@ export function RangeFilter({
       >
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
-            <div className="text-xs font-mono font-semibold truncate">{col}</div>
-            <div className="mt-1 text-[10px] font-mono text-muted-foreground">
+            <div className="text-xs font-semibold truncate">{col}</div>
+            <div className="mt-1 text-[10px] text-muted-foreground">
               {filterValue && isRangeFilter(filterValue)
                 ? `${formatValue(filterValue.$between[0])} → ${formatValue(filterValue.$between[1])}`
                 : 'no range filter'}
@@ -436,14 +436,14 @@ export function RangeFilter({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono text-muted-foreground hover:text-foreground"
+              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] text-muted-foreground hover:text-foreground"
               onClick={() => onClearCol(col)}
             >
               clear
             </button>
             <button
               type="button"
-              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono text-muted-foreground hover:text-foreground"
+              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] text-muted-foreground hover:text-foreground"
               onClick={() => onOpenFilterCol(null)}
             >
               close

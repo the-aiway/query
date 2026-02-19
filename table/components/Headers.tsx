@@ -8,11 +8,11 @@ import { RangeFilter } from './RangeFilter';
 import { useQT } from './QueryTableContext';
 
 import {
-    ContextMenu,
-    ContextMenuContent,
-    ContextMenuItem,
-    ContextMenuSeparator,
-    ContextMenuTrigger,
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
 } from '../ui/ContextMenu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 

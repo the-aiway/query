@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 
 import type { ColumnOption } from './Datasource';
 import { useQT } from './QueryTableContext';
-import { buildWhereClause, quoteIdent, isSetFilter, type FiltersState } from './sqlUtils';
+import { buildWhereClause, isSetFilter, quoteIdent, type FiltersState } from './sqlUtils';
 import { useSql, type QueryRef } from '../../react/reducks';
 import { Materialize } from '../../react/Materialize';
 
@@ -81,7 +81,7 @@ export function OptionsFilter({ col, icon, limit, triggerClassName }: { col: str
         >
           {icon}
           {filterValue && isSetFilter(filterValue) && filterValue.length > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-mono leading-4 text-center">
+            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] leading-4 text-center">
               {filterValue.length}
             </span>
           )}
@@ -91,13 +91,13 @@ export function OptionsFilter({ col, icon, limit, triggerClassName }: { col: str
       <PopoverContent align="start" side="bottom" className="w-[420px] p-3 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80" onOpenAutoFocus={(e) => e.preventDefault()}>
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
-            <div className="text-xs font-mono font-semibold truncate">{col}</div>
-            <div className="mt-1 text-[10px] font-mono text-muted-foreground">
+            <div className="text-xs font-semibold truncate">{col}</div>
+            <div className="mt-1 text-[10px] text-muted-foreground">
               {filterValue && isSetFilter(filterValue) ? `${filterValue.length} selected` : 'no filter'}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button type="button" className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] font-mono text-muted-foreground hover:text-foreground" onClick={() => onClearCol(col)}>clear</button>
+            <button type="button" className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] text-muted-foreground hover:text-foreground" onClick={() => onClearCol(col)}>clear</button>
           </div>
         </div>
 
@@ -138,8 +138,8 @@ export function OptionsFilter({ col, icon, limit, triggerClassName }: { col: str
                           <div className="pt-0.5"><div className={`h-4 w-1.5 min-w-1.5 rounded-full ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`} /></div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start gap-2">
-                              <div className="text-xs font-mono truncate leading-5">{opt.label}</div>
-                              <div className="ml-auto text-[10px] font-mono text-muted-foreground whitespace-nowrap leading-5">{opt.count.toLocaleString()} · {pct}%</div>
+                              <div className="text-xs truncate leading-5">{opt.label}</div>
+                              <div className="ml-auto text-[10px] text-muted-foreground whitespace-nowrap leading-5">{opt.count.toLocaleString()} · {pct}%</div>
                             </div>
                             <div className="mt-1.5 h-1.5 bg-muted/50 rounded overflow-hidden">
                               <div className="h-full bg-primary/60" style={{ width: `${Math.min(100, Math.max(1, pct))}%` }} />
