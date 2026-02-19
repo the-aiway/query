@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { type SortingState, type ColumnSizingState, type VisibilityState, type ColumnPinningState } from '@tanstack/react-table';
 import { type QueryRef } from '../../react/reducks';
 import { type FiltersState } from './sqlUtils';
@@ -8,6 +8,13 @@ type CustomSqlTab = {
   label: string;
   sql: string;
   createdAt: number;
+};
+
+type PreviewState = {
+  label: string;
+  source: QueryRef | null;
+  sql: string | null;
+  nonce: number;
 };
 
 type SourceTab = {
@@ -43,9 +50,13 @@ type TabContextValue = {
   tabs: Tab[];
   activeTabId: string | null;
   activeTab: Tab | undefined;
+  preview: PreviewState | null;
   
   setActiveTabId: (id: string) => void;
   createCustomTab: (sql: string) => void;
+  setPreviewRef: (source: QueryRef, label: string) => void;
+  setPreviewSql: (sql: string, label: string) => void;
+  clearPreview: () => void;
   updateCustomTab: (tabId: string, sql: string) => void;
   deleteCustomTab: (tabId: string) => void;
   
@@ -86,8 +97,10 @@ type TabProviderProps = {
 
 export function TabProvider({ children, sourceTabs }: TabProviderProps) {
   const [customTabs, setCustomTabs] = useState<CustomSqlTab[]>([]);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
   const [selectedTabId, setSelectedTabId] = useState<string | null>(null);
   const [tableStateByTab, setTableStateByTab] = useState<Record<string, TableState>>({});
+  const nonceRef = useRef(0);
 
   const tabs = useMemo<Tab[]>(() => {
     const result: Tab[] = [];
@@ -126,6 +139,7 @@ export function TabProvider({ children, sourceTabs }: TabProviderProps) {
 
   const setActiveTabId = useCallback((id: string) => {
     setSelectedTabId(id);
+    setPreview(null);
   }, []);
 
   const createCustomTab = useCallback((sql: string) => {
@@ -138,6 +152,18 @@ export function TabProvider({ children, sourceTabs }: TabProviderProps) {
     setCustomTabs((prev) => [...prev, newTab]);
     setSelectedTabId(`custom:${newTab.id}`);
   }, [customTabs.length]);
+
+  const setPreviewRef = useCallback((source: QueryRef, label: string) => {
+    setPreview({ label, source, sql: null, nonce: ++nonceRef.current });
+  }, []);
+
+  const setPreviewSql = useCallback((sql: string, label: string) => {
+    setPreview({ label, source: null, sql, nonce: ++nonceRef.current });
+  }, []);
+
+  const clearPreview = useCallback(() => {
+    setPreview(null);
+  }, []);
 
   const updateCustomTab = useCallback((tabId: string, sql: string) => {
     setCustomTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, sql } : t)));
@@ -190,15 +216,19 @@ export function TabProvider({ children, sourceTabs }: TabProviderProps) {
     tabs,
     activeTabId,
     activeTab,
+    preview,
     setActiveTabId,
     createCustomTab,
+    setPreviewRef,
+    setPreviewSql,
+    clearPreview,
     updateCustomTab,
     deleteCustomTab,
     onSqlEdit,
     tableState,
     setTableState,
     resetTableState,
-  }), [tabs, activeTabId, activeTab, setActiveTabId, createCustomTab, updateCustomTab, deleteCustomTab, onSqlEdit, tableState, setTableState, resetTableState]);
+  }), [tabs, activeTabId, activeTab, preview, setActiveTabId, createCustomTab, setPreviewRef, setPreviewSql, clearPreview, updateCustomTab, deleteCustomTab, onSqlEdit, tableState, setTableState, resetTableState]);
 
   return <TabContext.Provider value={value}>{children}</TabContext.Provider>;
 }
