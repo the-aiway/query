@@ -18,6 +18,20 @@ export function quoteString(val: string) {
   return `'${val.replaceAll("'", "''")}'`;
 }
 
+export function escapeSQL(v: unknown): string {
+  if (v == null) return 'NULL';
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+  if (typeof v === 'string') return `'${v.replace(/'/g, "''")}'`;
+  if (typeof v === 'object') {
+    return JSON.stringify(v)
+      .replace(/'/g, "''")
+      .replace(/\\"/g, '"')
+      .replace(/"/g, "'");
+  }
+  return String(v);
+}
+
 export function normalizeSelectSql(sql: string) {
   const trimmed = sql.trim();
   if (!trimmed) return '';
