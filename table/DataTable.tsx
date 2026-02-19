@@ -7,8 +7,8 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { Cell } from './components/Cell';
 import { Headers } from './components/Headers';
 import { QueryTableToolbar } from './components/QueryTableToolbar';
-import { QueryTableProvider, useQT, type QueryTableProps, type QueryResolutionStrategy } from './components/QueryTableContext';
-import { quoteIdent, normalizeSelectSql } from './components/sqlUtils';
+import { QueryTableProvider, useQT, type QueryTableProps, } from './components/QueryTableContext';
+import { quoteIdent, normalizeSelectSql } from '../sqlUtils';
 
 import { Card, CardContent } from './ui/Card';
 import { useDuckDB } from '../react/DuckDBProvider';
@@ -75,7 +75,6 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
   overscan: number;
 }) {
   const {
-    pool,
     rowCount,
     table,
     schema,

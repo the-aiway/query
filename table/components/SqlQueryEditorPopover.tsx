@@ -27,7 +27,7 @@ export function SqlQueryEditorPopover({
   useEffect(() => {
     if (open) {
       if (typeof sql === 'function') {
-        sql().then(res => {
+        void sql().then(res => {
           setResolvedSql(res);
           setDraft(res);
         });
@@ -41,7 +41,7 @@ export function SqlQueryEditorPopover({
   const formatted = useMemo(() => {
     if (!resolvedSql) return '';
     try {
-      return format(resolvedSql, { language: 'sql', dialect: 'duckdb' });
+      return format(resolvedSql, { language: 'sql' });
     } catch {
       return resolvedSql;
     }
@@ -105,7 +105,7 @@ export function SqlQueryEditorPopover({
         });
       }
 
-      editor.getAction('editor.action.formatDocument')?.run();
+      void editor.getAction('editor.action.formatDocument')?.run();
       if (!isReadOnly) editor.focus();
     },
     [isReadOnly, onSave],

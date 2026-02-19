@@ -61,7 +61,7 @@ export class DumpLogger implements Logger {
     if (!id) return;
 
     if (event === LogEvent.RUN && typeof value === 'string') {
-      const match = value.match(/^\-\-:re:(\w+):([\w\-]+)/);
+      const match = value.match(/^--:re:(\w+):([\w-]+)/);
       const [tag, retype, reslug] = match || [];
       const query = tag ? value.replace(tag, '').trim() : value;
       const state = { start: performance.now(), query, localId: this.count++, retype, reslug, timer: null as any };
@@ -127,8 +127,8 @@ export class DumpLogger implements Logger {
 
   private clean(sql: string) {
     return sql
-      .replace(/\-\-sql/g, '')
-      .replace(/\-\-:re:\w+:[\w\-]+/g, '')
+      .replace(/--sql/g, '')
+      .replace(/--:re:\w+:[\w-]+/g, '')
       .replace(/\s+/g, ' ')
       .trim();
   }

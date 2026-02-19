@@ -23,11 +23,7 @@ export function Headers() {
     summaryMap,
     columnFilters,
     enableFilters,
-    openFilterCol,
-    onOpenFilterCol,
-    onClearCol,
-    onChangeFilter,
-  } = useQT();
+    } = useQT();
 
   return (
     <div className="sticky top-0 z-10 border-b bg-secondary shadow-sm w-fit min-w-full">

@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 
 import type { ColumnOption } from './Datasource';
 import { useQT } from './QueryTableContext';
-import { buildWhereClause, isSetFilter, quoteIdent, type FiltersState } from './sqlUtils';
+import { buildWhereClause, isSetFilter, quoteIdent, type FiltersState } from '../../sqlUtils';
 import { useSql, type QueryRef } from '../../react/reducks';
 import { Materialize } from '../../react/Materialize';
 

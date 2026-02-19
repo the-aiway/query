@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { useQT, useFilteredRef } from './QueryTableContext';
-import { isRangeFilter, quoteIdent } from './sqlUtils';
+import { isRangeFilter, quoteIdent } from '../../sqlUtils';
 import { useSql } from '../../react/reducks';
 import { Materialize } from '../../react/Materialize';
 
@@ -177,7 +177,7 @@ function RangeFilterContent({
   col: string;
   colType: string;
 }) {
-  const { columnFilters, onChangeFilter, onClearCol, onOpenFilterCol } = useQT();
+  const { columnFilters, onChangeFilter, } = useQT();
   const filterValue = columnFilters[col];
 
   const committedRange = useMemo(() => {

@@ -22,14 +22,13 @@ import { ExportButton } from './ExportButton';
 import { SqlQueryEditorPopover } from './SqlQueryEditorPopover';
 import { useQT } from './QueryTableContext';
 import { useTab } from './TabContext';
-import { isSetFilter, isRangeFilter } from './sqlUtils';
+import { isSetFilter, isRangeFilter } from '../../sqlUtils';
 
 export function QueryTableToolbar() {
   const {
     isFullscreen,
     setIsFullscreen,
     title,
-    queryParts,
     isInitialLoad,
     rowCount,
     sql,

@@ -21,7 +21,6 @@ import React, {
 
 import {
   type ColumnDescribe,
-  type ColumnSummary,
   useColumnDescribe,
   useColumnSummaries,
   useColumnSizes,
@@ -41,7 +40,7 @@ import {
   parseSort,
   serializeFilters,
   parseFilters,
-} from './sqlUtils';
+} from '../../sqlUtils';
 import { useDuckDB } from '../../react/DuckDBProvider';
 import { useSql, type QueryRef } from '../../react/reducks';
 import { useQueryState } from 'nuqs';
@@ -146,9 +145,9 @@ function useQueryTableState({
   useEffect(() => {
     if (isFirstSync.current) { isFirstSync.current = false; return; }
     if (!persistStateInUrl) return;
-    setRawSort(serializeSort(sorting));
-    setRawFilters(serializeFilters(columnFilters));
-    setRawQ(globalFilter.trim() || null);
+    void setRawSort(serializeSort(sorting));
+    void setRawFilters(serializeFilters(columnFilters));
+    void setRawQ(globalFilter.trim() || null);
   }, [persistStateInUrl, sorting, columnFilters, globalFilter, setRawSort, setRawFilters, setRawQ]);
 
   // --- localStorage: column sizing + visibility ---
@@ -305,7 +304,7 @@ function useQueryTableState({
 
       const savedLayout = parseQTLayout(localStorage.getItem(layoutKey));
 
-      const newSizing: ColumnSizingState = { ...(savedLayout?.sizing ?? {}) };
+      const newSizing: ColumnSizingState = { ...savedLayout?.sizing };
       if (showRowNumbers) newSizing['_row_index'] = 60;
 
       for (const name of fieldNames) {

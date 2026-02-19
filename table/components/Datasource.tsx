@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import type { Vector } from 'apache-arrow';
 
-import { buildWhereClause, type FiltersState } from './sqlUtils';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+
+
+import { buildWhereClause, type FiltersState } from '../../sqlUtils';
 import { useSql, type QueryRef } from '../../react/reducks';
 
 export type SortingState = Array<{ id: string; desc: boolean }>;

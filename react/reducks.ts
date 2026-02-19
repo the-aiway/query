@@ -3,7 +3,7 @@ import type { Table } from 'apache-arrow';
 import { buildWhere, eq, neq, gt, gte, lt, lte, between, $in, like, ilike } from '../sqlConditions';
 import { escapeSQL } from '../sqlUtils';
 import { toValuesSelect } from '../toValues';
-import type { ConnectionPool, InferredArrowTable } from '../duck/ConnectionPool';
+import type { ConnectionPool, } from '../duck/ConnectionPool';
 import type { ParamProxy, QueryRef as QueryRefContract, QueryStatus, QueryType, RefType, UseSqlHook, UseTableHook, UseValuesHook } from './reducks.type';
 
 export type QueryRef<TRow = unknown> = QueryRefContract<TRow>;
