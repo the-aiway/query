@@ -1,8 +1,8 @@
 import { Table } from 'apache-arrow';
 import { Code2, X, Database } from 'lucide-react';
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 
-import { DataTable } from './DataTable';
+import { DataTable, tableInputToRef } from './DataTable';
 import { type QueryTableProps, type QueryTableSourceMap } from './components/QueryTableContext';
 import { type QueryRef } from '../react/reducks';
 import { SqlQueryEditorPopover } from './components/SqlQueryEditorPopover';
@@ -11,13 +11,10 @@ import { TabProvider, useTab } from './components/TabContext';
 
 const SOURCE_SWITCHER_HEIGHT = 36;
 
-function toQueryRef(entry: QueryRef | null | undefined): QueryRef | null {
-  return entry ?? null;
-}
 
 function isNamedSourceMap(input: QueryTableProps['table']): input is QueryTableSourceMap {
   if (!input || typeof input !== 'object' || Array.isArray(input) || input instanceof Table) return false;
-  return !('_type' in input);
+  return !('type' in input);
 }
 
 function QueryTableTabs() {
@@ -37,11 +34,10 @@ function QueryTableTabs() {
             <button
               type="button"
               onClick={() => setActiveTabId(tab.id)}
-              className={`rounded border px-2 py-0.5 text-[9px] font-mono transition-colors flex items-center gap-1 ${
-                active
-                  ? 'border-primary/40 bg-primary/10 text-primary'
-                  : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
-              }`}
+              className={`rounded border px-2 py-0.5 text-[9px] font-mono transition-colors flex items-center gap-1 ${active
+                ? 'border-primary/40 bg-primary/10 text-primary'
+                : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                }`}
               title={tab.label}
             >
               {isCustom ? (
@@ -91,16 +87,15 @@ function QueryTableContent({
   rowHeight,
   overscan,
   baseId,
-  hasMultipleTabs,
   ...props
 }: {
   height?: number;
   rowHeight: number;
   overscan: number;
   baseId: string;
-  hasMultipleTabs: boolean;
 } & Omit<QueryTableProps, 'table' | 'id' | 'height' | 'rowHeight' | 'overscan'>) {
-  const { activeTab } = useTab();
+  const { activeTab, tabs, preview } = useTab();
+  const hasMultipleTabs = tabs.length > 1;
 
   const adjustedHeight = typeof height === 'number' && hasMultipleTabs
     ? Math.max(120, height - SOURCE_SWITCHER_HEIGHT)
@@ -109,9 +104,9 @@ function QueryTableContent({
   const footer = useMemo(() => {
     const userFooter = props.footer;
     const tabsFooter = <QueryTableTabs />;
-    
+
     if (!hasMultipleTabs) return userFooter;
-    
+
     if (userFooter) {
       return (
         <div className="flex flex-col">
@@ -120,11 +115,46 @@ function QueryTableContent({
         </div>
       );
     }
-    
+
     return tabsFooter;
   }, [hasMultipleTabs, props.footer]);
 
   if (!activeTab) return null;
+  const dependencyRootRef = activeTab.type === 'source' ? activeTab.source ?? undefined : undefined;
+
+  if (preview?.source) {
+    return (
+      <DataTable
+        key={`${activeTab.id}:preview:${preview.source.id}:${preview.nonce}`}
+        id={baseId}
+        table={preview.source}
+        height={adjustedHeight}
+        rowHeight={rowHeight}
+        overscan={overscan}
+        footer={footer}
+        title={preview.label}
+        dependencyRootRef={dependencyRootRef}
+        {...props}
+      />
+    );
+  }
+
+  if (preview?.sql) {
+    return (
+      <DataTable
+        key={`${activeTab.id}:preview-sql:${preview.nonce}`}
+        id={`${baseId}_preview`}
+        table={preview.sql}
+        height={adjustedHeight}
+        rowHeight={rowHeight}
+        overscan={overscan}
+        footer={footer}
+        title={preview.label}
+        dependencyRootRef={dependencyRootRef}
+        {...props}
+      />
+    );
+  }
 
   if (activeTab.type === 'source') {
     return (
@@ -137,6 +167,7 @@ function QueryTableContent({
         overscan={overscan}
         footer={footer}
         title={activeTab.label}
+        dependencyRootRef={dependencyRootRef}
         {...props}
       />
     );
@@ -152,6 +183,7 @@ function QueryTableContent({
       overscan={overscan}
       footer={footer}
       title={activeTab.label}
+      dependencyRootRef={dependencyRootRef}
       {...props}
     />
   );
@@ -161,29 +193,36 @@ export function QueryTable({
   id,
   table: tableInput,
   height,
-  rowHeight = 28,
+  compact = true,
+  rowHeight,
   overscan = 12,
   ...props
 }: QueryTableProps) {
+  const effectiveRowHeight = rowHeight ?? (compact ? 24 : 28);
   const sourceMap = isNamedSourceMap(tableInput) ? tableInput : null;
+  const arrowRefCache = useRef(new Map<object, QueryRef>());
+
   const sourceTabs = useMemo(() => {
     if (!sourceMap) return [];
     return Object.entries(sourceMap)
-      .map(([key, entry]) => ({ key, ref: toQueryRef(entry) }))
+      .map(([key, entry]) => {
+        const ref = tableInputToRef(entry as QueryRef | null | undefined, arrowRefCache.current);
+        if (ref) ref.ensureName(key);
+        return { key, ref };
+      })
       .filter(({ ref }) => !!ref);
   }, [sourceMap]);
 
   const baseId = id ?? sourceTabs[0]?.key ?? 'default';
-  const hasMultipleTabs = sourceTabs.length > 1;
 
   return (
     <TabProvider sourceTabs={sourceTabs}>
       <QueryTableContent
         height={height}
-        rowHeight={rowHeight}
+        rowHeight={effectiveRowHeight}
         overscan={overscan}
         baseId={baseId}
-        hasMultipleTabs={hasMultipleTabs}
+        compact={compact}
         {...props}
       />
     </TabProvider>
