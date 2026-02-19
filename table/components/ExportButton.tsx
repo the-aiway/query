@@ -21,15 +21,11 @@ export function ExportButton({ disabled }: { disabled?: boolean }) {
       format: 'csv' | 'json' | 'parquet' | 'tsv',
       mode: 'download' | 'clipboard' = 'download'
     ) => {
-      if (!pool || !queryParts.baseSql) return;
+      if (!pool || queryParts.filteredRef.status === 'pending') return;
 
       setIsDownloading(true);
       try {
-        const fullSql = `
-          WITH base AS (${queryParts.baseSql})
-          SELECT * FROM base
-          ${queryParts.whereClause}
-        `;
+        const fullSql = await queryParts.filteredRef.toSql();
 
         const extension = format;
         const safeId = id.trim().replace(/[^a-zA-Z0-9_-]+/g, '_') || 'table';
@@ -45,7 +41,7 @@ export function ExportButton({ disabled }: { disabled?: boolean }) {
           await pool.db.registerEmptyFileBuffer(exportFileName);
           await pool.query(
             `COPY (${fullSql}) TO '${exportFileName}' ${copyOptions}`,
-            queryParts.fullParams
+            []
           );
           const fileBuffer = await pool.db.copyFileToBuffer(exportFileName);
 
@@ -82,7 +78,7 @@ export function ExportButton({ disabled }: { disabled?: boolean }) {
         setIsDownloading(false);
       }
     },
-    [id, pool, queryParts.baseSql, queryParts.whereClause, queryParts.fullParams]
+    [id, pool, queryParts.filteredRef]
   );
 
   return (
