@@ -1,5 +1,4 @@
-export { QueryTable, DataTable } from './QueryTable';
-export { query, fromJSON, type DataTableSource } from './QueryTable';
-export type {
-  ColumnSummary,
-} from './components/Datasource';
+export { QueryTable } from './QueryTable';
+export { DataTable } from './DataTable';
+export type { QueryTableProps } from './components/QueryTableContext';
+export type { ColumnSummary } from './components/Datasource';

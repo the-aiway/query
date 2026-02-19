@@ -1,75 +1,52 @@
-import { type Table, flexRender } from '@tanstack/react-table';
+import { flexRender } from '@tanstack/react-table';
 import { Filter } from 'lucide-react';
 import React from 'react';
 
 import { copyToClipboard } from './Cell';
 import { OptionsFilter } from './OptionsFilter';
 import { RangeFilter } from './RangeFilter';
-import type { FiltersState, FilterValue } from './sqlUtils';
+import { useQT } from './QueryTableContext';
 
 import {
-    ContextMenu,
-    ContextMenuContent,
-    ContextMenuItem,
-    ContextMenuSeparator,
-    ContextMenuTrigger,
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
 } from '../ui/ContextMenu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 
-type HeadersProps = {
-  table: Table<Record<string, unknown>>;
-  schema: { name: string; type: string }[];
+export function Headers() {
+  const {
+    table,
+    schema,
+    summaryMap,
+    columnFilters,
+    enableFilters,
+    openFilterCol,
+    onOpenFilterCol,
+    onClearCol,
+    onChangeFilter,
+  } = useQT();
 
-  setFilters: FiltersState;
-  enableFilters?: boolean;
-
-  openFilterCol: string | null;
-  onOpenFilterCol: (col: string | null) => void;
-
-  filterSearch: string;
-  onChangeFilterSearch: (next: string) => void;
-
-  onClearCol: (col: string) => void;
-  onChangeFilter: (col: string, next: FilterValue | undefined) => void;
-
-  // Query props
-  sql: string;
-  params?: unknown[];
-  globalFilter: string;
-  fieldNamesForGlobal: string[];
-};
-
-export function Headers({
-  table,
-  schema,
-  setFilters,
-  enableFilters = true,
-  openFilterCol,
-  onOpenFilterCol,
-  filterSearch,
-  onChangeFilterSearch,
-  onClearCol,
-  onChangeFilter,
-  sql,
-  params,
-  globalFilter,
-  fieldNamesForGlobal,
-}: HeadersProps) {
   return (
     <div className="sticky top-0 z-10 border-b bg-secondary shadow-sm w-fit min-w-full">
       {table.getHeaderGroups().map((headerGroup) => (
         <div key={headerGroup.id} className="flex min-w-full w-max">
           {headerGroup.headers.map((header) => {
             const colName = header.column.id;
-            const filterValue = setFilters[colName];
+            const filterValue = columnFilters[colName];
             const hasFilter = filterValue !== undefined;
             const compact = header.getSize() < 120;
             const isRowIndex = colName === '_row_index';
 
             // Find schema type
-            const colSchema = schema.find((s) => s.name === colName);
+            const colSchema = schema?.find((s) => s.name === colName);
             const typeStr = colSchema?.type?.toUpperCase() ?? '';
             const isNumeric = typeStr.match(/INT|DOUBLE|FLOAT|DECIMAL|REAL|NUMERIC/);
+            const isDateLike = typeStr.match(/DATE|TIME|TIMESTAMP/);
+            const distinctCount = summaryMap.get(colName)?.uniq ?? Infinity;
+            const useRangeFilter = Boolean((isNumeric || isDateLike) && distinctCount >= 100);
             const fullTitle = isRowIndex
               ? 'Row Number'
               : typeStr
@@ -99,14 +76,14 @@ export function Headers({
                     {/* Header Content with Sort Handler */}
                     <div
                       // Don't reserve space for filter icon until hover (prevents early ellipsis)
-                      className={`flex-1 min-w-0 flex items-center gap-1 pl-2 pr-2 py-2 ${isRowIndex ? '' : 'cursor-pointer'} focus:outline-none ${enableFilters && !isRowIndex ? 'group-hover:pr-10' : ''}`}
+                      className={`flex-1 min-w-0 flex items-center gap-1 pl-2 pr-2 py-2 ${isRowIndex ? '' : 'cursor-pointer'} focus:outline-none ${enableFilters && !isRowIndex ? (hasFilter ? 'pr-10' : 'group-hover:pr-10') : ''}`}
                       onClick={isRowIndex ? undefined : header.column.getToggleSortingHandler()}
                       title={isRowIndex ? undefined : 'Click to sort, Right click for more options'}
                     >
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div
-                            className={`flex-1 min-w-0 text-[11px] font-semibold tracking-tight flex items-center gap-1 text-foreground ${isRowIndex ? 'justify-center' : ''}`}
+                            className={`flex-1 min-w-0 text-[11px] font-mono font-semibold tracking-tight flex items-center gap-1 text-foreground ${isRowIndex ? 'justify-center' : ''}`}
                           >
                             <span className="min-w-0 truncate">
                               {flexRender(header.column.columnDef.header, header.getContext())}
@@ -134,12 +111,11 @@ export function Headers({
                     {/* Filter Icon */}
                     {enableFilters && !isRowIndex && (
                       <div
-                        // Only show filter icon on hover (no layout space taken)
-                        className={`absolute right-1 top-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto ${
-                          compact ? 'scale-90 origin-right' : ''
-                        }`}
+                        className={`absolute right-1 top-1/2 -translate-y-1/2 transition-opacity ${
+                          hasFilter ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'
+                        } ${compact ? 'scale-90 origin-right' : ''}`}
                       >
-                        {isNumeric ? (
+                        {useRangeFilter ? (
                           <RangeFilter
                             col={colName}
                             icon={
@@ -151,16 +127,6 @@ export function Headers({
                                 }
                               />
                             }
-                            filterValue={filterValue}
-                            onChange={(next) => onChangeFilter(colName, next)}
-                            onClear={() => onClearCol(colName)}
-                            open={openFilterCol === colName}
-                            onOpenChange={(open) => onOpenFilterCol(open ? colName : null)}
-                            sql={sql}
-                            params={params}
-                            globalFilter={globalFilter}
-                            fieldNamesForGlobal={fieldNamesForGlobal}
-                            setFilters={setFilters}
                           />
                         ) : (
                           <OptionsFilter
@@ -174,18 +140,6 @@ export function Headers({
                                 }
                               />
                             }
-                            filterValue={filterValue}
-                            onChange={(next) => onChangeFilter(colName, next)}
-                            onClear={() => onClearCol(colName)}
-                            open={openFilterCol === colName}
-                            onOpenChange={(open) => onOpenFilterCol(open ? colName : null)}
-                            search={openFilterCol === colName ? filterSearch : ''}
-                            onChangeSearch={onChangeFilterSearch}
-                            sql={sql}
-                            params={params}
-                            globalFilter={globalFilter}
-                            fieldNamesForGlobal={fieldNamesForGlobal}
-                            setFilters={setFilters}
                           />
                         )}
                       </div>

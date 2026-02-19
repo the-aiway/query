@@ -1,10 +1,7 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
-import * as DuckDBBrowser from '@duckdb/duckdb-wasm';
 import { Table as ArrowTable, tableFromJSON, type TypeMap } from 'apache-arrow';
 
 import type { Materialize, InferSQL } from './inferSqlReturntype';
-
-
 
 export type { AsyncDuckDB, AsyncDuckDBConnection };
 
@@ -69,10 +66,7 @@ export class ConnectionPool {
    * Execute a query and return the raw DuckDB Table (IPC format).
    * Useful for direct table manipulation or when you need the table structure.
    */
-  async queryIPCTable<TOverride = unknown, Q extends string = string>(
-    query: Q,
-    params?: unknown[]
-  ): Promise<InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>> {
+  async queryIPCTable<TOverride = unknown, Q extends string = string>(query: Q, params?: unknown[]): Promise<InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>> {
     const conn = await this.acquire();
     await this.ensureQueryHook(conn);
     try {
@@ -82,9 +76,13 @@ export class ConnectionPool {
       } else {
         const stmt = await conn.prepare(query);
         try {
-          const stream = await stmt.send(...params);
-          const res = await stream.readAll();
-          result = new ArrowTable(res);
+          if (typeof stmt.query === 'function') {
+            result = await stmt.query(...params);
+          } else {
+            const stream = await stmt.send(...params);
+            const res = await stream.readAll();
+            result = new ArrowTable(res);
+          }
         } finally {
           await stmt.close();
         }
@@ -100,33 +98,26 @@ export class ConnectionPool {
   /**
    * Execute a query on an available connection and release it immediately.
    * If params are provided, it uses prepare/send/close.
-   * Returns results as an array of objects with automatic type inference.
    */
   async query<TOverride = unknown, Q extends string = string>(query: Q, params?: unknown[]) {
     const table = await this.queryIPCTable<TOverride, Q>(query, params);
     return table.toArray() as unknown as Materialize<InferSQL<Q, TOverride>>;
   }
 
-  async dump<TOverride = unknown, Q extends string = string>(query: Q, params?: unknown[]) {
-    const table = await this.dumpIPCTable<TOverride, Q>(query, params);
-    return table.toArray() as unknown as Materialize<InferSQL<Q, TOverride>>;
-  }
+  dump = this.query;
+  dumpIPCTable = this.queryIPCTable;
 
   /**
    * Insert data into a table. Accepts either an Arrow Table or an array of objects.
    * If an array of objects is provided, it will be converted to an Arrow Table first.
    */
-  async insertTable<T extends Record<string, unknown>>(
-    tableName: string,
-    data: ArrowTable | T[],
-    options: { create?: boolean; schema?: Record<string, string> } = {}
-  ): Promise<void> {
+  async insertTable<T extends Record<string, unknown>>(tableName: string, data: ArrowTable | T[], options: { create?: boolean; schema?: Record<string, string> } = {}): Promise<void> {
     if (!data || (Array.isArray(data) && data?.length === 0)) {
       // arrow cannot create table from empty array cause theres no schema
       const schema = Object.entries(options.schema || {})
         .map(([name, type]) => `${name} ${type}`)
         .join(', ');
-      await this.dump(`CREATE OR REPLACE TABLE ${tableName} (${schema});`);
+      await this.query(`CREATE OR REPLACE TABLE ${tableName} (${schema});`);
       return;
     }
     const table = data instanceof ArrowTable ? data : tableFromJSON(data);
@@ -142,18 +133,6 @@ export class ConnectionPool {
     }
   }
 
-  count = 0;
-
-  log(rtn: ArrowTable) {
-    const resultsProxy = { clickToSeeMore: true };
-    Object.defineProperty(resultsProxy, 'results', {
-      get: () => Array.from(rtn).map((e) => e?.toJSON()),
-      enumerable: true,
-      configurable: true,
-    });
-    console.dir(resultsProxy, { showHidden: true, depth: 4 });
-  }
-
   /**
    * Returns a new pool instance with query hook that runs before each query.
    * The original pool is not modified.
@@ -163,81 +142,5 @@ export class ConnectionPool {
     Object.assign(wrappedPool, this);
     wrappedPool.queryHook = sql;
     return wrappedPool;
-  }
-  async dumpIPCTable<TOverride = unknown, Q extends string = string>(
-    query: Q,
-    params?: unknown[]
-  ): Promise<InferredArrowTable<Materialize<InferSQL<Q, TOverride>>[number]>> {
-    const _id = this.count++;
-    const tokens = await this.db.tokenize(query);
-    const ANSI_RESET = '\x1b[0m';
-    const ANSI_BOLD = '\x1b[1m';
-
-    const rgbToAnsi = (r: number, g: number, b: number) => `${ANSI_BOLD}\x1b[38;2;${r};${g};${b}m`;
-
-    // Color map by token type
-    const colorMap: Record<DuckDBBrowser.TokenType, string> = {
-      [DuckDBBrowser.TokenType.IDENTIFIER]: rgbToAnsi(63, 197, 107),
-      [DuckDBBrowser.TokenType.NUMERIC_CONSTANT]: rgbToAnsi(255, 120, 248),
-      [DuckDBBrowser.TokenType.STRING_CONSTANT]: rgbToAnsi(255, 120, 248),
-      [DuckDBBrowser.TokenType.OPERATOR]: rgbToAnsi(122, 130, 218),
-      [DuckDBBrowser.TokenType.KEYWORD]: rgbToAnsi(16, 177, 254),
-      [DuckDBBrowser.TokenType.COMMENT]: rgbToAnsi(99, 109, 131),
-    };
-
-    // Colorize tokens using offsets and types
-    const highlightedQuery = tokens.offsets
-      .map((offset, i) => {
-        const nextOffset = tokens.offsets[i + 1] ?? query.length;
-        const value = query.substring(offset, nextOffset);
-        const color = colorMap[tokens.types[i] as DuckDBBrowser.TokenType];
-        return `${color}${value}${ANSI_RESET}`;
-      })
-      .join('');
-    const queryStart = highlightedQuery.replaceAll(/\n\s*/g, ' ').split(' ').slice(0, 15).join(' ');
-
-    const start = performance.now();
-    // Only log "Running" if the query takes more than 14922000o avoid console noise
-    const hangingTimer = setTimeout(() => {
-      console.log(
-        `%c${_id}%c ⏳ Hanging: ${queryStart}`,
-        'color: #888; font-weight: bold',
-        'color: #f59e0b; font-sty2000italic'
-      );
-    }, 1492);
-
-    try {
-      const rtn = await this.queryIPCTable<TOverride, Q>(query, params);
-      clearTimeout(hangingTimer);
-      const duration = (performance.now() - start).toFixed(1);
-
-      console.groupCollapsed(
-        `%c${_id}%c ✓ ${queryStart} %c(${duration}ms)`,
-        'color: #888; font-weight: bold',
-        'color: inherit',
-        'color: #666; font-style: italic'
-      );
-      console.log(highlightedQuery);
-      this.log(rtn);
-      console.groupEnd();
-      return rtn;
-    } catch (error) {
-      clearTimeout(hangingTimer);
-      const duration = (performance.now() - start).toFixed(1);
-      const errMessages = Array.from(
-        new Set((error as Error).message.split('\n').filter((e: string) => e.trim()))
-      );
-      console.groupCollapsed(
-        `%c${_id}%c ❌ Error: ${queryStart} %c(${duration}ms)`,
-        'color: #888; font-weight: bold',
-        'color: red',
-        'color: #666; font-style: italic'
-      );
-      console.log(highlightedQuery);
-      console.error(errMessages.join('\n'));
-      console.trace();
-      console.groupEnd();
-      throw error;
-    }
   }
 }

@@ -1,102 +1,97 @@
-export type FilterValue =
-  | { type: 'set'; values: string[] }
-  | { type: 'range'; min: number; max: number };
+import { mapKeys } from 'es-toolkit/object';
+import { sqlConditions, type SqlConditionValue } from '../../sqlConditions';
 
+export type FilterValue = string[] | { $between: [number, number] };
 export type FiltersState = Record<string, FilterValue>;
 
+export const isSetFilter = (v: FilterValue): v is string[] => Array.isArray(v);
+export const isRangeFilter = (v: FilterValue): v is { $between: [number, number] } =>
+  !Array.isArray(v) && typeof v === 'object' && '$between' in v;
+
+const cond = (col: string, val: SqlConditionValue) =>
+  sqlConditions(mapKeys({ _: val }, () => col));
+
 export function quoteIdent(name: string) {
-  if (name.includes('.')) {
-    return name
-      .split('.')
-      .map((part) => `"${part.replaceAll('"', '""')}"`)
-      .join('.');
-  }
+  if (name.includes('.')) return name.split('.').map((p) => `"${p.replaceAll('"', '""')}"`).join('.');
   return `"${name.replaceAll('"', '""')}"`;
 }
 
-export function quoteString(val: string) {
-  return `'${val.replaceAll("'", "''")}'`;
-}
+const qi = quoteIdent;
+const cast = (col: string) => `CAST(${qi(col)} AS VARCHAR)`;
 
 export function normalizeSelectSql(sql: string) {
-  const trimmed = sql.trim();
-  if (!trimmed) return '';
-
-  // Remove trailing semicolon if present, as it breaks CTE wrapping
-  const cleaned = trimmed.replace(/;+$/, '');
-
-  // Allow shorthand: FROM 'file.csv'
-  if (/^from\b/i.test(cleaned)) {
-    return `SELECT * ${cleaned}`;
-  }
-
-  return cleaned;
-}
-
-export function fnv1a32Hex(input: string) {
-  // Small stable hash for cache keys (hex only, safe to inline in SQL strings).
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0');
+  const cleaned = sql.trim().replace(/;+$/, '');
+  if (!cleaned) return '';
+  return /^from\b/i.test(cleaned) ? `SELECT * ${cleaned}` : cleaned;
 }
 
 export function buildWhereClause(opts: {
   globalFilter: string;
   fieldNamesForGlobal: string[];
-  setFilters: FiltersState;
+  columnFilters: FiltersState;
   excludeCol?: string;
-}): { whereClause: string; whereParams: unknown[] } {
-  const gf = opts.globalFilter.trim();
-  const whereParts: string[] = [];
-  const whereParams: unknown[] = [];
+}): { whereClause: string } {
+  const parts: string[] = [];
 
-  const sortedEntries = Object.entries(opts.setFilters).sort(([a], [b]) => a.localeCompare(b));
+  for (const [col, f] of Object.entries(opts.columnFilters).sort(([a], [b]) => a.localeCompare(b))) {
+    if (!f || (opts.excludeCol && col === opts.excludeCol)) continue;
 
-  for (const [col, filter] of sortedEntries) {
-    if (!filter) continue;
-    if (opts.excludeCol && col === opts.excludeCol) continue;
-
-    if (filter.type === 'set') {
-      const selected = filter.values;
-      if (selected.length === 0) continue;
-
-      const nonNull = selected.filter((k) => k !== '__NULL__');
-      const hasNull = selected.some((k) => k === '__NULL__');
-
-      const clauses: string[] = [];
-      if (nonNull.length > 0) {
-        clauses.push(
-          `CAST(${quoteIdent(col)} AS VARCHAR) IN (${nonNull.map(() => '?').join(', ')})`
-        );
-        whereParams.push(...nonNull);
-      }
-      if (hasNull) {
-        clauses.push(`${quoteIdent(col)} IS NULL`);
-      }
-
-      if (clauses.length > 0) {
-        whereParts.push(`(${clauses.join(' OR ')})`);
-      }
-    } else if (filter.type === 'range') {
-      const { min, max } = filter;
-      if (typeof min === 'number' && typeof max === 'number') {
-        whereParts.push(`(${quoteIdent(col)} >= ? AND ${quoteIdent(col)} <= ?)`);
-        whereParams.push(min, max);
-      }
+    if (isSetFilter(f) && f.length > 0) {
+      const nonNull = f.filter((k) => k !== '__NULL__');
+      const or = [
+        ...(nonNull.length > 0 ? [cond(cast(col), { $in: nonNull })] : []),
+        ...(f.includes('__NULL__') ? [cond(qi(col), { $eq: null })] : []),
+      ];
+      if (or.length > 0) parts.push(`(${or.join(' OR ')})`);
+    } else if (isRangeFilter(f)) {
+      parts.push(cond(qi(col), { $between: f.$between }));
     }
   }
 
-  if (gf && opts.fieldNamesForGlobal.length > 0) {
-    const orParts = opts.fieldNamesForGlobal.map((col) => {
-      whereParams.push(gf);
-      return `CAST(${quoteIdent(col)} AS VARCHAR) ILIKE '%' || ? || '%'`;
-    });
-    whereParts.push(`(${orParts.join(' OR ')})`);
-  }
+  const gf = opts.globalFilter.trim();
+  if (gf && opts.fieldNamesForGlobal.length > 0)
+    parts.push(`(${opts.fieldNamesForGlobal.map((c) => cond(cast(c), { $ilike: `%${gf}%` })).join(' OR ')})`);
 
-  const whereClause = whereParts.length > 0 ? `\nWHERE ${whereParts.join(' AND ')}` : '';
-  return { whereClause, whereParams };
+  return { whereClause: parts.length > 0 ? `\nWHERE ${parts.join(' AND ')}` : '' };
+}
+
+export function serializeSort(sorting: { id: string; desc: boolean }[]): string | null {
+  if (sorting.length === 0) return null;
+  return sorting.map((s) => (s.desc ? `-${s.id}` : s.id)).join(',');
+}
+
+export function parseSort(raw: string | null): { id: string; desc: boolean }[] {
+  if (!raw) return [];
+  return raw.split(',').filter(Boolean).map((s) =>
+    s.startsWith('-') ? { id: s.slice(1), desc: true } : { id: s, desc: false },
+  );
+}
+
+export function serializeFilters(filters: FiltersState): string | null {
+  const active: FiltersState = {};
+  for (const [col, val] of Object.entries(filters)) {
+    if (isSetFilter(val) && val.length > 0) active[col] = val;
+    else if (isRangeFilter(val)) active[col] = val;
+  }
+  return Object.keys(active).length > 0 ? JSON.stringify(active) : null;
+}
+
+export function parseFilters(raw: string | null): FiltersState {
+  if (!raw) return {};
+  try { return JSON.parse(raw) as FiltersState; } catch { return {}; }
+}
+
+export function serializeQTLayout(visibility: Record<string, boolean>, sizing: Record<string, number>): string {
+  return JSON.stringify({
+    ...(Object.keys(visibility).length > 0 ? { v: visibility } : {}),
+    ...(Object.keys(sizing).length > 0 ? { sz: sizing } : {}),
+  });
+}
+
+export function parseQTLayout(raw: string | null) {
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw) as { v?: Record<string, boolean>; sz?: Record<string, number> };
+    return { visibility: p.v ?? {}, sizing: p.sz ?? {} };
+  } catch { return null; }
 }

@@ -1,260 +1,189 @@
+import { useMemo } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import type { Vector } from 'apache-arrow';
 
-import { normalizeSelectSql, buildWhereClause, quoteIdent, type FiltersState } from './sqlUtils';
-
-import { useDuckDB } from '../../react/DuckDBProvider';
+import { buildWhereClause, type FiltersState } from './sqlUtils';
+import { useSql, type QueryRef } from '../../react/reducks';
 
 export type SortingState = Array<{ id: string; desc: boolean }>;
+export type ColumnOption = { key: string; label: string; count: number; frac: number };
+export type ColumnSummary = { name: string; type: string; uniq: number; nulls: number; total: number };
+export type ColumnSize = { name: string; p80Len: number };
+export type ColumnDescribe = { name: string; emptyCount: number };
 
-export type ColumnOption = {
-  key: string;
-  label: string;
-  count: number;
-  frac: number;
-};
+type QueryBase = { tableRef: QueryRef; globalFilter: string; columnFilters: FiltersState; fieldNames: string[] };
 
-export type ColumnSummary = {
-  name: string;
-  type: string;
-  uniq: number;
-  nulls: number;
-  total: number;
-};
+export type QueryParts = { tableRef: QueryRef; filteredRef: QueryRef };
 
-export type ColumnSize = {
-  name: string;
-  p80Len: number;
-};
-
-type QueryBase = {
-  sql: string;
-  params?: unknown[];
-  globalFilter: string;
-  setFilters: FiltersState;
-};
-
-export type QueryParts = {
-  baseSql: string;
-  whereClause: string;
-  fullParams: unknown[];
-};
-
-// 1. Hook to build query parts (used by components to drive other queries)
-export function useQueryParts({
-  sql,
-  params,
-  globalFilter,
-  setFilters,
-  fieldNames,
-}: QueryBase & { fieldNames: string[] }) {
-  const normalizedSql = normalizeSelectSql(sql);
-  const gfActive = globalFilter.trim().length > 0;
-  const fieldNamesForGlobal = gfActive ? fieldNames : [];
-
-  const { whereClause, whereParams } = buildWhereClause({
+export function useQueryParts({ tableRef, globalFilter, columnFilters, fieldNames }: QueryBase): QueryParts {
+  const { whereClause } = buildWhereClause({
     globalFilter,
-    fieldNamesForGlobal,
-    setFilters,
+    fieldNamesForGlobal: globalFilter.trim() ? fieldNames : [],
+    columnFilters,
   });
-
-  const fullParams = [...(params ?? []), ...whereParams];
-
-  return { baseSql: normalizedSql, whereClause, fullParams };
+  const filteredRef = useSql(
+    (t) => `SELECT * FROM ${t.base}${whereClause}`,
+    { base: tableRef },
+  );
+  return { tableRef, filteredRef };
 }
 
-// 2. Fetch Schema
-export function useTableSchema(opts: QueryBase) {
-  const { pool } = useDuckDB();
-  const parts = useQueryParts({ ...opts, fieldNames: [] });
+export function useTableSchema(tableRef: QueryRef | null) {
+  const schemaRef = useSql(
+    (t) => `SELECT * FROM ${t.base} LIMIT 0`,
+    { base: tableRef }
+  );
 
   return useQuery({
-    queryKey: ['duckdb', 'schema', parts.baseSql, opts.params],
+    queryKey: ['reducks-schema', schemaRef.id],
     queryFn: async () => {
-      const q = `WITH base AS (${parts.baseSql}) SELECT * FROM base LIMIT 0`;
-      const t = await pool.queryIPCTable(q, opts.params);
-      return t.schema.fields.map((f) => {
-        const typeStr = String(f.type as unknown as string).toUpperCase();
-        const fields = f.type.children?.map((c: { name: string; type: string }) => ({
-          name: c.name,
-          type: String(c.type).toUpperCase(),
-        }));
-        return {
-          name: f.name,
-          type: typeStr,
-          fields,
-        };
-      });
+      const table = await schemaRef.toArrow();
+      return table.schema.fields.map((f) => ({
+        name: f.name,
+        type: String(f.type as unknown as string).toUpperCase(),
+        fields: f.type.children?.map((c: { name: string; type: string }) => ({ name: c.name, type: String(c.type).toUpperCase() })),
+      }));
     },
-    enabled: !!parts.baseSql,
+    enabled: !!tableRef && tableRef.status !== 'pending',
     staleTime: 5 * 60 * 1000,
   });
 }
 
-// 3. Fetch Count
-export function useTableCount(opts: QueryBase) {
-  const { pool } = useDuckDB();
-  const parts = useQueryParts({ ...opts, fieldNames: [] });
+export function useTableCount(filteredRef: QueryRef) {
+  const countRef = useSql(
+    (t) => `SELECT COUNT(*)::BIGINT as c
+      FROM ${t.base}`,
+    { base: filteredRef }
+  );
 
   return useQuery({
-    queryKey: ['duckdb', 'count', parts.baseSql, parts.fullParams],
+    queryKey: ['reducks-count', countRef.id],
     queryFn: async () => {
-      const q = `
-        WITH base AS (${parts.baseSql})
-        SELECT COUNT(*)::BIGINT as c 
-        FROM base
-        ${parts.whereClause}
-      ` as const;
-      const rows = await pool.query(q, parts.fullParams);
-      return Number(rows[0]?.c ?? 0);
+      const row = await countRef.row();
+      return Number(row?.c ?? 0);
     },
-    enabled: !!parts.baseSql,
+    enabled: filteredRef.status !== 'pending',
     placeholderData: keepPreviousData,
   });
 }
 
-// 3b. Fetch Column Summaries (uniq, nulls, total)
-export function useColumnSummaries(opts: QueryBase) {
-  const { pool } = useDuckDB();
-  const parts = useQueryParts({ ...opts, fieldNames: [] });
+export function useColumnSummaries(tableRef: QueryRef | null) {
+  const metricsRef = useSql(
+    (t) => `SELECT {
+      name: any_value(alias(COLUMNS(*))),
+      type: first(typeof(COLUMNS(*)))::VARCHAR,
+      uniq: approx_count_distinct(COLUMNS(*))::BIGINT,
+      nulls: (count(*) - count(COLUMNS(*)))::BIGINT,
+      total: count(*)::BIGINT
+    } AS "m_\\0"
+    FROM ${t.base}`,
+    { base: tableRef }
+  );
+
+  const stackedRef = useSql(
+    (t) => `SELECT value.name AS name,
+      value.type AS type,
+      value.uniq AS uniq,
+      value.nulls AS nulls,
+      value.total AS total
+    FROM (UNPIVOT ${t.metrics} ON COLUMNS(*) INTO NAME _col VALUE value)
+    ORDER BY name`,
+    { metrics: metricsRef }
+  );
 
   return useQuery({
-    queryKey: ['duckdb', 'col-summaries', parts.baseSql, parts.fullParams],
+    queryKey: ['reducks-summaries', stackedRef.id],
     queryFn: async () => {
-      const rows = await pool.dump(`--sql
-      
-        WITH base AS (${parts.baseSql}),
-        base_filtered AS (SELECT * FROM base${parts.whereClause}),
-        metrics AS (
-          SELECT
-            {
-              name: any_value(alias(COLUMNS(*))),
-              type: first(typeof(COLUMNS(*)))::VARCHAR,
-              uniq: approx_count_distinct(COLUMNS(*))::BIGINT,
-              nulls: (count(*) - count(COLUMNS(*)))::BIGINT,
-              total: count(*)::BIGINT
-            } AS "m_\\0"
-          FROM base_filtered
-        ),
-        stacked AS (
-          UNPIVOT metrics ON COLUMNS(*)
-          INTO NAME _col VALUE value
-        )
-        SELECT
-          value.name AS name,
-          value.type AS type,
-          value.uniq AS uniq,
-          value.nulls AS nulls,
-          value.total AS total
-        FROM stacked
-        ORDER BY name
-      `, parts.fullParams);
-
-      return rows.map(
-        (r): ColumnSummary => ({
-          name: String(r.name),
-          type: String(r.type),
-          uniq: Number(r.uniq ?? 0),
-          nulls: Number(r.nulls ?? 0),
-          total: Number(r.total ?? 0),
-        })
-      );
+      const rows = await stackedRef.toArray();
+      return rows.map((r): ColumnSummary => ({
+        name: String(r.name),
+        type: String(r.type),
+        uniq: Number(r.uniq ?? 0),
+        nulls: Number(r.nulls ?? 0),
+        total: Number(r.total ?? 0),
+      }));
     },
-    enabled: !!parts.baseSql,
+    enabled: !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,
     staleTime: Infinity,
     gcTime: Infinity,
   });
 }
 
-// 3c. Fetch Column Sizes (p80Len using sample)
-export function useColumnSizes(opts: QueryBase) {
-  const { pool } = useDuckDB();
-  const parts = useQueryParts({ ...opts, fieldNames: [] });
+export function useColumnSizes(tableRef: QueryRef | null) {
+  const sampleRef = useSql(
+    (t) => `SELECT * FROM ${t.base} USING SAMPLE 1000`,
+    { base: tableRef }
+  );
+
+  const metricsRef = useSql(
+    (t) => `SELECT {
+      name: any_value(alias(COLUMNS(*))),
+      p80Len: coalesce(quantile_cont(length(CAST(COLUMNS(*) AS VARCHAR)), 0.8) FILTER (WHERE COLUMNS(*) IS NOT NULL AND length(CAST(COLUMNS(*) AS VARCHAR)) > 0), 0)::INT
+    } AS "m_\\0"
+    FROM ${t.sample}`,
+    { sample: sampleRef }
+  );
+
+  const sizesRef = useSql(
+    (t) => `SELECT value.name AS name,
+      value.p80Len AS p80Len
+    FROM (UNPIVOT ${t.metrics} ON COLUMNS(*) INTO NAME _col VALUE value)
+    ORDER BY name`,
+    { metrics: metricsRef }
+  );
 
   return useQuery({
-    queryKey: ['duckdb', 'col-sizes', parts.baseSql, parts.fullParams],
+    queryKey: ['reducks-sizes', sizesRef.id],
     queryFn: async () => {
-      const rows = await pool.dump(`--sql
-        WITH base AS (${parts.baseSql}),
-        base_filtered AS (SELECT * FROM base${parts.whereClause}),
-        sample AS (SELECT * FROM base_filtered USING SAMPLE 1000),
-        metrics AS (
-          SELECT
-            {
-              name: any_value(alias(COLUMNS(*))),
-              p80Len: coalesce(quantile_cont(length(CAST(COLUMNS(*) AS VARCHAR)), 0.8) FILTER (WHERE COLUMNS(*) IS NOT NULL AND length(CAST(COLUMNS(*) AS VARCHAR)) > 0), 0)::INT
-            } AS "m_\\0"
-          FROM sample
-        ),
-        stacked AS (
-          UNPIVOT metrics ON COLUMNS(*)
-          INTO NAME _col VALUE value
-        )
-        SELECT
-          value.name AS name,
-          value.p80Len AS p80Len
-        FROM stacked
-        ORDER BY name
-      `, parts.fullParams);
-
-      return rows.map(
-        (r): ColumnSize => ({
-          name: String(r.name),
-          p80Len: Number(r.p80Len ?? 0),
-        })
-      );
+      const rows = await sizesRef.toArray();
+      return rows.map((r): ColumnSize => ({
+        name: String(r.name),
+        p80Len: Number(r.p80Len ?? 0),
+      }));
     },
-    enabled: !!parts.baseSql,
+    enabled: !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,
     staleTime: Infinity,
     gcTime: Infinity,
   });
 }
 
-// 4. Helper for Page Query Options
-export function getTableDataPageQueryOptions(
-  pool: ReturnType<typeof useDuckDB>['pool'],
-  parts: QueryParts | null,
-  sorting: SortingState,
-  limit: number,
-  offset: number
-) {
-  return {
-    queryKey: ['duckdb', 'data', parts?.baseSql, parts?.fullParams, sorting, limit, offset],
+export function useColumnDescribe(tableRef: QueryRef | null) {
+  const describeRef = useSql(
+    (t) => `SELECT
+      value.name AS name,
+      value.empty_count AS empty_count
+    FROM (
+      UNPIVOT (
+        SELECT {
+          name: any_value(alias(COLUMNS(*))),
+          empty_count: (
+            COUNT(*) FILTER (
+              WHERE COLUMNS(*) IS NOT NULL
+                AND length(trim(CAST(COLUMNS(*) AS VARCHAR))) = 0
+            )
+          )::BIGINT
+        } AS "m_\\0"
+        FROM ${t.base}
+      ) ON COLUMNS(*) INTO NAME _col VALUE value
+    )
+    ORDER BY name`,
+    { base: tableRef }
+  );
+
+  return useQuery({
+    queryKey: ['reducks-describe', describeRef.id],
     queryFn: async () => {
-      if (!parts) return null;
-
-      const orderClause =
-        sorting.length > 0
-          ? `\nORDER BY ${sorting.map((s) => `${quoteIdent(s.id)} ${s.desc ? 'DESC' : 'ASC'} NULLS LAST`).join(', ')}`
-          : '';
-
-      const q = `
-        WITH base AS (${parts.baseSql})
-        SELECT *
-        FROM base
-        ${parts.whereClause}
-        ${orderClause}
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-
-      const t = await pool.queryIPCTable(q, parts.fullParams);
-
-      const nextVectors = new Map<string, Vector>();
-      for (let i = 0; i < t.schema.fields.length; i++) {
-        const f = t.schema.fields[i];
-        const v = t.getChildAt(i);
-        if (f && v) nextVectors.set(f.name, v as unknown as Vector);
-      }
-
-      return {
-        vectors: nextVectors,
-        rowCount: t.numRows,
-      };
+      const rows = await describeRef.toArray();
+      return rows.map((r): ColumnDescribe => ({
+        name: String(r.name),
+        emptyCount: Number(r.empty_count ?? 0),
+      }));
     },
-    enabled: !!parts,
+    enabled: !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,
-    staleTime: 5 * 60 * 1000,
-  };
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
 }

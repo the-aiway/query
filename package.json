@@ -5,19 +5,21 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
+    "./*": "./*",
     "./table": "./table/index.ts",
     "./provider": "./react/DuckDBProvider.ts",
-    "./react": "./react/index.ts"
+    "./react": "./react/index.ts",
+    "./reducks": "./react/reducks.ts"
   },
   "peerDependencies": {
     "react": "^18 || ^19",
-    "@duckdb/duckdb-wasm": "^1.30.0",
     "@tanstack/react-query": "^5",
     "@tanstack/react-table": "^8",
     "@tanstack/react-virtual": "^3",
     "apache-arrow": "^17"
   },
   "dependencies": {
+    "@duckdb/duckdb-wasm": "^1.33.1-dev18.0",
     "@radix-ui/react-checkbox": "^1.1.5",
     "@radix-ui/react-context-menu": "^2.2.7",
     "@radix-ui/react-label": "^2.1.3",
