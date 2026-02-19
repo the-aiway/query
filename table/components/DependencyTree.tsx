@@ -1,11 +1,13 @@
 import Editor from '@monaco-editor/react';
 import { format } from 'sql-formatter';
-import React, { useMemo, useState } from 'react';
-import { GitBranch, Database, Code2, Globe } from 'lucide-react';
-import { type QueryRef } from '../../react/reducks';
+import React, { useEffect, useMemo, useState } from 'react';
+import { GitBranch, Database, Code2, Globe, Pencil } from 'lucide-react';
+import { Ref, type QueryRef } from '../../react/reducks';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { Button } from '../ui/Button';
 import { ScrollArea } from '../ui/ScrollArea';
+import { SqlQueryEditorPopover } from './SqlQueryEditorPopover';
+import { useTab } from './TabContext';
 
 // --- Tree types ---
 
@@ -31,23 +33,23 @@ function extractPathSources(sql: string): string[] {
 }
 
 function extractDirectPathSources(entry: QueryRef): string[] {
-  if (!entry._query) return [];
-  let sql = entry._query;
-  for (const dep of entry._dependencies || []) {
-    if (dep._type !== 'fragment' || !dep._query) continue;
-    sql = sql.split(dep._query).join(' ');
+  if (!entry.query) return [];
+  let sql = entry.query;
+  for (const dep of entry.dependencies || []) {
+    if (dep.type !== 'fragment' || !dep.query) continue;
+    sql = sql.split(dep.query).join(' ');
   }
   return extractPathSources(sql);
 }
 
 function toDisplaySql(entry: QueryRef): string {
-  if (!entry._query) {
-    return entry._type === 'table' ? `SELECT * FROM ${entry._name || entry._id}` : '';
+  if (!entry.query) {
+    return entry.type === 'table' ? `SELECT * FROM ${entry.name || entry.id}` : '';
   }
-  let sql = entry._query;
-  for (const dep of entry._dependencies || []) {
-    const name = dep._name || dep._id;
-    sql = sql.split(dep._id).join(name);
+  let sql = entry.query;
+  for (const dep of entry.dependencies || []) {
+    const name = dep.name || dep.id;
+    sql = sql.split(dep.id).join(name);
   }
   return sql;
 }
@@ -66,14 +68,14 @@ function buildTree(entry: QueryRef, visited = new Set<string>()): TreeNode {
     });
   }
 
-  for (const dep of entry._dependencies || []) {
-    if (visited.has(dep._id)) continue;
-    visited.add(dep._id);
+  for (const dep of entry.dependencies || []) {
+    if (visited.has(dep.id)) continue;
+    visited.add(dep.id);
     children.push(buildTree(dep, visited));
   }
 
   return {
-    id: entry._id,
+    id: entry.id,
     kind: 'ref',
     entry,
     displaySql: toDisplaySql(entry),
@@ -90,6 +92,11 @@ function flatFind(node: TreeNode, id: string): TreeNode | null {
   return null;
 }
 
+function nodeLabel(node: TreeNode): string {
+  if (node.kind === 'path') return node.path ?? 'source';
+  return node.entry?.name || node.entry?.id || 'sql';
+}
+
 // --- Tree node row ---
 
 function PathNodeRow({ node, depth, selectedId, onSelect }: { node: TreeNode; depth: number; selectedId: string | null; onSelect: (node: TreeNode) => void }) {
@@ -100,7 +107,7 @@ function PathNodeRow({ node, depth, selectedId, onSelect }: { node: TreeNode; de
       onClick={() => onSelect(node)}
       className={`
         w-full flex items-center gap-2 py-1.5 rounded text-left text-[11px] font-mono transition-colors
-        ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted/40 text-foreground/60'}
+        ${isSelected ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300 ring-1 ring-inset ring-sky-500/30' : 'hover:bg-muted/40 text-foreground/60'}
       `}
       style={{ paddingLeft: `${depth * 16 + 8}px`, paddingRight: 8 }}
       title={node.path}
@@ -127,9 +134,9 @@ function TreeNodeRow({
 }) {
   if (node.kind === 'path') return <PathNodeRow node={node} depth={depth} selectedId={selectedId} onSelect={onSelect} />;
 
-  const isTable = node.entry!._type === 'table';
+  const isTable = node.entry!.type === 'table';
   const isSelected = selectedId === node.id;
-  const name = node.entry!._name || node.entry!._id;
+  const name = node.entry!.name || node.entry!.id;
 
   return (
     <>
@@ -138,7 +145,7 @@ function TreeNodeRow({
         onClick={() => onSelect(node)}
         className={`
           w-full flex items-center gap-2 py-1.5 rounded text-left text-[11px] font-mono transition-colors
-          ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted/40 text-foreground/80'}
+          ${isSelected ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300 ring-1 ring-inset ring-sky-500/30' : 'hover:bg-muted/40 text-foreground/80'}
           ${isRoot ? 'font-bold' : ''}
         `}
         style={{ paddingLeft: `${depth * 16 + 8}px`, paddingRight: 8 }}
@@ -180,6 +187,13 @@ function formatSql(sql: string): string {
   } catch {
     return sql;
   }
+}
+
+function buildTableCteSql(entry: QueryRef): string {
+  const name = entry.name || entry.id;
+  const escapedName = String(name).replace(/[^A-Za-z0-9_]/g, '_');
+  const cteName = `_${escapedName}`;
+  return `WITH\n  ${cteName} AS (\n    FROM\n      ${Ref.toExpr(entry)}\n  )\nSELECT\n  *\nFROM\n  ${cteName}`;
 }
 
 function SqlPreview({ sql }: { sql: string }) {
@@ -228,8 +242,15 @@ type DependencyTreeProps = {
   entry: QueryRef;
 };
 
+let dependencyPopoverOpenState = false;
+let dependencySelectedIdState: string | null = null;
+let dependencySelectedSqlState = '';
+
 export function DependencyTree({ entry }: DependencyTreeProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(dependencySelectedIdState);
+  const [selectedSql, setSelectedSql] = useState<string>(dependencySelectedSqlState);
+  const [open, setOpen] = useState<boolean>(dependencyPopoverOpenState);
+  const { setPreviewRef, setPreviewSql } = useTab();
 
   const tree = useMemo(() => buildTree(entry), [entry]);
 
@@ -238,12 +259,74 @@ export function DependencyTree({ entry }: DependencyTreeProps) {
     return flatFind(tree, selectedId);
   }, [selectedId, tree]);
 
+  const selectedLabel = selectedNode ? nodeLabel(selectedNode) : '';
+
+  // Only resolves async CTE SQL for the display panel — never touches preview state.
+  useEffect(() => {
+    if (!selectedNode) {
+      setSelectedSql('');
+      return;
+    }
+
+    const fallbackSql = selectedNode.displaySql;
+    setSelectedSql(fallbackSql);
+
+    if (selectedNode.kind !== 'ref' || !selectedNode.entry) return;
+
+    let cancelled = false;
+    selectedNode.entry
+      .toSql({ cte: true })
+      .then((cteSql) => {
+        if (cancelled) return;
+        const resolved = selectedNode.entry?.type === 'table'
+          ? buildTableCteSql(selectedNode.entry)
+          : (cteSql.trim() ? cteSql : fallbackSql);
+        setSelectedSql(resolved);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setSelectedSql(`${fallbackSql}\n\n-- Failed to build CTE SQL: ${message}`);
+      });
+
+    return () => { cancelled = true; };
+  }, [selectedNode]);
+
+  // Auto-select root when opening with nothing valid selected.
+  // Only updates selectedId — never touches preview state to avoid remount loops.
+  useEffect(() => {
+    if (!open) return;
+    if (!selectedId || !flatFind(tree, selectedId)) {
+      dependencySelectedIdState = tree.id;
+      setSelectedId(tree.id);
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist SQL for popover re-open.
+  useEffect(() => {
+    dependencySelectedSqlState = selectedSql;
+  }, [selectedSql]);
+
+  // Preview is applied directly in the click handler — never in an effect.
   const handleSelect = (node: TreeNode) => {
-    setSelectedId(selectedId === node.id ? null : node.id);
+    dependencySelectedIdState = node.id;
+    setSelectedId(node.id);
+    const label = `Dependency: ${nodeLabel(node)}`;
+    if (node.kind === 'ref' && node.entry) {
+      setPreviewRef(node.entry, label);
+    } else {
+      setPreviewSql(node.displaySql, label);
+    }
   };
 
   return (
-    <Popover>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        dependencyPopoverOpenState = nextOpen;
+        setOpen(nextOpen);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" title="Dependency graph">
           <GitBranch className="h-3.5 w-3.5" />
@@ -271,7 +354,24 @@ export function DependencyTree({ entry }: DependencyTreeProps) {
             />
           </div>
         </ScrollArea>
-        {selectedNode && <SqlPreview sql={selectedNode.displaySql} />}
+        {selectedNode && (
+          <div className="border-t border-border px-3 py-2 flex items-center justify-between bg-muted/20 gap-2">
+            <span className="text-[10px] font-mono text-muted-foreground truncate">
+              {selectedLabel}
+            </span>
+            <SqlQueryEditorPopover
+              title={`Edit ${selectedLabel}`}
+              sql={selectedSql || selectedNode.displaySql}
+              onSave={(sql) => setPreviewSql(sql, `Dependency: ${selectedLabel}`)}
+            >
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-mono shrink-0" title="Edit dependency SQL">
+                <Pencil className="h-3 w-3" />
+                Edit
+              </Button>
+            </SqlQueryEditorPopover>
+          </div>
+        )}
+        {selectedNode && <SqlPreview sql={selectedSql || selectedNode.displaySql} />}
       </PopoverContent>
     </Popover>
   );
