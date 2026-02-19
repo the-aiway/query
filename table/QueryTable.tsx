@@ -11,6 +11,10 @@ import { TabProvider, useTab } from './components/TabContext';
 
 const SOURCE_SWITCHER_HEIGHT = 36;
 
+type QueryTableInputProps = QueryTableProps & {
+  sql?: string;
+};
+
 
 function isNamedSourceMap(input: QueryTableProps['table']): input is QueryTableSourceMap {
   if (!input || typeof input !== 'object' || Array.isArray(input) || input instanceof Table) return false;
@@ -190,6 +194,7 @@ function QueryTableContent({
 }
 
 export function QueryTable({
+  sql: sqlInput,
   id,
   table: tableInput,
   height,
@@ -197,9 +202,10 @@ export function QueryTable({
   rowHeight,
   overscan = 12,
   ...props
-}: QueryTableProps) {
+}: QueryTableInputProps) {
+  const effectiveTableInput = sqlInput ?? tableInput;
   const effectiveRowHeight = rowHeight ?? (compact ? 24 : 28);
-  const sourceMap = isNamedSourceMap(tableInput) ? tableInput : null;
+  const sourceMap = isNamedSourceMap(effectiveTableInput) ? effectiveTableInput : null;
   const arrowRefCache = useRef(new Map<object, QueryRef>());
   const generatedIdRef = useRef(`qt_${Math.random().toString(36).slice(2, 10)}`);
   const isUnnamedCompatMode = !sourceMap && !id;
@@ -214,12 +220,12 @@ export function QueryTable({
         })
         .filter(({ ref }) => !!ref);
     }
-    const ref = tableInputToRef(tableInput as QueryRef | null | undefined, arrowRefCache.current);
+    const ref = tableInputToRef(effectiveTableInput as QueryRef | null | undefined, arrowRefCache.current);
     if (!ref) return [];
     const key = id ?? generatedIdRef.current;
     if (!ref.name) ref.ensureName(key);
     return [{ key, ref }];
-  }, [sourceMap, tableInput, id]);
+  }, [sourceMap, effectiveTableInput, id]);
 
   const baseId = id ?? sourceTabs[0]?.key ?? generatedIdRef.current;
 
