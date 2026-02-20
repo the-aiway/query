@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Table } from 'apache-arrow';
-import { buildWhere, eq, neq, gt, gte, lt, lte, between, $in, like, ilike } from '../sqlConditions';
+import { buildWhere, eq, neq, gt, gte, lt, lte, between, $in, like, ilike, sqlConditions, type SqlConditionValue } from '../sqlConditions';
 import { escapeSQL } from '../sqlUtils';
 import { toValuesSelect } from '../toValues';
 import type { ConnectionPool, } from '../duck/ConnectionPool';
@@ -314,6 +314,27 @@ export const sql: UseSqlHook = ((queryFn: any, params?: any) => makeRef('fragmen
 export const table: UseTableHook = ((queryFn: any, params?: any) => makeRef('table', queryFn, params ?? {})) as UseTableHook;
 export const lazyTable: UseTableHook = ((queryFn: any, params?: any) => makeRef('lazy', queryFn, params ?? {})) as UseTableHook;
 
+
+export const values: UseValuesHook = ((data: Record<string, unknown>[], schema?: Record<string, string> | readonly string[]): any => {
+  const valSql = toValuesSelect(data, schema);
+  const key = `fragment\0${valSql}`;
+  const hit = _cache.get(key);
+  if (hit) return hit;
+  const entry = new Ref('ready', 'fragment', valSql, [], { id: uid('f') });
+  _cache.set(key, entry);
+  return entry;
+}) as UseValuesHook;
+
+export type ReEngine = { sql: UseSqlHook; table: UseTableHook; values: UseValuesHook };
+export type PipelineFn<TParams, TResult> = (re: ReEngine, params: TParams) => TResult;
+
+export function pipeline<TParams, TResult>(fn: PipelineFn<TParams, TResult>, params: TParams): TResult {
+  return fn({ sql, table, values }, params);
+}
+
+
+
+
 // ─── Hooks: Producers ────────────────────────────────────────
 
 function useQueryRef(type: RefType): UseTableHook {
@@ -329,6 +350,11 @@ function useQueryRef(type: RefType): UseTableHook {
 export const useTable: UseTableHook = useQueryRef('table');
 export const useSql: UseSqlHook = useQueryRef('fragment');
 export const useLazyTable: UseTableHook = useQueryRef('lazy');
+
+export function usePipeline<TParams, TResult>(fn: PipelineFn<TParams, TResult>, params: TParams): TResult {
+  return fn({ sql: useSql, table: useTable, values: useValues }, params);
+}
+
 
 export const useValues: UseValuesHook = (
   data: Record<string, unknown>[],
