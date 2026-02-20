@@ -200,7 +200,6 @@ useSql(
     AND weight > ${t.minWeight}                   -- number → raw
     AND active = ${t.isActive}                    -- boolean → TRUE/FALSE
     AND ${t.raw.someExpression}                   -- raw interpolation (no escaping)
-    ${t.where({ carrier: 'heppner', weight: { gt: 100 } })}  -- WHERE clause builder
   `,
   { orders, carrier: 'heppner', minWeight: 100, isActive: true, someExpression: 'custom SQL' }
 );
@@ -622,7 +621,6 @@ reducks builds SQL query graphs where nothing executes until you explicitly cons
 
 **Never pull data into JS just to push it back.** The `useEffect` + `toArray()` + `setState` pattern is an anti-pattern: data leaves DuckDB, sits in JS memory, and can't be composed with other refs. Keep everything as refs until the final render boundary.
 
-**Same DAG, two contexts.** Define a pipeline once as a plain function. Use it reactively with `usePipeline()` in React, or imperatively with `pipeline()` in event handlers, workers, or tests. Same cache, same materialization — no duplication.
 
 ## Core Concepts
 
