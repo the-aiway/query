@@ -18,7 +18,6 @@ function SalesDashboard({ region }: { region: string }) {
   // useValues → JS array becomes a SQL table — business config living in React state
   const targets = useValues(
     [{ category: 'electronics', goal: 50000 }, { category: 'furniture', goal: 30000 }],
-    { category: 'VARCHAR', goal: 'INT' }
   );
 
   // useSql → virtual ref, zero I/O. DuckDB inlines it as a subquery and optimizes the chain.
