@@ -3,13 +3,18 @@
   "version": "0.1.0",
   "type": "module",
   "main": "./index.ts",
+  "types": "./index.ts",
   "exports": {
     ".": "./index.ts",
-    "./*": "./*",
-    "./table": "./table/index.ts",
     "./provider": "./react/DuckDBProvider.ts",
-    "./react": "./react/index.ts",
-    "./reducks": "./react/reducks.ts"
+    "./reducks": "./react/reducks.ts",
+    "./*": [
+      "./*.ts",
+      "./*.tsx",
+      "./*/index.ts",
+      "./*/index.tsx",
+      "./*"
+    ]
   },
   "peerDependencies": {
     "react": "^18 || ^19",
