@@ -10,15 +10,15 @@ import { Materialize } from '#query/react/Materialize';
 function SalesDashboard({ region }: { region: string }) {
   // useTable → materializes 500k rows to Parquet in OPFS once, reused by every query below
   // ${t.region} → scalar, auto-escaped to 'europe' (SQL-injection safe)
-  const transactions = useTable(
-    (t) => `SELECT * FROM '/api/export/*/transactions.parquet' WHERE region = ${t.region}`,
+  const transactions = useTable((t) => `SELECT * FROM '/api/export/*/transactions.parquet' WHERE region = ${t.region}`,
     { region }
   );
 
   // useValues → JS array becomes a SQL table — business config living in React state
-  const targets = useValues(
-    [{ category: 'electronics', goal: 50000 }, { category: 'furniture', goal: 30000 }],
-  );
+  const targets = useValues([
+    { category: 'electronics', goal: 50000 },
+    { category: 'furniture', goal: 30000 }
+  ]);
 
   // useSql → virtual ref, zero I/O. DuckDB inlines it as a subquery and optimizes the chain.
   // ${t.transactions} → ref, becomes FROM 'opfs://transactions.parquet'
