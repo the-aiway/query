@@ -16,6 +16,11 @@
       "./*"
     ]
   },
+  "scripts": {
+    "bump:patch": "npm version patch -m 'chore: bump version to %s' && git push && git push --tags",
+    "bump:minor": "npm version minor -m 'chore: bump version to %s' && git push && git push --tags",
+    "bump:major": "npm version major -m 'chore: bump version to %s' && git push && git push --tags"
+  },
   "peerDependencies": {
     "react": "^18 || ^19",
     "@tanstack/react-query": "^5",
