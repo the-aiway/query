@@ -38,7 +38,7 @@ function buildProxy<T extends Record<string, any>>(params: T, options?: { useCte
 function depsResolved(params: Record<string, unknown>): boolean {
   return Object.values(params).every((v) => {
     if (isRef(v)) return v.status !== 'pending';
-    return v != null;
+    return true;
   });
 }
 
@@ -293,7 +293,7 @@ const REF_PREFIX: Record<RefType, string> = { table: 't', fragment: 'f', lazy: '
 
 function makeRef(type: RefType, queryFn: any, params: any = {}): QueryRef {
   if (!depsResolved(params)) {
-    throw new Error('[reducks] Cannot create ref: scalar dependencies are null/undefined');
+    throw new Error('[reducks] Cannot create ref: ref dependencies are pending');
   }
   const isFn = typeof queryFn === 'function';
   const sql = isFn ? queryFn(buildProxy(params)) : queryFn;

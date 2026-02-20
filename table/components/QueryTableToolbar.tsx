@@ -23,6 +23,7 @@ import { SqlQueryEditorPopover } from './SqlQueryEditorPopover';
 import { useQT } from './QueryTableContext';
 import { useTab } from './TabContext';
 import { isSetFilter, isRangeFilter } from '../../sqlUtils';
+import { cn } from '../ui/utils';
 
 export function QueryTableToolbar() {
   const {
@@ -170,7 +171,8 @@ export function QueryTableToolbar() {
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2 shrink-0">
+        <div className={cn('flex items-center gap-2', onClose && 'max-[980px]:hidden')}>
         <Popover open={columnsOpen} onOpenChange={(nextOpen) => { setColumnsOpen(nextOpen); if (!nextOpen) setColumnSearch(''); }}>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="sm" className="h-7 w-7 p-0 relative">
@@ -280,8 +282,19 @@ export function QueryTableToolbar() {
         ) : (
           <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setIsSearchExpanded(true); setTimeout(() => searchInputRefToUse.current?.focus(), 0); }}><Search className="h-3.5 w-3.5" /></Button>
         ))}
+        </div>
 
-        {onClose && <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onClose}><BarChart3 className="h-3.5 w-3.5" /></Button>}
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            onClick={onClose}
+            title="Exit table view"
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
     </div>
   );
