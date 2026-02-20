@@ -79,124 +79,6 @@ function SalesDashboard({ region }: { region: string }) {
 ```
 
 
-## API
-
-Every hook has a plain function counterpart: `useSql`/`sql`, `useTable`/`table`, `useLazyTable`/`lazyTable`, `useValues`/`values`, `useArrow`/`fromArrow`, `usePipeline`/`pipeline`. Same cache, same materialization — hooks add React reactivity, plain functions work anywhere.
-
-### `useSql` / `sql`
-
-Creates a virtual ref (inlined as subquery). **Use this by default.** No I/O.
-
-### `useTable` / `table`
-
-Same API as `useSql`, but materializes to a Parquet file in OPFS. Downstream queries reference the file path. Use for large intermediate results that multiple downstream queries hit.
-
-### `useLazyTable` / `lazyTable`
-
-Same API as `useTable`, but returns immediately via a VIEW. Parquet materialization happens in the background.
-
-1. Creates a VIEW — ref is ready instantly
-2. Downstream queries work immediately (DuckDB pushes predicates through views)
-3. Background: `COPY TO PARQUET` runs, then the VIEW swaps to point at the file
-4. Subsequent queries silently hit the fast Parquet — no re-render
-
-### `useValues` / `values`
-
-Creates a virtual ref from JS data. Pass an explicit schema `{ col: 'VARCHAR' }` or column names `['col']`.
-
-### `useArrow` / `fromArrow`
-
-Creates a ref from an Apache Arrow `Table`. Registered in DuckDB lazily on first consumption. In React, pass `null` to get a pending ref: `useArrow(isReady ? table : null)`.
-
-### `usePipeline` / `pipeline`
-
-Runs a pipeline function — a plain function that takes a `ReEngine` and params, returns a bag of refs. This is the primary pattern for complex multi-step SQL DAGs.
-
-Define the pipeline once:
-
-```ts
-import type { ReEngine, QueryRef } from '#query/react';
-
-type AnalysisParams = { basePath: string; segment: string; cutoff: number };
-type AnalysisResult = { orders: QueryRef; rates: QueryRef; stats: QueryRef };
-
-export const analysisPipeline = (re: ReEngine, params: AnalysisParams): AnalysisResult => {
-  const orders = re.sql(
-    (t) => `--sql
-      SELECT destination_department, actual_transport_cost
-      FROM '${t.raw.basePath}/transport_orders.parquet'
-      WHERE actual_segment = ${t.segment} AND actual_transport_cost > 0`,
-    { basePath: params.basePath, segment: params.segment }
-  );
-
-  const rates = re.sql(
-    (t) => `--sql
-      SELECT * FROM '${t.raw.basePath}/carrier_rates.parquet'
-      WHERE actual_segment = ${t.segment}`,
-    { basePath: params.basePath, segment: params.segment }
-  );
-
-  const stats = re.sql(
-    (t) => `--sql
-      SELECT count(*)::int as total_orders, sum(actual_transport_cost)::int as total_cost
-      FROM ${t.orders}`,
-    { orders }
-  );
-
-  return { orders, rates, stats };
-};
-```
-
-Use in React:
-
-```tsx
-import { usePipeline } from '#query/react';
-import { DataCard } from '#query/react/DataCard';
-
-function Dashboard({ basePath, segment, cutoff }: AnalysisParams) {
-  const { stats } = usePipeline(analysisPipeline, { basePath, segment, cutoff });
-
-  return (
-    <DataCard source={{ stats }}>
-      {({ stats }) => <div>{stats[0].total_orders} orders, {stats[0].total_cost}€</div>}
-    </DataCard>
-  );
-}
-```
-
-
-Use imperatively — same pipeline, event handler on the client:
-
-```ts
-import { pipeline } from '#query/node';
-
-async function handleExport(basePath: string, segment: string, cutoff: number) {
-  const { stats } = pipeline(analysisPipeline, { basePath, segment, cutoff });
-  const rows = await stats.toArray();
-  downloadCSV(rows);
-}
-```
-
-Same pipeline, server-side (future — same DAG runs against a real DuckDB instead of WASM):
-
-```ts
-import { pipeline } from '#query/react';
-
-app.get('/api/analysis/:segment/stats', async (req) => {
-  const { stats } = pipeline(analysisPipeline, {
-    basePath: '/data/warehouse',
-    segment: req.params.segment,
-    cutoff: 250,
-  });
-  const sql = await stats.toSql({ cte: true });
-  const rows = await db.query(sql);
-  return Response.json(rows);
-});
-```
-
-`ReEngine` provides `{ sql, table, values }` — the imperative builder functions. The pipeline pattern makes them composable and context-independent. Define the DAG once, run it in React, in a click handler, or on a server.
-
-
 ## Consuming Data
 
 ### `Materialize` (recommended)
@@ -305,6 +187,7 @@ const { data, error, isLoading } = useQuery({
   enabled: ref.status !== 'pending',
 });
 ```
+
 
 ## Param Interpolation
 
@@ -488,6 +371,124 @@ const byCategory = sql(
 const rows = await byCategory.toArray();  // [{category, revenue, goal}, ...]
 const first = await byCategory.row();     // {category, revenue, goal} | null
 ```
+
+## API
+
+Every hook has a plain function counterpart: `useSql`/`sql`, `useTable`/`table`, `useLazyTable`/`lazyTable`, `useValues`/`values`, `useArrow`/`fromArrow`, `usePipeline`/`pipeline`. Same cache, same materialization — hooks add React reactivity, plain functions work anywhere.
+
+### `useSql` / `sql`
+
+Creates a virtual ref (inlined as subquery). **Use this by default.** No I/O.
+
+### `useTable` / `table`
+
+Same API as `useSql`, but materializes to a Parquet file in OPFS. Downstream queries reference the file path. Use for large intermediate results that multiple downstream queries hit.
+
+### `useLazyTable` / `lazyTable`
+
+Same API as `useTable`, but returns immediately via a VIEW. Parquet materialization happens in the background.
+
+1. Creates a VIEW — ref is ready instantly
+2. Downstream queries work immediately (DuckDB pushes predicates through views)
+3. Background: `COPY TO PARQUET` runs, then the VIEW swaps to point at the file
+4. Subsequent queries silently hit the fast Parquet — no re-render
+
+### `useValues` / `values`
+
+Creates a virtual ref from JS data. Pass an explicit schema `{ col: 'VARCHAR' }` or column names `['col']`.
+
+### `useArrow` / `fromArrow`
+
+Creates a ref from an Apache Arrow `Table`. Registered in DuckDB lazily on first consumption. In React, pass `null` to get a pending ref: `useArrow(isReady ? table : null)`.
+
+### `usePipeline` / `pipeline`
+
+Runs a pipeline function — a plain function that takes a `ReEngine` and params, returns a bag of refs. This is the primary pattern for complex multi-step SQL DAGs.
+
+Define the pipeline once:
+
+```ts
+import type { ReEngine, QueryRef } from '#query/react';
+
+type AnalysisParams = { basePath: string; segment: string; cutoff: number };
+type AnalysisResult = { orders: QueryRef; rates: QueryRef; stats: QueryRef };
+
+export const analysisPipeline = (re: ReEngine, params: AnalysisParams): AnalysisResult => {
+  const orders = re.sql(
+    (t) => `--sql
+      SELECT destination_department, actual_transport_cost
+      FROM '${t.raw.basePath}/transport_orders.parquet'
+      WHERE actual_segment = ${t.segment} AND actual_transport_cost > 0`,
+    { basePath: params.basePath, segment: params.segment }
+  );
+
+  const rates = re.sql(
+    (t) => `--sql
+      SELECT * FROM '${t.raw.basePath}/carrier_rates.parquet'
+      WHERE actual_segment = ${t.segment}`,
+    { basePath: params.basePath, segment: params.segment }
+  );
+
+  const stats = re.sql(
+    (t) => `--sql
+      SELECT count(*)::int as total_orders, sum(actual_transport_cost)::int as total_cost
+      FROM ${t.orders}`,
+    { orders }
+  );
+
+  return { orders, rates, stats };
+};
+```
+
+Use in React:
+
+```tsx
+import { usePipeline } from '#query/react';
+import { DataCard } from '#query/react/DataCard';
+
+function Dashboard({ basePath, segment, cutoff }: AnalysisParams) {
+  const { stats } = usePipeline(analysisPipeline, { basePath, segment, cutoff });
+
+  return (
+    <DataCard source={{ stats }}>
+      {({ stats }) => <div>{stats[0].total_orders} orders, {stats[0].total_cost}€</div>}
+    </DataCard>
+  );
+}
+```
+
+
+Use imperatively — same pipeline, event handler on the client:
+
+```ts
+import { pipeline } from '#query/node';
+
+async function handleExport(basePath: string, segment: string, cutoff: number) {
+  const { stats } = pipeline(analysisPipeline, { basePath, segment, cutoff });
+  const rows = await stats.toArray();
+  downloadCSV(rows);
+}
+```
+
+Same pipeline, server-side (future — same DAG runs against a real DuckDB instead of WASM):
+
+```ts
+import { pipeline } from '#query/react';
+
+app.get('/api/analysis/:segment/stats', async (req) => {
+  const { stats } = pipeline(analysisPipeline, {
+    basePath: '/data/warehouse',
+    segment: req.params.segment,
+    cutoff: 250,
+  });
+  const sql = await stats.toSql({ cte: true });
+  const rows = await db.query(sql);
+  return Response.json(rows);
+});
+```
+
+`ReEngine` provides `{ sql, table, values }` — the imperative builder functions. The pipeline pattern makes them composable and context-independent. Define the DAG once, run it in React, in a click handler, or on a server.
+
 
 ## Dependency Chains
 
