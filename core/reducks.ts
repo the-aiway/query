@@ -172,7 +172,7 @@ export function isRef(v: unknown): v is Duckable {
 
 export function buildProxy<T extends Record<string, unknown>>(params: T): ParamProxy<T> {
   const escaped: Record<string, string> = {};
-  const raw: Record<string, string> = {};
+  const raw: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(params)) {
     if (isRef(v)) {
       v.ensureName(k);
@@ -512,10 +512,12 @@ export function statement<TVariable extends Record<string, unknown>>(): <
 export function statement<
   TVariable extends Record<string, unknown>,
   TFixed extends Record<string, unknown> = Record<string, unknown>,
+  TQuery extends string = string,
+  TOverride = never,
 >(
-  builder: (t: ParamProxy<TVariable & TFixed>) => string,
+  builder: (t: ParamProxy<TVariable & TFixed>) => ValidSQL<TQuery>,
   fixed?: TFixed,
-): (params: TVariable) => ThenableRef<unknown>;
+): (params: TVariable) => ThenableRef<OverrideRow<TQuery, TOverride>>;
 export function statement(builder?: unknown, fixed?: Record<string, unknown>): unknown {
   if (builder === undefined) {
     return (b: unknown, f: Record<string, unknown>) => (params: Record<string, unknown>) =>
@@ -645,9 +647,16 @@ export async function _typeCheck() {
 
   const s1 = re.sql((t) => "SELECT 42 AS TOTO  FROM LOL");
   s1 satisfies ThenableRef<{ TOTO: number }>;
-  const r1 = re.statement<{ lol: string }>((t) => "SELECT 42 AS TOTO  FROM LOL");
+  const r1 = re.statement((t) => `SELECT 42 AS TOTO  FROM LOL = ${t.xx}`, {xx: 312})
+  // @ts-expect-error 
+  r1()
   const execed = await r1({ lol: "t" })
   execed satisfies { TOTO: number }[];
+
+const r2 = re.statement((t) => "SELECT 42 AS TOTO  FROM LOL");
+  const execed2 = await r2({})
+  execed2 satisfies { TOTO: number }[];
+
 
   // --- useSql with multi-CTE object syntax ---
 
