@@ -17,6 +17,10 @@
     "./reducks": "./react/reducks.ts",
     "./core": "./core/reducks.ts",
     "./core/reducks": "./core/reducks.ts",
+    "./react": "./react/index.ts",
+    "./react/*": "./react/*.ts",
+    "./table": "./table/index.ts",
+    "./table/*": "./table/*.ts",
     "./*": [
       "./*.ts",
       "./*.tsx",
