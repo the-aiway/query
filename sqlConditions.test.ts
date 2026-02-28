@@ -10,9 +10,7 @@ describe('sqlConditions', () => {
 
   test('escaping quotes', () => {
     expect(sqlConditions({ name: "O'Reilly" })).toBe("name = 'O''Reilly'");
-    expect(sqlConditions({ city: { $in: ["L'Hay-les-Roses", 'Paris'] } })).toBe(
-      "(city IN ('L''Hay-les-Roses','Paris'))"
-    );
+    expect(sqlConditions({ city: { $in: ["L'Hay-les-Roses", 'Paris'] } })).toBe("(city IN ('L''Hay-les-Roses','Paris'))");
     expect(sqlConditions({ note: { $like: "%it's%" } })).toBe("(note LIKE '%it''s%')");
   });
 
@@ -45,9 +43,7 @@ describe('sqlConditions', () => {
   test('$between operator', () => {
     expect(sqlConditions({ age: { $between: [18, 65] } })).toBe('(age BETWEEN 18 AND 65)');
     expect(sqlConditions({ price: { $between: [1.5, 99.9] } })).toBe('(price BETWEEN 1.5 AND 99.9)');
-    expect(sqlConditions({ date: { $between: ['2024-01-01', '2024-12-31'] } })).toBe(
-      "(date BETWEEN '2024-01-01' AND '2024-12-31')"
-    );
+    expect(sqlConditions({ date: { $between: ['2024-01-01', '2024-12-31'] } })).toBe("(date BETWEEN '2024-01-01' AND '2024-12-31')");
   });
 
   test('$between with empty/invalid array', () => {
@@ -76,9 +72,7 @@ describe('sqlConditions', () => {
   });
 
   test('escaping is robust', () => {
-    expect(sqlConditions({ name: "'; DROP TABLE users; --" })).toBe(
-      "name = '''; DROP TABLE users; --'"
-    );
+    expect(sqlConditions({ name: "'; DROP TABLE users; --" })).toBe("name = '''; DROP TABLE users; --'");
   });
 
   test('$like and $ilike', () => {

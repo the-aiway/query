@@ -15,7 +15,6 @@ type QueryTableInputProps = QueryTableProps & {
   sql?: string;
 };
 
-
 function isNamedSourceMap(input: QueryTableProps['table']): input is QueryTableSourceMap {
   if (!input || typeof input !== 'object' || Array.isArray(input) || input instanceof Table) return false;
   return !('type' in input);
@@ -29,26 +28,21 @@ function QueryTableTabs() {
   if (!hasMultipleTabs) return null;
 
   return (
-    <div className="flex items-center gap-1 overflow-x-auto bg-background/95 px-2 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/75 border-b">
+    <div className="bg-background/95 supports-[backdrop-filter]:bg-background/75 flex items-center gap-1 overflow-x-auto border-b px-2 py-1 backdrop-blur">
       {tabs.map((tab) => {
         const active = tab.id === activeTabId;
         const isCustom = tab.type === 'custom';
         return (
-          <div key={tab.id} className="flex items-center gap-1 shrink-0">
+          <div key={tab.id} className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               onClick={() => setActiveTabId(tab.id)}
-              className={`rounded border px-2 py-0.5 text-[9px] font-mono transition-colors flex items-center gap-1 ${active
-                ? 'border-primary/40 bg-primary/10 text-primary'
-                : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
-                }`}
+              className={`flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[9px] transition-colors ${
+                active ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+              }`}
               title={tab.label}
             >
-              {isCustom ? (
-                <Code2 className="h-3 w-3" />
-              ) : (
-                <Database className="h-3 w-3" />
-              )}
+              {isCustom ? <Code2 className="h-3 w-3" /> : <Database className="h-3 w-3" />}
               {tab.label}
             </button>
             {isCustom && (
@@ -58,7 +52,7 @@ function QueryTableTabs() {
                   const customTabId = tab.id.replace('custom:', '');
                   deleteCustomTab(customTabId);
                 }}
-                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex h-5 w-5 items-center justify-center rounded transition-colors"
                 title="Delete tab"
               >
                 <X className="h-3 w-3" />
@@ -67,18 +61,9 @@ function QueryTableTabs() {
           </div>
         );
       })}
-      <SqlQueryEditorPopover
-        sql=""
-        title="New Custom SQL"
-        onSave={createCustomTab}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-5 px-2 text-[9px] font-mono shrink-0"
-          title="Create custom SQL tab"
-        >
-          <Code2 className="h-3 w-3 mr-1" />
+      <SqlQueryEditorPopover sql="" title="New Custom SQL" onSave={createCustomTab}>
+        <Button variant="ghost" size="sm" className="h-5 shrink-0 px-2 font-mono text-[9px]" title="Create custom SQL tab">
+          <Code2 className="mr-1 h-3 w-3" />
           New SQL
         </Button>
       </SqlQueryEditorPopover>
@@ -101,9 +86,7 @@ function QueryTableContent({
   const { activeTab, tabs, preview } = useTab();
   const hasMultipleTabs = tabs.length > 1;
 
-  const adjustedHeight = typeof height === 'number' && hasMultipleTabs
-    ? Math.max(120, height - SOURCE_SWITCHER_HEIGHT)
-    : height;
+  const adjustedHeight = typeof height === 'number' && hasMultipleTabs ? Math.max(120, height - SOURCE_SWITCHER_HEIGHT) : height;
 
   const footer = useMemo(() => {
     const userFooter = props.footer;
@@ -124,7 +107,7 @@ function QueryTableContent({
   }, [hasMultipleTabs, props.footer]);
 
   if (!activeTab) return null;
-  const dependencyRootRef = activeTab.type === 'source' ? activeTab.source ?? undefined : undefined;
+  const dependencyRootRef = activeTab.type === 'source' ? (activeTab.source ?? undefined) : undefined;
 
   if (preview?.source) {
     return (
@@ -193,16 +176,7 @@ function QueryTableContent({
   );
 }
 
-export function QueryTable({
-  sql: sqlInput,
-  id,
-  table: tableInput,
-  height,
-  compact = true,
-  rowHeight,
-  overscan = 12,
-  ...props
-}: QueryTableInputProps) {
+export function QueryTable({ sql: sqlInput, id, table: tableInput, height, compact = true, rowHeight, overscan = 12, ...props }: QueryTableInputProps) {
   const effectiveTableInput = sqlInput ?? tableInput;
   const effectiveRowHeight = rowHeight ?? (compact ? 24 : 28);
   const sourceMap = isNamedSourceMap(effectiveTableInput) ? effectiveTableInput : null;
@@ -231,15 +205,7 @@ export function QueryTable({
 
   return (
     <TabProvider sourceTabs={sourceTabs}>
-      <QueryTableContent
-        height={height}
-        rowHeight={effectiveRowHeight}
-        overscan={overscan}
-        baseId={baseId}
-        compact={compact}
-        persistStateInUrl={!isUnnamedCompatMode}
-        {...props}
-      />
+      <QueryTableContent height={height} rowHeight={effectiveRowHeight} overscan={overscan} baseId={baseId} compact={compact} persistStateInUrl={!isUnnamedCompatMode} {...props} />
     </TabProvider>
   );
 }

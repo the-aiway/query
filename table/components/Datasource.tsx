@@ -1,17 +1,26 @@
-
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-
 
 import { buildWhereClause, type FiltersState } from '../../sqlUtils';
 import { useSql, type QueryRef } from '../../react/reducks';
 
 export type SortingState = Array<{ id: string; desc: boolean }>;
 export type ColumnOption = { key: string; label: string; count: number; frac: number };
-export type ColumnSummary = { name: string; type: string; uniq: number; nulls: number; total: number };
+export type ColumnSummary = {
+  name: string;
+  type: string;
+  uniq: number;
+  nulls: number;
+  total: number;
+};
 export type ColumnSize = { name: string; p80Len: number };
 export type ColumnDescribe = { name: string; emptyCount: number };
 
-type QueryBase = { tableRef: QueryRef; globalFilter: string; columnFilters: FiltersState; fieldNames: string[] };
+type QueryBase = {
+  tableRef: QueryRef;
+  globalFilter: string;
+  columnFilters: FiltersState;
+  fieldNames: string[];
+};
 
 export type QueryParts = { tableRef: QueryRef; filteredRef: QueryRef };
 
@@ -21,18 +30,12 @@ export function useQueryParts({ tableRef, globalFilter, columnFilters, fieldName
     fieldNamesForGlobal: globalFilter.trim() ? fieldNames : [],
     columnFilters,
   });
-  const filteredRef = useSql(
-    (t) => `SELECT * FROM ${t.base}${whereClause}`,
-    { base: tableRef },
-  );
+  const filteredRef = useSql((t) => `SELECT * FROM ${t.base}${whereClause}`, { base: tableRef });
   return { tableRef, filteredRef };
 }
 
 export function useTableSchema(tableRef: QueryRef | null) {
-  const schemaRef = useSql(
-    (t) => `SELECT * FROM ${t.base} LIMIT 0`,
-    { base: tableRef }
-  );
+  const schemaRef = useSql((t) => `SELECT * FROM ${t.base} LIMIT 0`, { base: tableRef });
 
   return useQuery({
     queryKey: ['reducks-schema', schemaRef.id],
@@ -41,7 +44,10 @@ export function useTableSchema(tableRef: QueryRef | null) {
       return table.schema.fields.map((f) => ({
         name: f.name,
         type: String(f.type as unknown as string).toUpperCase(),
-        fields: f.type.children?.map((c: { name: string; type: string }) => ({ name: c.name, type: String(c.type).toUpperCase() })),
+        fields: f.type.children?.map((c: { name: string; type: string }) => ({
+          name: c.name,
+          type: String(c.type).toUpperCase(),
+        })),
       }));
     },
     enabled: !!tableRef && tableRef.status !== 'pending',
@@ -95,13 +101,15 @@ export function useColumnSummaries(tableRef: QueryRef | null) {
     queryKey: ['reducks-summaries', stackedRef.id],
     queryFn: async () => {
       const rows = await stackedRef.toArray();
-      return rows.map((r): ColumnSummary => ({
-        name: String(r.name),
-        type: String(r.type),
-        uniq: Number(r.uniq ?? 0),
-        nulls: Number(r.nulls ?? 0),
-        total: Number(r.total ?? 0),
-      }));
+      return rows.map(
+        (r): ColumnSummary => ({
+          name: String(r.name),
+          type: String(r.type),
+          uniq: Number(r.uniq ?? 0),
+          nulls: Number(r.nulls ?? 0),
+          total: Number(r.total ?? 0),
+        })
+      );
     },
     enabled: !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,
@@ -110,11 +118,8 @@ export function useColumnSummaries(tableRef: QueryRef | null) {
   });
 }
 
-export function useColumnSizes(tableRef: QueryRef | null) {
-  const sampleRef = useSql(
-    (t) => `SELECT * FROM ${t.base} USING SAMPLE 1000`,
-    { base: tableRef }
-  );
+export function useColumnSizes(tableRef: QueryRef | null, opts?: { enabled?: boolean }) {
+  const sampleRef = useSql((t) => `SELECT * FROM ${t.base} USING SAMPLE 1000`, { base: tableRef });
 
   const metricsRef = useSql(
     (t) => `SELECT {
@@ -137,12 +142,14 @@ export function useColumnSizes(tableRef: QueryRef | null) {
     queryKey: ['reducks-sizes', sizesRef.id],
     queryFn: async () => {
       const rows = await sizesRef.toArray();
-      return rows.map((r): ColumnSize => ({
-        name: String(r.name),
-        p80Len: Number(r.p80Len ?? 0),
-      }));
+      return rows.map(
+        (r): ColumnSize => ({
+          name: String(r.name),
+          p80Len: Number(r.p80Len ?? 0),
+        })
+      );
     },
-    enabled: !!tableRef && tableRef.status !== 'pending',
+    enabled: opts?.enabled !== false && !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,
     staleTime: Infinity,
     gcTime: Infinity,
@@ -176,10 +183,12 @@ export function useColumnDescribe(tableRef: QueryRef | null) {
     queryKey: ['reducks-describe', describeRef.id],
     queryFn: async () => {
       const rows = await describeRef.toArray();
-      return rows.map((r): ColumnDescribe => ({
-        name: String(r.name),
-        emptyCount: Number(r.empty_count ?? 0),
-      }));
+      return rows.map(
+        (r): ColumnDescribe => ({
+          name: String(r.name),
+          emptyCount: Number(r.empty_count ?? 0),
+        })
+      );
     },
     enabled: !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,

@@ -10,8 +10,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default:
-          'bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-primary-foreground',
+        default: 'bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-primary-foreground',
         destructive: 'bg-destructive text-destructive-foreground border border-destructive-border',
         outline:
           // Shows the background color of whatever card / sidebar / accent background it is inside of.
@@ -38,27 +37,15 @@ const buttonVariants = cva(
   }
 );
 
-export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
 
-const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    const Comp = asChild ? Slot : 'button';
-    const defaultClassName =
-      'bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white shadow-md';
-    return (
-      <Comp
-        className={cn(defaultClassName, buttonVariants({ variant, size, className }))}
-        ref={ref}
-        {...props}
-      />
-    );
-  }
-);
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({ className, variant, size, asChild = false, ...props }, ref) => {
+  const Comp = asChild ? Slot : 'button';
+  const defaultClassName = 'bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white shadow-md';
+  return <Comp className={cn(defaultClassName, buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+});
 Button.displayName = 'Button';
 
 export { Button, buttonVariants };

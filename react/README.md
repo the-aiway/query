@@ -1,4 +1,3 @@
-
 ## Quick Start
 
 ### In React
@@ -10,14 +9,12 @@ import { Materialize } from '#query/react/Materialize';
 function SalesDashboard({ region }: { region: string }) {
   // useTable → materializes 500k rows to Parquet in OPFS once, reused by every query below
   // ${t.region} → scalar, auto-escaped to 'europe' (SQL-injection safe)
-  const transactions = useTable((t) => `SELECT * FROM '/api/export/*/transactions.parquet' WHERE region = ${t.region}`,
-    { region }
-  );
+  const transactions = useTable((t) => `SELECT * FROM '/api/export/*/transactions.parquet' WHERE region = ${t.region}`, { region });
 
   // useValues → JS array becomes a SQL table — business config living in React state
   const targets = useValues([
     { category: 'electronics', goal: 50000 },
-    { category: 'furniture', goal: 30000 }
+    { category: 'furniture', goal: 30000 },
   ]);
 
   // useSql → virtual ref, zero I/O. DuckDB inlines it as a subquery and optimizes the chain.
@@ -57,14 +54,16 @@ function SalesDashboard({ region }: { region: string }) {
           </header>
         )}
       </Materialize>
-      {/* source resolves .toArray() by default → typed array, use .map() */}
+      {/* source resolves .rows() by default → typed array, use .map() */}
       <Materialize source={{ byCategory }} fallback={<Spinner />}>
         {({ byCategory }) => (
           <table>
             {byCategory.map((row) => (
               <tr key={row.category}>
                 <td>{row.category}</td>
-                <td>{row.revenue}€ / {row.goal ?? '—'}€ target</td>
+                <td>
+                  {row.revenue}€ / {row.goal ?? '—'}€ target
+                </td>
                 <td>{row.sales} sales</td>
               </tr>
             ))}
@@ -74,10 +73,7 @@ function SalesDashboard({ region }: { region: string }) {
     </>
   );
 }
-
-
 ```
-
 
 ## Consuming Data
 
@@ -90,12 +86,15 @@ import { Materialize } from '#query/react/Materialize';
 
 <Materialize source={{ orders, stats }} fallback={<Loading />}>
   {({ orders, stats }) => (
-    <div>{orders.length} orders, total: {stats[0].total_cost}</div>
+    <div>
+      {orders.length} orders, total: {stats[0].total_cost}
+    </div>
   )}
-</Materialize>
+</Materialize>;
 ```
 
 Props:
+
 - `source` — object of QueryRef or Promise values
 - `fallback` — optional ReactNode shown while loading
 - `disabled` — if true, renders nothing
@@ -118,7 +117,7 @@ import { DataCard } from '#query/react/DataCard';
 
 <DataCard source={{ orders, stats }} className="p-4">
   {({ orders, stats }) => <MyChart data={orders} summary={stats} />}
-</DataCard>
+</DataCard>;
 ```
 
 `DataCard` also accepts `source` as a function for lazy evaluation:
@@ -136,10 +135,11 @@ Accepts refs directly and renders an interactive data table with filtering, sort
 ```tsx
 import { QueryTable } from '#query/table';
 
-<QueryTable table={{ orders: ordersRef }} resolutionStrategy="lazy" />
+<QueryTable table={{ orders: ordersRef }} resolutionStrategy="lazy" />;
 ```
 
 Named sources become switchable tabs. `resolutionStrategy` controls how the ref is consumed:
+
 - `"direct"` — query rows on demand (default)
 - `"materialized"` — write to Parquet first, then query
 - `"lazy"` — VIEW first, Parquet in background
@@ -152,7 +152,7 @@ For more control, use React's `use()` directly. You manage Suspense boundaries y
 import { use, Suspense } from 'react';
 
 function Stats({ statsRef }: { statsRef: QueryRef }) {
-  const rows = use(statsRef.toArray());
+  const rows = use(statsRef.rows());
   return <div>{rows.length} results</div>;
 }
 
@@ -160,10 +160,46 @@ function Stats({ statsRef }: { statsRef: QueryRef }) {
   <ErrorBoundary fallback={<ErrorCard />}>
     <Stats statsRef={statsRef} />
   </ErrorBoundary>
-</Suspense>
+</Suspense>;
 ```
 
-For pending refs, `toArray()` returns a never-resolving promise — `use()` keeps the component suspended until deps resolve and a new ref is produced.
+For pending refs, `rows()` returns a never-resolving promise — `use()` keeps the component suspended until deps resolve and a new ref is produced.
+
+### `useRows` / `useRow` (no Suspense)
+
+React hooks that resolve a ref without Suspense boundaries. The non-Suspense equivalent of `use(ref.rows())`:
+
+```tsx
+import { useSql, useRows, useRow } from '#query/react/reducks';
+
+function Stats() {
+  const statsRef = useSql(() => `SELECT count(*)::int as total, sum(amount)::int as revenue FROM orders`);
+  const [stats, { isLoading, error }] = useRow(statsRef);
+
+  if (isLoading) return <Spinner />;
+  if (error) return <ErrorCard error={error} />;
+  return <div>{stats.total} orders, {stats.revenue}€</div>;
+}
+```
+
+Also available as methods on the ref itself:
+
+```tsx
+const [rows, { isLoading, error }] = ordersRef.useRows();
+const [row,  { isLoading, error }] = statsRef.useRow();
+```
+
+| Context | Array | Single row |
+|---|---|---|
+| `await` | `ref.rows()` | `ref.row()` |
+| Suspense | `use(ref.rows())` | `use(ref.row())` |
+| No Suspense | `useRows(ref)` / `ref.useRows()` | `useRow(ref)` / `ref.useRow()` |
+
+Return value: `[data, { isLoading, error }]`
+
+- `data` is `undefined` while loading, typed array/row on success
+- For `useRow`, `null` means the query returned no rows; `undefined` means still loading
+- Pending refs (deps unresolved) stay in loading state until the ref resolves
 
 ### Event handlers
 
@@ -171,7 +207,7 @@ Just `await` directly:
 
 ```tsx
 onClick={async () => {
-  const data = await ref.toArray();
+  const data = await ref.rows();
   downloadAsCSV(data);
 }}
 ```
@@ -183,11 +219,10 @@ const ref = useSql(`SELECT * FROM orders`);
 
 const { data, error, isLoading } = useQuery({
   queryKey: ['orders', ref.id],
-  queryFn: () => ref.toArray(),
+  queryFn: () => ref.rows(),
   enabled: ref.status !== 'pending',
 });
 ```
-
 
 ## Param Interpolation
 
@@ -210,20 +245,18 @@ useSql(
 Available on the `t` proxy for inline condition building:
 
 ```tsx
-t.eq(col, val)           // col = 'val'
-t.neq(col, val)          // col != 'val'
-t.gt(col, val)           // col > val
-t.gte(col, val)          // col >= val
-t.lt(col, val)           // col < val
-t.lte(col, val)          // col <= val
-t.between(col, a, b)     // col BETWEEN a AND b
-t.in(col, [1, 2, 3])    // col IN (1, 2, 3)
-t.like(col, '%pattern%') // col LIKE '%pattern%'
-t.ilike(col, '%pat%')    // col ILIKE '%pat%'
-t.where({ col: val })    // builds WHERE clause from object
+t.eq(col, val); // col = 'val'
+t.neq(col, val); // col != 'val'
+t.gt(col, val); // col > val
+t.gte(col, val); // col >= val
+t.lt(col, val); // col < val
+t.lte(col, val); // col <= val
+t.between(col, a, b); // col BETWEEN a AND b
+t.in(col, [1, 2, 3]); // col IN (1, 2, 3)
+t.like(col, '%pattern%'); // col LIKE '%pattern%'
+t.ilike(col, '%pat%'); // col ILIKE '%pat%'
+t.where({ col: val }); // builds WHERE clause from object
 ```
-
-
 
 ## API
 
@@ -249,6 +282,31 @@ Same API as `useTable`, but returns immediately via a VIEW. Parquet materializat
 ### `useValues` / `values`
 
 Creates a virtual ref from JS data. Pass an explicit schema `{ col: 'VARCHAR' }` or column names `['col']`.
+
+### `useStore`
+
+Creates an in-memory DuckDB table with a schema. Returns a QueryRef plus an `insert()` method. Use the ref in `useSql` like any other ref.
+
+- **Not reactive** — `insert()` writes to the table but does not invalidate caches or trigger re-renders.
+- To refresh: add a dependency (e.g. `lastUpdate`) to `useSql` params and call `setState` when you want to re-query.
+
+```tsx
+const store = useStore({ numdept: 'INT', forced_carrier: 'VARCHAR' });
+const [lastUpdate, setLastUpdate] = useState(0);
+const ref = useSql((t) => `SELECT * FROM ${t.store} WHERE 1=1 AND ${t.lastUpdate} >= 0`, {
+  store,
+  lastUpdate,
+});
+
+store.insert({ numdept: 75, forced_carrier: 'UPS' });
+store.insert([
+  { numdept: 1, forced_carrier: 'A' },
+  { numdept: 2, forced_carrier: 'B' },
+]);
+
+// when user clicks Reload:
+setLastUpdate((n) => n + 1);
+```
 
 ### `useArrow` / `fromArrow`
 
@@ -304,12 +362,15 @@ function Dashboard({ basePath, segment, cutoff }: AnalysisParams) {
 
   return (
     <DataCard source={{ stats }}>
-      {({ stats }) => <div>{stats[0].total_orders} orders, {stats[0].total_cost}€</div>}
+      {({ stats }) => (
+        <div>
+          {stats[0].total_orders} orders, {stats[0].total_cost}€
+        </div>
+      )}
     </DataCard>
   );
 }
 ```
-
 
 Use imperatively — same pipeline, event handler on the client:
 
@@ -318,7 +379,7 @@ import { pipeline } from '#query/node';
 
 async function handleExport(basePath: string, segment: string, cutoff: number) {
   const { stats } = pipeline(analysisPipeline, { basePath, segment, cutoff });
-  const rows = await stats.toArray();
+  const rows = await stats.rows();
   downloadCSV(rows);
 }
 ```
@@ -341,7 +402,6 @@ app.get('/api/analysis/:segment/stats', async (req) => {
 ```
 
 `ReEngine` provides `{ sql, table, values }` — the imperative builder functions. The pipeline pattern makes them composable and context-independent. Define the DAG once, run it in React, in a click handler, or on a server.
-
 
 ### Without React
 
@@ -350,15 +410,12 @@ Same API, same cache — `sql` / `table` / `values` instead of `useSql` / `useTa
 ```ts
 import { sql, table, values } from '#query/react';
 
-const transactions = table(
-  (t) => `SELECT * FROM '/api/export/*/transactions.parquet' WHERE region = ${t.region}`,
-  { region: 'europe' }
-);
+const transactions = table((t) => `SELECT * FROM '/api/export/*/transactions.parquet' WHERE region = ${t.region}`, { region: 'europe' });
 
-const targets = values(
-  [{ category: 'electronics', goal: 50000 }],
-  { category: 'VARCHAR', goal: 'INT' }
-);
+const targets = values([{ category: 'electronics', goal: 50000 }], {
+  category: 'VARCHAR',
+  goal: 'INT',
+});
 
 const byCategory = sql(
   (t) => `SELECT tr.category, sum(tr.amount)::int as revenue, tg.goal::int
@@ -367,8 +424,8 @@ const byCategory = sql(
   { transactions, targets }
 );
 
-const rows = await byCategory.toArray();  // [{category, revenue, goal}, ...]
-const first = await byCategory.row();     // {category, revenue, goal} | null
+const rows = await byCategory.rows(); // [{category, revenue, goal}, ...]
+const first = await byCategory.row(); // {category, revenue, goal} | null
 ```
 
 ## API
@@ -395,6 +452,31 @@ Same API as `useTable`, but returns immediately via a VIEW. Parquet materializat
 ### `useValues` / `values`
 
 Creates a virtual ref from JS data. Pass an explicit schema `{ col: 'VARCHAR' }` or column names `['col']`.
+
+### `useStore`
+
+Creates an in-memory DuckDB table with a schema. Returns a QueryRef plus an `insert()` method. Use the ref in `useSql` like any other ref.
+
+- **Not reactive** — `insert()` writes to the table but does not invalidate caches or trigger re-renders.
+- To refresh: add a dependency (e.g. `lastUpdate`) to `useSql` params and call `setState` when you want to re-query.
+
+```tsx
+const store = useStore({ numdept: 'INT', forced_carrier: 'VARCHAR' });
+const [lastUpdate, setLastUpdate] = useState(0);
+const ref = useSql((t) => `SELECT * FROM ${t.store} WHERE 1=1 AND ${t.lastUpdate} >= 0`, {
+  store,
+  lastUpdate,
+});
+
+store.insert({ numdept: 75, forced_carrier: 'UPS' });
+store.insert([
+  { numdept: 1, forced_carrier: 'A' },
+  { numdept: 2, forced_carrier: 'B' },
+]);
+
+// when user clicks Reload:
+setLastUpdate((n) => n + 1);
+```
 
 ### `useArrow` / `fromArrow`
 
@@ -450,12 +532,15 @@ function Dashboard({ basePath, segment, cutoff }: AnalysisParams) {
 
   return (
     <DataCard source={{ stats }}>
-      {({ stats }) => <div>{stats[0].total_orders} orders, {stats[0].total_cost}€</div>}
+      {({ stats }) => (
+        <div>
+          {stats[0].total_orders} orders, {stats[0].total_cost}€
+        </div>
+      )}
     </DataCard>
   );
 }
 ```
-
 
 Use imperatively — same pipeline, event handler on the client:
 
@@ -464,7 +549,7 @@ import { pipeline } from '#query/node';
 
 async function handleExport(basePath: string, segment: string, cutoff: number) {
   const { stats } = pipeline(analysisPipeline, { basePath, segment, cutoff });
-  const rows = await stats.toArray();
+  const rows = await stats.rows();
   downloadCSV(rows);
 }
 ```
@@ -487,7 +572,6 @@ app.get('/api/analysis/:segment/stats', async (req) => {
 ```
 
 `ReEngine` provides `{ sql, table, values }` — the imperative builder functions. The pipeline pattern makes them composable and context-independent. Define the DAG once, run it in React, in a click handler, or on a server.
-
 
 ## Dependency Chains
 
@@ -514,7 +598,7 @@ const summary = useSql(
 );
 
 // Only this triggers execution of the entire chain:
-const rows = use(summary.toArray());
+const rows = use(summary.rows());
 ```
 
 ## Pending Refs
@@ -526,12 +610,9 @@ Hooks never return null. A ref becomes pending when one of its **ref dependencie
 const arrowRef = useArrow(isReady ? someTable : null);
 
 // arrowRef is pending → filtered is also pending (automatic propagation)
-const filtered = useSql(
-  (t) => `SELECT * FROM ${t.arrowRef} WHERE weight > 100`,
-  { arrowRef }
-);
+const filtered = useSql((t) => `SELECT * FROM ${t.arrowRef} WHERE weight > 100`, { arrowRef });
 
-// filtered.toArray() returns a never-resolving promise → use() suspends
+// filtered.rows() returns a never-resolving promise → use() suspends
 // Materialize shows fallback
 // When arrowRef resolves, the chain re-evaluates
 ```
@@ -545,10 +626,10 @@ const [carrier, setCarrier] = useState<string | null>(null);
 
 // carrier is null → escapes to NULL in SQL, ref is NOT pending
 // generates: WHERE carrier = NULL (which matches nothing — use IS NULL if intended)
-const filtered = useSql(
-  (t) => `SELECT * FROM ${t.orders} WHERE carrier = ${t.carrier}`,
-  { orders, carrier }
-);
+const filtered = useSql((t) => `SELECT * FROM ${t.orders} WHERE carrier = ${t.carrier}`, {
+  orders,
+  carrier,
+});
 ```
 
 ## Type Inference
@@ -559,7 +640,7 @@ SQL return types are inferred at the type level via `InferSQLStrict`. Cast colum
 const ref = useSql(() => `SELECT count(*)::int as total, name FROM t`);
 // ref: QueryRef<{ total: number; name: unknown }>
 
-const rows = await ref.toArray();
+const rows = await ref.rows();
 // rows: { total: number; name: unknown }[]
 
 const row = await ref.row();
@@ -579,10 +660,12 @@ interface QueryRef<TRow = unknown> {
   readonly name?: string;
   readonly error?: Error;
   readonly dependencies: readonly QueryRef[];
-  toArray(): Promise<NonNullable<TRow>[]>;
+  rows(): Promise<NonNullable<TRow>[]>;
   toArrow(): Promise<Table>;
   row(): Promise<NonNullable<TRow> | null>;
   toSql(options?: { cte?: boolean }): Promise<string>;
+  useRows(): [NonNullable<TRow>[] | undefined, { isLoading: boolean; error: Error | undefined }];
+  useRow(): [NonNullable<TRow> | null | undefined, { isLoading: boolean; error: Error | undefined }];
 }
 ```
 
@@ -600,11 +683,14 @@ error    → materialization failed
 
 Each method returns a cached promise. Same call on the same ref returns the same promise — safe with `use()`.
 
-- `toArray()` — all rows as plain JS objects
+- `rows()` — all rows as plain JS objects
 - `toArrow()` — raw Arrow Table
 - `row()` — first row or null
 - `toSql()` — the SQL string for this ref
 - `toSql({ cte: true })` — standalone SQL with the entire dependency chain expressed as CTEs (useful for debugging or copying to a SQL editor)
+- `useRows()` — React hook returning `[data, { isLoading, error }]` without Suspense
+- `useRow()` — same, but for a single row (`null` = no rows, `undefined` = loading)
+
 # reducks
 
 Reactive SQL for DuckDB-WASM. Compose SQL queries as a dependency graph, consume on demand. Works in React (hooks) or standalone (plain functions).
@@ -619,8 +705,7 @@ reducks builds SQL query graphs where nothing executes until you explicitly cons
 
 **DuckDB-WASM can't share tables across connections.** The connection pool dispatches queries to different connections. A `CREATE TABLE` on one connection is invisible to others. reducks works around this by writing Parquet files to OPFS — visible to all connections, queryable by path.
 
-**Never pull data into JS just to push it back.** The `useEffect` + `toArray()` + `setState` pattern is an anti-pattern: data leaves DuckDB, sits in JS memory, and can't be composed with other refs. Keep everything as refs until the final render boundary.
-
+**Never pull data into JS just to push it back.** The `useEffect` + `rows()` + `setState` pattern is an anti-pattern: data leaves DuckDB, sits in JS memory, and can't be composed with other refs. Keep everything as refs until the final render boundary.
 
 ## Core Concepts
 
@@ -634,6 +719,8 @@ reducks builds SQL query graphs where nothing executes until you explicitly cons
 
 **`useValues` / `values`** — virtual ref from a JS array. Injects data into the SQL graph.
 
+**`useStore`** — in-memory DuckDB table with imperative `insert()`. Not reactive: inserts do not invalidate caches or trigger re-renders. Use a dependency (e.g. `lastUpdate` in `useSql` params) and `setState` when you need to refresh.
+
 **`useArrow` / `fromArrow`** — ref from an Apache Arrow Table.
 
 **`usePipeline` / `pipeline`** — runs a pipeline function that builds a DAG of refs.
@@ -644,16 +731,15 @@ All hooks always return a `QueryRef` (never null). When a ref dependency has `st
 
 ### Cache
 
-Refs are content-addressed: same SQL string → same QueryRef (same `id`). Consumption promises are also cached by ref ID + method. Calling `.toArray()` multiple times returns the same promise.
-
+Refs are content-addressed: same SQL string → same QueryRef (same `id`). Consumption promises are also cached by ref ID + method. Calling `.rows()` multiple times returns the same promise.
 
 ## When to Materialize
 
-| | `useSql` | `useTable` | `useLazyTable` |
-|---|---|---|---|
-| I/O | None — inlined as subquery | Writes Parquet to OPFS | VIEW first, Parquet in background |
-| Speed | Instant (no materialization) | Slow (disk I/O on first use) | Instant first, fast after |
-| Use when | Default. Transforms, filters, joins | Large result used by many downstream refs | Large result, fast first-render matters |
-| Trade-off | DuckDB re-executes the SQL each time | One-time cost, fast subsequent reads | First query runs full SQL, then hits Parquet |
+|           | `useSql`                             | `useTable`                                | `useLazyTable`                               |
+| --------- | ------------------------------------ | ----------------------------------------- | -------------------------------------------- |
+| I/O       | None — inlined as subquery           | Writes Parquet to OPFS                    | VIEW first, Parquet in background            |
+| Speed     | Instant (no materialization)         | Slow (disk I/O on first use)              | Instant first, fast after                    |
+| Use when  | Default. Transforms, filters, joins  | Large result used by many downstream refs | Large result, fast first-render matters      |
+| Trade-off | DuckDB re-executes the SQL each time | One-time cost, fast subsequent reads      | First query runs full SQL, then hits Parquet |
 
 **Rule of thumb:** start with `useSql`. Switch to `useTable` or `useLazyTable` only when profiling shows a bottleneck from repeated subquery execution.

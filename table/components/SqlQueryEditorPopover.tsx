@@ -11,12 +11,7 @@ type SqlQueryEditorPopoverProps = {
   onSave?: (sql: string) => void;
 };
 
-export function SqlQueryEditorPopover({
-  sql,
-  title = 'SQL',
-  children,
-  onSave,
-}: SqlQueryEditorPopoverProps) {
+export function SqlQueryEditorPopover({ sql, title = 'SQL', children, onSave }: SqlQueryEditorPopoverProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [resolvedSql, setResolvedSql] = useState('');
@@ -27,7 +22,7 @@ export function SqlQueryEditorPopover({
   useEffect(() => {
     if (open) {
       if (typeof sql === 'function') {
-        void sql().then(res => {
+        void sql().then((res) => {
           setResolvedSql(res);
           setDraft(res);
         });
@@ -97,10 +92,7 @@ export function SqlQueryEditorPopover({
         editor.addAction({
           id: 'format-sql',
           label: 'Format SQL',
-          keybindings: [
-            monaco.KeyMod.CtrlCmd | monaco.KeyCode.Semicolon,
-            monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Comma,
-          ],
+          keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Semicolon, monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Comma],
           run: () => editor.getAction('editor.action.formatDocument')?.run(),
         });
       }
@@ -108,33 +100,23 @@ export function SqlQueryEditorPopover({
       void editor.getAction('editor.action.formatDocument')?.run();
       if (!isReadOnly) editor.focus();
     },
-    [isReadOnly, onSave],
+    [isReadOnly, onSave]
   );
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {children || (
-          <button
-            type="button"
-            className="text-[11px] text-muted-foreground truncate cursor-pointer hover:text-foreground"
-            title={title}
-          >
+          <button type="button" className="text-muted-foreground hover:text-foreground cursor-pointer truncate text-[11px]" title={title}>
             {title}
           </button>
         )}
       </DialogTrigger>
-      <DialogContent className="p-0 overflow-hidden">
-        <div className="flex flex-col min-w-0">
-          <div className="border-b border-border bg-muted/30 px-3 py-1.5 flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
-              {title}
-            </span>
-            {!isReadOnly && (
-              <span className="text-[10px] text-muted-foreground font-mono">
-                {navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Enter run
-              </span>
-            )}
+      <DialogContent className="overflow-hidden p-0">
+        <div className="flex min-w-0 flex-col">
+          <div className="border-border bg-muted/30 flex items-center justify-between border-b px-3 py-1.5">
+            <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">{title}</span>
+            {!isReadOnly && <span className="text-muted-foreground font-mono text-[10px]">{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Enter run</span>}
           </div>
           <Editor
             height={editorHeight}
@@ -174,19 +156,23 @@ export function SqlQueryEditorPopover({
             }}
           />
           {!isReadOnly && (
-            <div className="border-t border-border bg-muted/30 px-3 py-1.5 flex items-center justify-between">
+            <div className="border-border bg-muted/30 flex items-center justify-between border-t px-3 py-1.5">
               <button
                 type="button"
-                onClick={() => (editorRef.current as { getAction: (id: string) => { run: () => void } | undefined })?.getAction('editor.action.formatDocument')?.run()}
-                className="text-[11px] font-mono font-medium text-muted-foreground hover:text-foreground px-3 py-1 rounded hover:bg-accent transition-colors"
+                onClick={() =>
+                  (
+                    editorRef.current as {
+                      getAction: (id: string) => { run: () => void } | undefined;
+                    }
+                  )
+                    ?.getAction('editor.action.formatDocument')
+                    ?.run()
+                }
+                className="text-muted-foreground hover:text-foreground hover:bg-accent rounded px-3 py-1 font-mono text-[11px] font-medium transition-colors"
               >
                 Format SQL
               </button>
-              <button
-                type="button"
-                onClick={handleExecute}
-                className="text-[11px] font-mono font-medium text-primary hover:text-primary/80 px-3 py-1 rounded hover:bg-primary/10 transition-colors"
-              >
+              <button type="button" onClick={handleExecute} className="text-primary hover:text-primary/80 hover:bg-primary/10 rounded px-3 py-1 font-mono text-[11px] font-medium transition-colors">
                 Run Query
               </button>
             </div>

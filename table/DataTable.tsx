@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { Cell } from './components/Cell';
 import { Headers } from './components/Headers';
 import { QueryTableToolbar } from './components/QueryTableToolbar';
-import { QueryTableProvider, useQT, type QueryTableProps, } from './components/QueryTableContext';
+import { QueryTableProvider, useQT, type QueryTableProps } from './components/QueryTableContext';
 import { quoteIdent, normalizeSelectSql } from '../sqlUtils';
 
 import { Card, CardContent } from './ui/Card';
@@ -21,7 +21,10 @@ const DEFAULT_VIEWPORT_HEIGHT = 560;
 const KEYWORD_RE = /\b(SELECT|FROM|JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|CROSS\s+JOIN|FULL\s+JOIN|LATERAL|WHERE|GROUP\s+BY|ORDER\s+BY|LIMIT|HAVING|UNION|PIVOT|UNPIVOT)\b/gi;
 
 function condenseSql(sql: string): string {
-  const cleaned = sql.replace(/--[^\n]*/g, '').replace(/\s+/g, ' ').trim();
+  const cleaned = sql
+    .replace(/--[^\n]*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const parts: string[] = [];
   let lastIdx = 0;
 
@@ -30,7 +33,7 @@ function condenseSql(sql: string): string {
     const between = cleaned.slice(lastIdx, m.index).trim();
     if (parts.length > 0 && between) parts.push('...');
     parts.push(kw);
-    lastIdx = m.index! + m[0].length;
+    lastIdx = m.index + m[0].length;
 
     if (kw === 'FROM' || kw.includes('JOIN')) {
       const after = cleaned.slice(lastIdx).trimStart();
@@ -38,11 +41,9 @@ function condenseSql(sql: string): string {
       if (srcMatch) {
         const raw = srcMatch[1] ?? srcMatch[2] ?? srcMatch[3]!;
         const segment = raw.includes('/') ? raw.split('/').pop()! : raw;
-        const short = segment
-          .replace(/\.[tf]_\d+_[a-z0-9]+\.parquet$/, '.parquet')
-          .replace(/^[tf]_\d+_[a-z0-9]+\.parquet$/, 'ref');
+        const short = segment.replace(/\.[tf]_\d+_[a-z0-9]+\.parquet$/, '.parquet').replace(/^[tf]_\d+_[a-z0-9]+\.parquet$/, 'ref');
         parts.push(short);
-        lastIdx += (after.length - after.trimStart().length) + srcMatch[0].length;
+        lastIdx += after.length - after.trimStart().length + srcMatch[0].length;
       }
     }
   }
@@ -52,39 +53,19 @@ function condenseSql(sql: string): string {
 }
 
 export const LoadingCard = ({ message }: { message?: string }) => (
-  <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden items-center justify-center bg-muted/5 border-dashed">
+  <Card className="bg-muted/5 flex h-full w-full min-w-0 flex-col items-center justify-center overflow-hidden border-dashed">
     <div className="flex flex-col items-center gap-3">
       <div className="relative">
-        <Database className="h-8 w-8 text-muted-foreground/20" />
-        <Loader2 className="h-4 w-4 animate-spin text-primary absolute -bottom-1 -right-1" />
+        <Database className="text-muted-foreground/20 h-8 w-8" />
+        <Loader2 className="text-primary absolute -right-1 -bottom-1 h-4 w-4 animate-spin" />
       </div>
-      <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-widest">
-        {message ?? 'loading...'}
-      </div>
+      <div className="text-muted-foreground font-mono text-[11px] tracking-widest uppercase">{message ?? 'loading...'}</div>
     </div>
   </Card>
 );
 
-const VirtualizedViewport = React.memo(function VirtualizedViewport({
-  height,
-  rowHeight,
-  overscan,
-}: {
-  height?: number;
-  rowHeight: number;
-  overscan: number;
-}) {
-  const {
-    rowCount,
-    table,
-    schema,
-    summaryMap,
-    queryParts,
-    sorting,
-    setSorting,
-    getRowClassName,
-    renderCell,
-  } = useQT();
+const VirtualizedViewport = React.memo(function VirtualizedViewport({ height, rowHeight, overscan }: { height?: number; rowHeight: number; overscan: number }) {
+  const { rowCount, table, schema, summaryMap, queryParts, sorting, setSorting, getRowClassName, renderCell } = useQT();
 
   const parentRef = useRef<HTMLDivElement | null>(null);
 
@@ -122,11 +103,8 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
   const totalSize = virtualizer.getTotalSize();
   const totalColumnSize = columnVirtualizer.getTotalSize();
   const virtualPaddingLeft = virtualColumns[0]?.start ?? 0;
-  const virtualPaddingRight =
-    totalColumnSize - (virtualColumns[virtualColumns.length - 1]?.end ?? 0);
-  const virtualItems = rawVirtualItems.length > MAX_VIEWPORT_ROWS
-    ? rawVirtualItems.slice(0, MAX_VIEWPORT_ROWS)
-    : rawVirtualItems;
+  const virtualPaddingRight = totalColumnSize - (virtualColumns[virtualColumns.length - 1]?.end ?? 0);
+  const virtualItems = rawVirtualItems.length > MAX_VIEWPORT_ROWS ? rawVirtualItems.slice(0, MAX_VIEWPORT_ROWS) : rawVirtualItems;
 
   const firstVisibleIndex = virtualItems[0]?.index ?? 0;
   const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? 0;
@@ -146,10 +124,9 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
     return neededPages.map((pageIndex) => {
       const limit = PAGE_SIZE;
       const offset = pageIndex * PAGE_SIZE;
-      return sql(
-        (t) => `SELECT * FROM ${t.base} ${orderClause} LIMIT ${limit} OFFSET ${offset}`,
-        { base: queryParts.filteredRef }
-      );
+      return sql((t) => `SELECT * FROM ${t.base} ${orderClause} LIMIT ${limit} OFFSET ${offset}`, {
+        base: queryParts.filteredRef,
+      });
     });
   }, [neededPages, queryParts, orderClause]);
 
@@ -187,7 +164,7 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
   return (
     <div
       ref={parentRef}
-      className="overflow-auto flex-1 min-h-0 min-w-0 bg-background w-full"
+      className="bg-background min-h-0 w-full min-w-0 flex-1 overflow-auto"
       style={{
         height: typeof height === 'number' ? height : DEFAULT_VIEWPORT_HEIGHT,
       }}
@@ -225,9 +202,7 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
                 minWidth: '100%',
               }}
             >
-              {virtualPaddingLeft > 0 ? (
-                <div aria-hidden className="shrink-0" style={{ width: virtualPaddingLeft }} />
-              ) : null}
+              {virtualPaddingLeft > 0 ? <div aria-hidden className="shrink-0" style={{ width: virtualPaddingLeft }} /> : null}
               {virtualColumns.map((virtualColumn) => {
                 const col = visibleColumns[virtualColumn.index];
                 if (!col) return null;
@@ -251,9 +226,7 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
                   />
                 );
               })}
-              {virtualPaddingRight > 0 ? (
-                <div aria-hidden className="shrink-0" style={{ width: virtualPaddingRight }} />
-              ) : null}
+              {virtualPaddingRight > 0 ? <div aria-hidden className="shrink-0" style={{ width: virtualPaddingRight }} /> : null}
             </div>
           );
         })}
@@ -263,15 +236,15 @@ const VirtualizedViewport = React.memo(function VirtualizedViewport({
 });
 
 export const QueryError = ({ error }: { error: unknown }) => (
-  <div className="flex-1 flex flex-col items-center justify-center p-8 bg-destructive/5 text-destructive animate-in fade-in zoom-in duration-300">
-    <div className="flex items-center gap-3 mb-4 shrink-0">
-      <div className="p-2 rounded-full bg-destructive/10">
+  <div className="bg-destructive/5 text-destructive animate-in fade-in zoom-in flex flex-1 flex-col items-center justify-center p-8 duration-300">
+    <div className="mb-4 flex shrink-0 items-center gap-3">
+      <div className="bg-destructive/10 rounded-full p-2">
         <AlertCircle className="h-6 w-6" />
       </div>
       <h3 className="text-lg font-semibold tracking-tight">Query Error</h3>
     </div>
-    <div className="max-w-2xl w-full min-h-0">
-      <pre className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 font-mono text-[11px] overflow-auto whitespace-pre-wrap break-all shadow-inner max-h-[30vh]">
+    <div className="min-h-0 w-full max-w-2xl">
+      <pre className="bg-destructive/10 border-destructive/20 max-h-[30vh] overflow-auto rounded-lg border p-4 font-mono text-[11px] break-all whitespace-pre-wrap shadow-inner">
         {String((error as Error)?.message || error)}
       </pre>
     </div>
@@ -284,18 +257,7 @@ export type DataTableProps = Omit<QueryTableProps, 'table'> & {
 
 type DataTableInnerShellProps = Omit<DataTableProps, 'table'> & { tableRef: QueryRef };
 
-function DataTableShell({
-  id,
-  tableRef,
-  height,
-  compact = true,
-  resolutionStrategy = 'direct',
-  rowHeight,
-  overscan = 12,
-  pool: poolProp,
-  footer,
-  ...props
-}: DataTableInnerShellProps) {
+function DataTableShell({ id, tableRef, height, compact = true, resolutionStrategy = 'direct', rowHeight, overscan = 12, pool: poolProp, footer, ...props }: DataTableInnerShellProps) {
   const effectiveRowHeight = rowHeight ?? (compact ? 24 : 28);
   const { pool: contextPool } = useDuckDB();
   const pool = poolProp ?? contextPool;
@@ -305,16 +267,10 @@ function DataTableShell({
   const title = props.title ?? tableRef.name ?? tableRef.query;
   const effectiveTableRef = useMemo(() => {
     if (resolutionStrategy === 'materialized') {
-      return table(
-        (t) => `--sql\nSELECT * FROM ${t.tableRef}`,
-        { tableRef }
-      );
+      return table((t) => `--sql\nSELECT * FROM ${t.tableRef}`, { tableRef });
     }
     if (resolutionStrategy === 'lazy') {
-      return lazyTable(
-        (t) => `--sql\nSELECT * FROM ${t.tableRef}`,
-        { tableRef }
-      );
+      return lazyTable((t) => `--sql\nSELECT * FROM ${t.tableRef}`, { tableRef });
     }
     return tableRef;
   }, [resolutionStrategy, tableRef]);
@@ -323,34 +279,24 @@ function DataTableShell({
   }
 
   return (
-    <QueryTableProvider
-      key={`${resolvedId}:${effectiveTableRef.id}`}
-      id={resolvedId}
-      tableRef={effectiveTableRef}
-      pool={pool}
-      title={title}
-      compact={compact}
-      {...props}
-    >
-      <DataTableInternal
-        height={height}
-        rowHeight={effectiveRowHeight}
-        overscan={overscan}
-        footer={footer}
-      />
+    <QueryTableProvider key={`${resolvedId}:${effectiveTableRef.id}`} id={resolvedId} tableRef={effectiveTableRef} pool={pool} title={title} compact={compact} {...props}>
+      <DataTableInternal height={height} rowHeight={effectiveRowHeight} overscan={overscan} footer={footer} />
     </QueryTableProvider>
   );
 }
 
 export function tableInputToRef(input: DataTableProps['table'], cache?: Map<object, QueryRef>): QueryRef | null {
   if (!input) return null;
-  if (typeof input === 'object' && 'type' in input && 'id' in input && 'toArray' in input) return input as QueryRef;
+  if (typeof input === 'object' && 'type' in input && 'id' in input && 'toArray' in input) return input;
   if (typeof input === 'string' && input.trim()) return table(normalizeSelectSql(input));
   if (input instanceof Table || Array.isArray(input)) {
     const arrowTable = input instanceof Table ? input : tableFromJSON(input);
     if (cache) {
       let cached = cache.get(arrowTable);
-      if (!cached) { cached = fromArrow(arrowTable); cache.set(arrowTable, cached); }
+      if (!cached) {
+        cached = fromArrow(arrowTable);
+        cache.set(arrowTable, cached);
+      }
       return cached;
     }
     return fromArrow(arrowTable);
@@ -365,24 +311,14 @@ export function DataTable({ table: tableInput, ...props }: DataTableProps) {
   return <DataTableShell {...props} tableRef={ref} />;
 }
 
-function DataTableInternal({
-  height,
-  rowHeight,
-  overscan,
-  footer,
-}: {
-  height?: number;
-  rowHeight: number;
-  overscan: number;
-  footer?: React.ReactNode;
-}) {
+function DataTableInternal({ height, rowHeight, overscan, footer }: { height?: number; rowHeight: number; overscan: number; footer?: React.ReactNode }) {
   const { isFullscreen, schemaError, countError, compact, isCompactColumnSizingReady } = useQT();
 
   const tableContent = (
     <Card
-      className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full min-w-0'} flex flex-col overflow-hidden relative max-w-full flex-1 ${height != null ? 'min-h-0' : 'min-h-80'}`}
+      className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full min-w-0'} relative flex max-w-full flex-1 flex-col overflow-hidden ${height != null ? 'min-h-0' : 'min-h-80'}`}
     >
-      <CardContent className="p-0 flex flex-col min-h-0 min-w-0 flex-1 relative overflow-hidden">
+      <CardContent className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-0">
         <QueryTableToolbar />
 
         {schemaError || countError ? (
@@ -390,15 +326,17 @@ function DataTableInternal({
         ) : compact && !isCompactColumnSizingReady ? (
           <LoadingCard message="Loading" />
         ) : (
-          <VirtualizedViewport height={height} rowHeight={rowHeight} overscan={overscan} />
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <VirtualizedViewport height={height} rowHeight={rowHeight} overscan={overscan} />
+          </div>
         )}
-        {footer ? <div className="shrink-0 border-t border-border/60">{footer}</div> : null}
+        {footer ? <div className="border-border/60 shrink-0 border-t">{footer}</div> : null}
       </CardContent>
     </Card>
   );
 
   if (isFullscreen) {
-    return <div className="fixed inset-0 z-50 bg-background">{tableContent}</div>;
+    return <div className="bg-background fixed inset-0 z-50">{tableContent}</div>;
   }
 
   return tableContent;

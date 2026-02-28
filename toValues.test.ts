@@ -7,21 +7,15 @@ describe('escapeJsonForSql', () => {
   });
 
   test('object with string value', () => {
-    expect(toValues([{ payload: { name: 'Alice' } }], ['payload'])).toBe(
-      "({'name':'Alice'})"
-    );
+    expect(toValues([{ payload: { name: 'Alice' } }], ['payload'])).toBe("({'name':'Alice'})");
   });
 
   test('escapes single quotes in values', () => {
-    expect(toValues([{ payload: { name: "O'Reilly" } }], ['payload'])).toBe(
-      "({'name':'O''Reilly'})"
-    );
+    expect(toValues([{ payload: { name: "O'Reilly" } }], ['payload'])).toBe("({'name':'O''Reilly'})");
   });
 
   test('nested object', () => {
-    expect(toValues([{ payload: { a: { b: 2 } } }], ['payload'])).toBe(
-      "({'a':{'b':2}})"
-    );
+    expect(toValues([{ payload: { a: { b: 2 } } }], ['payload'])).toBe("({'a':{'b':2}})");
   });
 
   test('array', () => {
@@ -29,9 +23,7 @@ describe('escapeJsonForSql', () => {
   });
 
   test('preserves escaped double quotes', () => {
-    expect(toValues([{ payload: { msg: 'say "hello"' } }], ['payload'])).toBe(
-      "({'msg':'say \"hello\"'})"
-    );
+    expect(toValues([{ payload: { msg: 'say "hello"' } }], ['payload'])).toBe("({'msg':'say \"hello\"'})");
   });
 });
 
@@ -81,21 +73,15 @@ describe('toValues', () => {
 
 describe('toValuesSelect', () => {
   test('single row with one column', () => {
-    expect(toValuesSelect([{ xx: 42 }], ['xx'])).toBe(
-      'SELECT * FROM (VALUES (42)) AS _v(xx)'
-    );
+    expect(toValuesSelect([{ xx: 42 }], ['xx'])).toBe('SELECT * FROM (VALUES (42)) AS _v(xx)');
   });
 
   test('single row with schema object and type cast', () => {
-    expect(toValuesSelect([{ xx: 42 }], { xx: 'INTEGER' })).toBe(
-      'SELECT xx::INTEGER AS xx FROM (VALUES (42)) AS _v(xx)'
-    );
+    expect(toValuesSelect([{ xx: 42 }], { xx: 'INTEGER' })).toBe('SELECT xx::INTEGER AS xx FROM (VALUES (42)) AS _v(xx)');
   });
 
   test('multiple rows', () => {
-    expect(toValuesSelect([{ xx: 42 }, { xx: 43 }], ['xx'])).toBe(
-      'SELECT * FROM (VALUES (42),(43)) AS _v(xx)'
-    );
+    expect(toValuesSelect([{ xx: 42 }, { xx: 43 }], ['xx'])).toBe('SELECT * FROM (VALUES (42),(43)) AS _v(xx)');
   });
 
   test('empty data with array schema', () => {
@@ -103,9 +89,7 @@ describe('toValuesSelect', () => {
   });
 
   test('empty data with typed schema', () => {
-    expect(toValuesSelect([], { xx: 'INTEGER' })).toBe(
-      'SELECT NULL::INTEGER AS xx WHERE FALSE'
-    );
+    expect(toValuesSelect([], { xx: 'INTEGER' })).toBe('SELECT NULL::INTEGER AS xx WHERE FALSE');
   });
 
   test('full transform toValues([{xx:42}]) in SELECT', () => {
@@ -118,12 +102,8 @@ describe('toValuesSelect', () => {
   });
 
   test('infers keys when schema not specified', () => {
-    expect(toValuesSelect([{ xx: 42 }])).toBe(
-      'SELECT * FROM (VALUES (42)) AS _v(xx)'
-    );
-    expect(toValuesSelect([{ a: 1, b: 'x' }])).toBe(
-      "SELECT * FROM (VALUES (1,'x')) AS _v(a,b)"
-    );
+    expect(toValuesSelect([{ xx: 42 }])).toBe('SELECT * FROM (VALUES (42)) AS _v(xx)');
+    expect(toValuesSelect([{ a: 1, b: 'x' }])).toBe("SELECT * FROM (VALUES (1,'x')) AS _v(a,b)");
   });
 
   test('empty data without schema returns minimal empty select', () => {

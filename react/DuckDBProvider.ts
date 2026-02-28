@@ -1,6 +1,6 @@
 import type { AsyncDuckDB, Logger } from '@duckdb/duckdb-wasm';
 import * as DuckDBBrowser from '../dist/duckdb-browser';
-import React, { createContext, useContext, } from 'react';
+import React, { createContext, useContext } from 'react';
 
 import { ConnectionPool } from '../duck/ConnectionPool';
 
@@ -138,7 +138,7 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
         maximumThreads,
         accessMode: duckdb.DuckDBAccessMode.READ_WRITE,
         opfs: {
-          fileHandling: 'auto'
+          fileHandling: 'auto',
         },
         useDirectIO: true,
         filesystem: {
@@ -152,15 +152,7 @@ export function getDBResource(config?: DuckDBConfig): Promise<DBResource> {
           castDecimalToDouble: true,
         },
       };
-      const {
-        bundlePath: _bundlePath,
-        debug: _debug,
-        maxConnections: _maxConnections,
-        onInit: _onInit,
-        customHttpHeaders: _customHttpHeaders,
-        logger: _logger,
-        ...openOverrides
-      } = config ?? {};
+      const { bundlePath: _bundlePath, debug: _debug, maxConnections: _maxConnections, onInit: _onInit, customHttpHeaders: _customHttpHeaders, logger: _logger, ...openOverrides } = config ?? {};
       const openConfig = deepMerge(defaultOpenConfig as Record<string, unknown>, openOverrides as Record<string, unknown>) as DuckDBOpenConfig;
       await database.open(openConfig);
       debug('[DuckDB] Database opened.');

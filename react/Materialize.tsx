@@ -1,49 +1,56 @@
 import { use, Suspense, createElement, type ReactNode } from 'react';
 
-import { type QueryRef } from './reducks.type';
+import { type QueryRef, isRef } from './reducks';
 
 type SourceValue = QueryRef | Promise<unknown>;
 type ResolvedData<T extends Record<string, SourceValue>> = {
-  [K in keyof T]: T[K] extends Promise<infer R> ? R : unknown[];
+  [K in keyof T]: T[K] extends QueryRef<infer R> ? NonNullable<R>[] : T[K] extends Promise<infer R> ? NonNullable<R> : never;
 };
 
 export interface MaterializeComponent {
-  <T extends Record<string, SourceValue>>(props: {
-    source: T;
-    fallback?: ReactNode;
-    disabled?: boolean;
-    children: (data: ResolvedData<T>) => ReactNode;
-  }): ReactNode;
+  <T extends Record<string, SourceValue>>(props: { source: T; fallback?: ReactNode; disabled?: boolean; children: (data: ResolvedData<T>) => ReactNode }): ReactNode;
 }
 
-export function isQueryRef(value: SourceValue): value is QueryRef {
-  return typeof value === 'object' && value !== null && 'id' in value && 'type' in value;
+export function isQueryRef(value: unknown): value is QueryRef {
+  return isRef(value);
 }
 
-export function resolveSource(source: Record<string, SourceValue>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+export function resolveSource<T extends Record<string, SourceValue>>(source: T): ResolvedData<T> {
+  const out: any = {};
   for (const [key, value] of Object.entries(source)) {
-    if (isQueryRef(value)) value.ensureName(key);
-    out[key] = isQueryRef(value) ? use(value.toArray()) : use(value);
+    if (isQueryRef(value)) {
+      value.ensureName(key);
+      out[key] = use(value.rows());
+    } else {
+      out[key] = use(value as Promise<unknown>);
+    }
   }
   return out;
 }
 
-export function toQueryTableSource(source: Record<string, SourceValue>): Record<string, QueryRef> {
+export async function resolveSourceAsync<T extends Record<string, SourceValue>>(source: T): Promise<ResolvedData<T>> {
+  const out: any = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (isQueryRef(value)) {
+      value.ensureName(key);
+      out[key] = await value.rows();
+    } else {
+      out[key] = await (value as Promise<unknown>);
+    }
+  }
+  return out;
+}
+
+export function toQueryTableSource(source: Record<string, unknown>): Record<string, QueryRef> {
   for (const [key, value] of Object.entries(source)) {
     if (isQueryRef(value)) value.ensureName(key);
   }
-  return Object.fromEntries(
-    Object.entries(source).filter(([, value]) => isQueryRef(value)),
-  ) as Record<string, QueryRef>;
+  return Object.fromEntries(Object.entries(source).filter(([, value]) => isQueryRef(value))) as Record<string, QueryRef>;
 }
 
-function MaterializeImpl({ source, children }: {
-  source: Record<string, SourceValue>;
-  children: (data: Record<string, unknown>) => ReactNode;
-}): ReactNode {
+function MaterializeImpl<T extends Record<string, SourceValue>>({ source, children }: { source: T; children: (data: ResolvedData<T>) => ReactNode }): ReactNode {
   const data = resolveSource(source);
-  return children(data as Record<string, unknown>);
+  return children(data);
 }
 
 /**
@@ -54,16 +61,12 @@ function MaterializeImpl({ source, children }: {
  *   const orders = useSql(() => `SELECT * FROM orders`);
  *   <Materialize source={{ orders }}>{({orders}) => <MyChart data={orders} />}</Materialize>
  */
-export const Materialize: MaterializeComponent = ((props: {
-  source: Record<string, SourceValue>;
+export const Materialize: MaterializeComponent = (<T extends Record<string, SourceValue>>(props: {
+  source: T;
   fallback?: ReactNode;
   disabled?: boolean;
-  children: (data: Record<string, unknown>) => ReactNode;
+  children: (data: ResolvedData<T>) => ReactNode;
 }): ReactNode => {
   if (props?.disabled) return null;
-  return (
-    <Suspense fallback={props?.fallback ?? null}>
-      {createElement(MaterializeImpl, { source: props.source, children: props.children })}
-    </Suspense>
-  );
+  return <Suspense fallback={props?.fallback ?? null}>{createElement(MaterializeImpl<T>, { source: props.source, children: props.children })}</Suspense>;
 }) as MaterializeComponent;

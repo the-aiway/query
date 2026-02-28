@@ -9,29 +9,25 @@ import { cn } from '../table/ui/utils';
 type SourceValue = QueryRef | Promise<unknown>;
 type SourceProp<T extends Record<string, SourceValue>> = T | (() => T);
 type ResolvedData<T extends Record<string, SourceValue>> = {
-  [K in keyof T]: T[K] extends QueryRef<infer R>
-    ? NonNullable<R>[]
-    : T[K] extends Promise<infer R>
-    ? R
-    : unknown[];
+  [K in keyof T]: T[K] extends QueryRef<infer R> ? NonNullable<R>[] : T[K] extends Promise<infer R> ? NonNullable<R> : never;
 };
 const TABLE_TOOLBAR_HEIGHT = 42;
 const DEFAULT_TABLE_VIEWPORT_HEIGHT = 240;
 
 interface DataCardComponent {
-  <T extends Record<string, SourceValue>>(props: {
-    source: SourceProp<T>;
-    fallback?: ReactNode;
-    className?: string;
-    disabled?: boolean;
-    children: (data: ResolvedData<T>) => ReactNode;
-  }): ReactNode;
+  <T extends Record<string, SourceValue>>(props: { source: SourceProp<T>; fallback?: ReactNode; className?: string; disabled?: boolean; children: (data: ResolvedData<T>) => ReactNode }): ReactNode;
 }
 
-function DataCardContent({ source, children, className }: {
-  source: Record<string, SourceValue>;
-  children: (data: Record<string, unknown>) => ReactNode;
+function DataCardContent<T extends Record<string, SourceValue>>({
+  source,
+  children,
+  className,
+  fallback,
+}: {
+  source: T;
+  children: (data: ResolvedData<T>) => ReactNode;
   className?: string;
+  fallback?: ReactNode;
 }): ReactNode {
   const [view, setView] = useState<'chart' | 'table'>('chart');
   const contentRef = useRef<HTMLDivElement>(null);
@@ -42,9 +38,7 @@ function DataCardContent({ source, children, className }: {
   const hasSource = Object.keys(queryTableSource).length > 0;
   const cardHeight = savedHeightRef.current;
   const cardWidth = savedWidthRef.current;
-  const tableHeight = cardHeight != null
-    ? cardHeight - TABLE_TOOLBAR_HEIGHT
-    : DEFAULT_TABLE_VIEWPORT_HEIGHT;
+  const tableHeight = cardHeight != null ? cardHeight - TABLE_TOOLBAR_HEIGHT : DEFAULT_TABLE_VIEWPORT_HEIGHT;
 
   const handleSwitchToTable = () => {
     if (contentRef.current) {
@@ -70,30 +64,26 @@ function DataCardContent({ source, children, className }: {
         }}
         className={cn('flex min-h-0 flex-col overflow-hidden', className)}
       >
-        <QueryTable
-          table={queryTableSource}
-          onClose={() => setView('chart')}
-          height={tableHeight}
-        />
+        <QueryTable table={queryTableSource} onClose={() => setView('chart')} height={tableHeight} />
       </div>
     );
   }
 
   return (
-    <Materialize source={source}>
+    <Materialize source={source} fallback={fallback}>
       {(data) => (
         <div className={cn('group relative', className)} ref={contentRef}>
           {hasSource && (
             <button
               type="button"
               onClick={handleSwitchToTable}
-              className="absolute top-2 right-2 z-30 p-1.5 rounded-md bg-muted/35 text-muted-foreground opacity-20 hover:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-muted/80 hover:text-foreground transition-all duration-150"
+              className="bg-muted/35 text-muted-foreground hover:bg-muted/80 hover:text-foreground absolute top-2 right-2 z-30 rounded-md p-1.5 opacity-20 transition-all duration-150 group-hover:opacity-100 hover:opacity-100 focus-visible:opacity-100"
               title="Switch to table view"
             >
-              <Table2 className="w-3.5 h-3.5" />
+              <Table2 className="h-3.5 w-3.5" />
             </button>
           )}
-          {children(data as Record<string, unknown>)}
+          {children(data)}
         </div>
       )}
     </Materialize>
@@ -111,17 +101,17 @@ function DataCardContent({ source, children, className }: {
  *   <DataCard source={{ stats: statsRef.next() }}>{({stats}) => stats?.total}</DataCard>
  *   <DataCard source={() => ({ rows: myRef })}>{({rows}) => ...}</DataCard>
  */
-export const DataCard: DataCardComponent = ((props: {
-  source: Record<string, SourceValue> | (() => Record<string, SourceValue>);
+export const DataCard: DataCardComponent = (<T extends Record<string, SourceValue>>(props: {
+  source: SourceProp<T>;
   fallback?: ReactNode;
   className?: string;
   disabled?: boolean;
-  children: (data: Record<string, unknown>) => ReactNode;
+  children: (data: ResolvedData<T>) => ReactNode;
 }): ReactNode => {
   if (props?.disabled) return null;
   const source = typeof props.source === 'function' ? props.source() : props.source;
   return (
-    <DataCardContent source={source} className={props.className}>
+    <DataCardContent source={source} className={props.className} fallback={props.fallback}>
       {props.children}
     </DataCardContent>
   );
