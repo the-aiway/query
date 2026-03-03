@@ -1,6 +1,6 @@
 import type { AsyncDuckDB, Logger } from '@duckdb/duckdb-wasm';
-import * as DuckDBBrowser from '../dist/duckdb-browser';
 import React, { createContext, useContext } from 'react';
+import * as DuckDBBrowser from '../dist/duckdb-browser';
 
 import { ConnectionPool } from '../duck/ConnectionPool';
 
