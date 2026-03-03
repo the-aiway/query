@@ -4,6 +4,13 @@
   "type": "module",
   "main": "./index.ts",
   "types": "./index.ts",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/the-aiway/query.git"
+  },
   "exports": {
     ".": "./index.ts",
     "./provider": "./react/DuckDBProvider.ts",
@@ -17,9 +24,13 @@
     ]
   },
   "scripts": {
-    "bump:patch": "npm version patch -m 'chore: bump version to %s' && git push && git push --tags",
-    "bump:minor": "npm version minor -m 'chore: bump version to %s' && git push && git push --tags",
-    "bump:major": "npm version major -m 'chore: bump version to %s' && git push && git push --tags"
+    "bump:patch": "npm version patch -m 'chore: bump version to %s' && git push && git push --tags && npm publish",
+    "bump:minor": "npm version minor -m 'chore: bump version to %s' && git push && git push --tags && npm publish",
+    "bump:major": "npm version major -m 'chore: bump version to %s' && git push && git push --tags && npm publish",
+    "bump:patch:rc": "npm version prepatch --preid rc -m 'chore: bump candidate to %s' && git push && git push --tags && npm publish --tag beta",
+    "bump:minor:rc": "npm version preminor --preid rc -m 'chore: bump candidate to %s' && git push && git push --tags && npm publish --tag beta",
+    "bump:major:rc": "npm version premajor --preid rc -m 'chore: bump candidate to %s' && git push && git push --tags && npm publish --tag beta",
+    "bump:rc": "npm version prerelease --preid rc -m 'chore: bump candidate to %s' && git push && git push --tags && npm publish --tag beta"
   },
   "peerDependencies": {
     "react": "^18 || ^19",
