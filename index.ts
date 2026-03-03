@@ -1,11 +1,11 @@
+export { getRuntime, re, setRuntime } from './core/reducks';
 export { ConnectionPool, type InferredArrowTable } from './duck/ConnectionPool';
-export { DuckQueryWasmProvider, DuckDBContext, useDuckDB, type DuckDBConfig, type DBResource } from './react/DuckDBProvider';
-export { QueryTable } from './table/QueryTable';
-export { DataTable } from './table/DataTable';
-export type { InferSQL, Materialize, InferSQLStrict } from './duck/inferSqlReturntype';
-export { toValues, toValuesSelect, type ValuesSchema } from './toValues';
 export { DumpLogger } from './duck/DumpLogger';
-export { useTable, useSql, useArrow, useValues, useStore, usePipeline, sql, table, values, fromArrow, runSql, pipeline, type QueryRef, type ReEngine, type PipelineFn } from './react/reducks';
-export { re, setRuntime, getRuntime, type ReduckRuntime, type ReduckResult } from './core/reducks';
+export type { InferSQL, InferSQLStrict, Materialize } from './duck/inferSqlReturntype';
+export { DuckDBContext, DuckQueryWasmProvider, useDuckDB, type DBResource, type DuckDBConfig } from './react/DuckDBProvider';
+export { fromArrow, pipeline, runSql, sql, table, useArrow, usePipeline, useSql, useStore, useTable, useValues, values, type PipelineFn, type QueryRef, type ReEngine } from './react/reducks';
+export { DataTable } from './table/DataTable';
+export { QueryTable } from './table/QueryTable';
+export { toValues, toValuesSelect, type ValuesSchema } from './toValues';
 
 export { QueryTable as default } from './table/QueryTable';

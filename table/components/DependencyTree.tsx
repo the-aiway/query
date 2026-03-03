@@ -1,10 +1,10 @@
 import Editor from '@monaco-editor/react';
+import { Code2, Database, GitBranch, Globe, Pencil } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { format } from 'sql-formatter';
-import React, { useEffect, useMemo, useState } from 'react';
-import { GitBranch, Database, Code2, Globe, Pencil } from 'lucide-react';
-import { DuckRef, type QueryRef } from '../../react/reducks';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
+import { Duckable } from '../../react/reducks';
 import { Button } from '../ui/Button';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { ScrollArea } from '../ui/ScrollArea';
 import { SqlQueryEditorPopover } from './SqlQueryEditorPopover';
 import { useTab } from './TabContext';
@@ -157,7 +157,7 @@ function buildTableCteSql(entry: QueryRef): string {
   const name = entry.name || entry.id;
   const escapedName = String(name).replace(/[^A-Za-z0-9_]/g, '_');
   const cteName = `_${escapedName}`;
-  return `WITH\n  ${cteName} AS (\n    FROM\n      ${DuckRef.toExpr(entry)}\n  )\nSELECT\n  *\nFROM\n  ${cteName}`;
+  return `WITH\n  ${cteName} AS (\n    FROM\n      ${Duckable.toExpr(entry)}\n  )\nSELECT\n  *\nFROM\n  ${cteName}`;
 }
 
 function SqlPreview({ sql }: { sql: string }) {
