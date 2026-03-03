@@ -417,7 +417,7 @@ Contributions are welcome! This component is built with:
 
 ## License
 
-[Add your license here]
+MIT — see [LICENSE](./LICENSE) for details.
 
 ## Support
 
