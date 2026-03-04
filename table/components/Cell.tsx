@@ -4,6 +4,7 @@ import { Calendar, Hash } from 'lucide-react';
 import React from 'react';
 
 import type { ColumnSummary } from './Datasource';
+import { useQT } from './QueryTableContext';
 
 export const colors = [
   'bg-gray-300/10 text-gray-500 ring-1 ring-inset ring-gray-300/20 dark:text-gray-300',
@@ -63,7 +64,7 @@ export function getPillColor(value: string) {
 }
 
 // Helper to format cell values
-export function formatCell(value: unknown, type: string, colName: string) {
+export function formatCell(value: unknown, type: string, colName: string, compactNumbers = true) {
   if (value === null || value === undefined) return '';
   if (type.match(/date/im) && typeof value === 'number' && !isNaN(value)) {
     // Only return date part for display in pill, not full ISO
@@ -74,19 +75,21 @@ export function formatCell(value: unknown, type: string, colName: string) {
   if (typeof value === 'string') return value;
   if (colName === 'id') return (value as string).toString();
   if (typeof value === 'number') {
-    if (value > 100_000) {
-      return Intl.NumberFormat('fr-CH', { maximumFractionDigits: 2, notation: 'compact' }).format(value)
+    if (compactNumbers && value > 100_000) {
+      return Intl.NumberFormat('fr-CH', { maximumFractionDigits: 2, notation: 'compact' }).format(value);
     }
-    return Number.isFinite(value)
-      ? Intl.NumberFormat('fr-CH', { maximumFractionDigits: 2 }).format(value)
-      : '';
+    return Number.isFinite(value) ? Intl.NumberFormat('fr-CH', { maximumFractionDigits: 2 }).format(value) : '';
   }
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'symbol') {
     return value.description ? `Symbol(${value.description})` : value.toString();
   }
   if (typeof value === 'function') return '[function]';
-  if (typeof value === 'object') return JSON.stringify(value);
+  if (typeof value === 'object') {
+    return JSON.stringify(value, (key, value) =>
+  typeof value === "bigint" ? Number(value) : value,
+);
+  }
   return '';
 }
 
@@ -118,12 +121,7 @@ export function copyToClipboard(text: string) {
   }
 }
 
-function getCellTheme(
-  colName: string,
-  typeRaw: string,
-  display: string,
-  summary: ColumnSummary | undefined
-) {
+function getCellTheme(colName: string, typeRaw: string, display: string, summary: ColumnSummary | undefined) {
   const nDistinct = summary?.uniq ?? 0;
   const isPill = nDistinct > 1 && typeRaw === 'UTF8' && nDistinct < 36 && !!display;
 
@@ -191,27 +189,11 @@ type CellProps = {
   rowIndex: number;
   summary: ColumnSummary | undefined;
   isRowIndex?: boolean;
-  renderCell?: (ctx: {
-    colName: string;
-    type: string;
-    rawValue: unknown;
-    display: string;
-    rowIndex: number;
-    pageRowIndex: number;
-  }) => React.ReactNode | undefined;
+  renderCell?: (ctx: { colName: string; type: string; rawValue: unknown; display: string; rowIndex: number; pageRowIndex: number }) => React.ReactNode | undefined;
 };
 
-export function Cell({
-  column,
-  colName,
-  type,
-  pageData,
-  pageRowIndex,
-  rowIndex,
-  summary,
-  isRowIndex = false,
-  renderCell,
-}: CellProps) {
+export function Cell({ column, colName, type, pageData, pageRowIndex, rowIndex, summary, isRowIndex = false, renderCell }: CellProps) {
+  const { compact } = useQT();
   let display = '';
   let isUUID = false;
   let isDate = false;
@@ -228,13 +210,13 @@ export function Cell({
       if (v) {
         const val = v.get(pageRowIndex);
         rawValue = val && typeof val === 'object' ? val[child!] : undefined;
-        display = formatCell(rawValue, type, colName);
+        display = formatCell(rawValue, type, colName, compact);
       }
     } else {
       const v = pageData.vectors.get(colName);
       if (v) {
         rawValue = v.get(pageRowIndex);
-        display = formatCell(rawValue, type, colName);
+        display = formatCell(rawValue, type, colName, compact);
         isDate = !!type.match(/DATE|TIME|TIMESTAMP/i);
         if (colName.endsWith('id') && typeof rawValue === 'string' && rawValue.length === 36) {
           isUUID = true;
@@ -277,17 +259,17 @@ export function Cell({
       }
     : {};
 
+  const truncate = compact;
+
   return (
     <div
-      className={`px-2 py-1 font-mono text-[11px] border-r last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis flex items-center ${
+      className={`flex items-center border-r px-2 py-1 font-mono text-[11px] last:border-r-0 ${truncate ? 'overflow-hidden text-ellipsis whitespace-nowrap' : 'overflow-x-auto whitespace-nowrap'} ${
         isRowIndex
-          ? 'justify-center text-muted-foreground tabular-nums bg-background/80 backdrop-blur-sm shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)] z-[10]'
+          ? 'text-muted-foreground bg-background/80 z-[10] justify-center tabular-nums shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)] backdrop-blur-sm dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)]'
           : theme.alignClass + ' bg-transparent'
       }`}
       style={{ width: column.getSize(), ...stickyStyles }}
-      title={
-        typeof rawValue === 'string' || typeof rawValue === 'number' ? String(rawValue) : display
-      }
+      title={typeof rawValue === 'string' || typeof rawValue === 'number' ? String(rawValue) : display}
     >
       {hasCustom ? (
         custom
@@ -296,7 +278,7 @@ export function Cell({
       ) : isUUID && rawValue && typeof rawValue === 'string' ? (
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-md border border-cyan-500/30 bg-cyan-500/5 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700 hover:bg-cyan-500/10 dark:text-cyan-300 relative group overflow-hidden"
+          className="group relative inline-flex items-center gap-1 overflow-hidden rounded-md border border-cyan-500/30 bg-cyan-500/5 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700 hover:bg-cyan-500/10 dark:text-cyan-300"
           title="Click to copy full UUID"
           onClick={(e) => handleCopy(e, rawValue)}
         >
@@ -304,18 +286,14 @@ export function Cell({
           {String(rawValue)?.slice(-6) ?? ''}
 
           {/* Feedback overlay with CSS animation */}
-          <span className="absolute inset-0 flex items-center justify-center bg-black/90 text-white text-[10px] font-bold rounded opacity-0 pointer-events-none [button[data-copied='true']_&]:opacity-100 [button[data-copied='true']_&]:animate-fadeOut" />
+          <span className="[button[data-copied='true']_&]:animate-fadeOut pointer-events-none absolute inset-0 flex items-center justify-center rounded bg-black/90 text-[10px] font-bold text-white opacity-0 [button[data-copied='true']_&]:opacity-100" />
         </button>
       ) : theme.isPill ? (
-        <span
-          className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-semibold ${theme.pillClass}`}
-        >
-          {display}
-        </span>
+        <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-semibold ${theme.pillClass}`}>{display}</span>
       ) : isDate && rawValue != null && display ? (
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-sm bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-500/25 hover:bg-violet-500/15 dark:text-violet-300 relative group overflow-hidden"
+          className="group relative inline-flex items-center gap-1 overflow-hidden rounded-sm bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-violet-500/25 ring-inset hover:bg-violet-500/15 dark:text-violet-300"
           title="Click to copy full value"
           onClick={(e) => handleCopy(e, rawValue)}
         >
@@ -323,7 +301,7 @@ export function Cell({
           {display}
 
           {/* Feedback overlay with CSS animation */}
-          <span className="absolute inset-0 flex items-center justify-center bg-black/90 text-white text-[10px] font-bold rounded opacity-0 pointer-events-none [button[data-copied='true']_&]:opacity-100 [button[data-copied='true']_&]:animate-fadeOut" />
+          <span className="[button[data-copied='true']_&]:animate-fadeOut pointer-events-none absolute inset-0 flex items-center justify-center rounded bg-black/90 text-[10px] font-bold text-white opacity-0 [button[data-copied='true']_&]:opacity-100" />
         </button>
       ) : (
         <span className={theme.textClass || 'text-foreground'}>{display}</span>

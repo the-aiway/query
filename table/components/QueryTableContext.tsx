@@ -1,33 +1,8 @@
-import {
-  type ColumnDef,
-  getCoreRowModel,
-  useReactTable,
-  type ColumnSizingState,
-  type ColumnPinningState,
-  type SortingState,
-  type VisibilityState,
-} from '@tanstack/react-table';
+import { type ColumnDef, getCoreRowModel, useReactTable, type ColumnSizingState, type ColumnPinningState, type SortingState, type VisibilityState } from '@tanstack/react-table';
 import { Table } from 'apache-arrow';
-import React, {
-  createContext,
-  useContext,
-  useMemo,
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-  type ReactNode,
-} from 'react';
+import React, { createContext, useContext, useMemo, useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 
-import {
-  type ColumnDescribe,
-  useColumnDescribe,
-  useColumnSummaries,
-  useColumnSizes,
-  useQueryParts,
-  useTableCount,
-  useTableSchema,
-} from './Datasource';
+import { type ColumnDescribe, useColumnDescribe, useColumnSummaries, useColumnSizes, useQueryParts, useTableCount, useTableSchema } from './Datasource';
 import {
   type FilterValue,
   type FiltersState,
@@ -36,14 +11,9 @@ import {
   isRangeFilter,
   serializeQTLayout,
   parseQTLayout,
-  serializeSort,
-  parseSort,
-  serializeFilters,
-  parseFilters,
 } from '../../sqlUtils';
 import { useDuckDB } from '../../react/DuckDBProvider';
 import { useSql, type QueryRef } from '../../react/reducks';
-import { useQueryState } from 'nuqs';
 
 export type QueryResolutionStrategy = 'direct' | 'materialized' | 'lazy';
 
@@ -55,14 +25,7 @@ type QueryTableCommonProps = {
   persistStateInUrl?: boolean;
   overscan?: number;
   getRowClassName?: (ctx: { get: (col: string) => unknown; rowIndex: number }) => string;
-  renderCell?: (ctx: {
-    colName: string;
-    type: string;
-    rawValue: unknown;
-    display: string;
-    rowIndex: number;
-    pageRowIndex: number;
-  }) => React.ReactNode | undefined;
+  renderCell?: (ctx: { colName: string; type: string; rawValue: unknown; display: string; rowIndex: number; pageRowIndex: number }) => React.ReactNode | undefined;
   enableFilters?: boolean;
   colDefaultWidth?: number;
   colMinWidth?: number;
@@ -127,28 +90,9 @@ function useQueryTableState({
   dependencyRootRef?: QueryRef;
   pool: ReturnType<typeof useDuckDB>['pool'];
 } & Omit<QueryTableProps, 'table' | 'pool' | 'height' | 'rowHeight' | 'overscan'>) {
-
-  // --- URL state: separate params per concern ---
-  const qsOpts = { shallow: true, history: 'replace' as const };
-  const [rawSort, setRawSort] = useQueryState(`qt_${id}_s`, qsOpts);
-  const [rawFilters, setRawFilters] = useQueryState(`qt_${id}_f`, qsOpts);
-  const [rawQ, setRawQ] = useQueryState(`qt_${id}_q`, qsOpts);
-
-  const initSort = useRef(persistStateInUrl ? parseSort(rawSort) : []);
-  const initFilters = useRef(persistStateInUrl ? parseFilters(rawFilters) : {});
-  const isFirstSync = useRef(true);
-
-  const [sorting, setSorting] = useState<SortingState>(initSort.current);
-  const [globalFilter, setGlobalFilter] = useState(persistStateInUrl ? (rawQ ?? '') : '');
-  const [columnFilters, setColumnFilters] = useState<FiltersState>(initFilters.current);
-
-  useEffect(() => {
-    if (isFirstSync.current) { isFirstSync.current = false; return; }
-    if (!persistStateInUrl) return;
-    void setRawSort(serializeSort(sorting));
-    void setRawFilters(serializeFilters(columnFilters));
-    void setRawQ(globalFilter.trim() || null);
-  }, [persistStateInUrl, sorting, columnFilters, globalFilter, setRawSort, setRawFilters, setRawQ]);
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [columnFilters, setColumnFilters] = useState<FiltersState>({});
 
   // --- localStorage: column sizing + visibility ---
   const layoutKey = `qt_layout_${id}`;
@@ -159,28 +103,43 @@ function useQueryTableState({
 
   const layoutTimerRef = useRef<Timer | null>(null);
 
-  const saveLayout = useCallback((sizing: ColumnSizingState, visibility: VisibilityState) => {
-    if (layoutTimerRef.current) clearTimeout(layoutTimerRef.current);
-    layoutTimerRef.current = setTimeout(() => {
-      localStorage.setItem(layoutKey, serializeQTLayout(visibility, sizing));
-    }, LAYOUT_DEBOUNCE_MS);
-  }, [layoutKey]);
+  const saveLayout = useCallback(
+    (sizing: ColumnSizingState, visibility: VisibilityState) => {
+      if (layoutTimerRef.current) clearTimeout(layoutTimerRef.current);
+      layoutTimerRef.current = setTimeout(() => {
+        localStorage.setItem(layoutKey, serializeQTLayout(visibility, sizing));
+      }, LAYOUT_DEBOUNCE_MS);
+    },
+    [layoutKey]
+  );
 
-  const setColumnSizingWithSave = useCallback((updater: ColumnSizingState | ((prev: ColumnSizingState) => ColumnSizingState)) => {
-    setColumnSizing((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      setColumnVisibility((vis) => { saveLayout(next, vis); return vis; });
-      return next;
-    });
-  }, [saveLayout]);
+  const setColumnSizingWithSave = useCallback(
+    (updater: ColumnSizingState | ((prev: ColumnSizingState) => ColumnSizingState)) => {
+      setColumnSizing((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        setColumnVisibility((vis) => {
+          saveLayout(next, vis);
+          return vis;
+        });
+        return next;
+      });
+    },
+    [saveLayout]
+  );
 
-  const setColumnVisibilityWithSave = useCallback((updater: VisibilityState | ((prev: VisibilityState) => VisibilityState)) => {
-    setColumnVisibility((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      setColumnSizing((sz) => { saveLayout(sz, next); return sz; });
-      return next;
-    });
-  }, [saveLayout]);
+  const setColumnVisibilityWithSave = useCallback(
+    (updater: VisibilityState | ((prev: VisibilityState) => VisibilityState)) => {
+      setColumnVisibility((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        setColumnSizing((sz) => {
+          saveLayout(sz, next);
+          return sz;
+        });
+        return next;
+      });
+    },
+    [saveLayout]
+  );
 
   const [openFilterCol, setOpenFilterCol] = useState<string | null>(null);
   const [filterSearch, setFilterSearch] = useState('');
@@ -228,20 +187,13 @@ function useQueryTableState({
 
   const describeQuery = useColumnDescribe(tableRef);
   const columnDescribe = describeQuery.data ?? [];
-  const describeMap = useMemo(
-    () => new Map<string, ColumnDescribe>(columnDescribe.map((d) => [d.name, d])),
-    [columnDescribe]
-  );
+  const describeMap = useMemo(() => new Map<string, ColumnDescribe>(columnDescribe.map((d) => [d.name, d])), [columnDescribe]);
 
-  const sizesQuery = useColumnSizes(tableRef);
+  const sizesQuery = useColumnSizes(tableRef, { enabled: compact });
   const columnSizes = sizesQuery.data ?? [];
   const sizeMap = useMemo(() => new Map(columnSizes.map((s) => [s.name, s])), [columnSizes]);
 
-  const refreshing =
-    countQuery.isFetching ||
-    summariesQuery.isFetching ||
-    describeQuery.isFetching ||
-    sizesQuery.isFetching;
+  const refreshing = countQuery.isFetching || summariesQuery.isFetching || describeQuery.isFetching || sizesQuery.isFetching;
 
   const hasActiveFiltersOrSorting = sorting.length > 0 || Object.keys(columnFilters).length > 0 || globalFilter.trim().length > 0;
 
@@ -260,25 +212,46 @@ function useQueryTableState({
   const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
     const effDefault = enableFilters ? colDefaultWidth : Math.min(colDefaultWidth, 72);
     const effMin = enableFilters ? colMinWidth : Math.min(colMinWidth, 44);
-    const effMax = enableFilters ? colMaxWidth : Math.min(colMaxWidth, 110);
+    const effMax = compact ? (enableFilters ? colMaxWidth : Math.min(colMaxWidth, 110)) : 9999;
 
     const dataColumns = schema.flatMap((col) => {
-      return [{ id: col.name, accessorKey: col.name, header: col.name.replace(/^\d+_/, ''), size: effDefault, minSize: effMin, maxSize: effMax }];
+      return [
+        {
+          id: col.name,
+          accessorKey: col.name,
+          header: col.name.replace(/^\d+_/, ''),
+          size: effDefault,
+          minSize: effMin,
+          maxSize: effMax,
+        },
+      ];
     });
 
     if (showRowNumbers) {
       return [
-        { id: '_row_index', accessorKey: '_row_index', header: '#', size: 60, minSize: 50, maxSize: 80, enableSorting: false, enableColumnFilter: false, enableHiding: false, meta: { isRowIndex: true } },
+        {
+          id: '_row_index',
+          accessorKey: '_row_index',
+          header: '#',
+          size: 60,
+          minSize: 50,
+          maxSize: 80,
+          enableSorting: false,
+          enableColumnFilter: false,
+          enableHiding: false,
+          meta: { isRowIndex: true },
+        },
         ...dataColumns,
       ];
     }
     return dataColumns;
-  }, [schema, enableFilters, colDefaultWidth, colMinWidth, colMaxWidth, showRowNumbers]);
+  }, [schema, enableFilters, colDefaultWidth, colMinWidth, colMaxWidth, showRowNumbers, compact]);
 
   const table = useReactTable({
     data: [],
     columns,
     state: { sorting, columnSizing, columnPinning, columnVisibility },
+    enableColumnResizing: compact,
     onSortingChange: setSorting,
     onColumnSizingChange: (updater) => {
       setColumnSizingWithSave((prev) => (typeof updater === 'function' ? updater(prev) : updater));
@@ -298,9 +271,10 @@ function useQueryTableState({
   useEffect(() => {
     const schemaKey = fieldNames.join(',');
 
-    if (schemaKey && !sizesQuery.isLoading && initializedSchemaRef.current !== schemaKey) {
+    if (schemaKey && (compact ? !sizesQuery.isLoading : true) && initializedSchemaRef.current !== schemaKey) {
       const effMin = enableFilters ? colMinWidth : Math.min(colMinWidth, 44);
       const effMax = enableFilters ? colMaxWidth : Math.min(colMaxWidth, 110);
+      const effDefault = enableFilters ? colDefaultWidth : Math.min(colDefaultWidth, 72);
 
       const savedLayout = parseQTLayout(localStorage.getItem(layoutKey));
 
@@ -309,11 +283,15 @@ function useQueryTableState({
 
       for (const name of fieldNames) {
         if (newSizing[name] !== undefined) continue;
-        const size = sizeMap.get(name);
-        const p80 = size?.p80Len ?? 0;
-        const maxLen = Math.max(name.length, p80);
-        const estimatedWidth = Math.ceil(maxLen * ESTIMATE_CHAR_PX + ESTIMATE_PADDING_PX);
-        newSizing[name] = Math.max(effMin, Math.min(effMax, estimatedWidth));
+        if (compact) {
+          const size = sizeMap.get(name);
+          const p80 = size?.p80Len ?? 0;
+          const maxLen = Math.max(name.length, p80);
+          const estimatedWidth = Math.ceil(maxLen * ESTIMATE_CHAR_PX + ESTIMATE_PADDING_PX);
+          newSizing[name] = Math.max(effMin, Math.min(effMax, estimatedWidth));
+        } else {
+          newSizing[name] = Math.max(effDefault, 600);
+        }
       }
       setColumnSizing(newSizing);
 
@@ -333,7 +311,7 @@ function useQueryTableState({
         initializedVisibilityRef.current = schemaKey;
       }
     }
-  }, [fieldNames, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, columnVisibility, layoutKey, sizesQuery.isLoading]);
+  }, [fieldNames, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, colDefaultWidth, columnVisibility, layoutKey, sizesQuery.isLoading, compact]);
 
   const hasChanges = hasActiveFiltersOrSorting;
   const isCompactColumnSizingReady = useMemo(() => {
@@ -356,10 +334,7 @@ function useQueryTableState({
     initializedVisibilityRef.current = '';
   }, []);
 
-  const fieldNamesForGlobal = useMemo(
-    () => (globalFilter.trim() ? fieldNames : []),
-    [globalFilter, fieldNames],
-  );
+  const fieldNamesForGlobal = useMemo(() => (globalFilter.trim() ? fieldNames : []), [globalFilter, fieldNames]);
 
   const activeColumnFilters = useMemo(() => {
     return Object.entries(columnFilters)
@@ -456,10 +431,7 @@ export function useFilteredRef(excludeCol?: string): QueryRef {
     columnFilters,
     excludeCol,
   });
-  return useSql(
-    (t) => `SELECT * FROM ${t.base}${whereClause}`,
-    { base: queryParts.tableRef },
-  );
+  return useSql((t) => `SELECT * FROM ${t.base}${whereClause}`, { base: queryParts.tableRef });
 }
 
 export function QueryTableProvider({

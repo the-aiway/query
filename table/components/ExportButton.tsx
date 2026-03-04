@@ -2,14 +2,7 @@ import { Copy, Download, FileJson, FileType, Loader2 } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
 
 import { Button } from '../ui/Button';
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-  ContextMenuSeparator,
-  ContextMenuLabel,
-} from '../ui/ContextMenu';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator, ContextMenuLabel } from '../ui/ContextMenu';
 import { useQT } from './QueryTableContext';
 
 export function ExportButton({ disabled }: { disabled?: boolean }) {
@@ -17,10 +10,7 @@ export function ExportButton({ disabled }: { disabled?: boolean }) {
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleExport = useCallback(
-    async (
-      format: 'csv' | 'json' | 'parquet' | 'tsv',
-      mode: 'download' | 'clipboard' = 'download'
-    ) => {
+    async (format: 'csv' | 'json' | 'parquet' | 'tsv', mode: 'download' | 'clipboard' = 'download') => {
       if (!pool || queryParts.filteredRef.status === 'pending') return;
 
       setIsDownloading(true);
@@ -39,22 +29,14 @@ export function ExportButton({ disabled }: { disabled?: boolean }) {
 
         try {
           await pool.db.registerEmptyFileBuffer(exportFileName);
-          await pool.query(
-            `COPY (${fullSql}) TO '${exportFileName}' ${copyOptions}`,
-            []
-          );
+          await pool.query(`COPY (${fullSql}) TO '${exportFileName}' ${copyOptions}`, []);
           const fileBuffer = await pool.db.copyFileToBuffer(exportFileName);
 
           if (mode === 'clipboard') {
             const text = new TextDecoder().decode(fileBuffer);
             await navigator.clipboard.writeText(text);
           } else {
-            const mimeType =
-              format === 'csv' || format === 'tsv'
-                ? 'text/csv;charset=utf-8;'
-                : format === 'json'
-                  ? 'application/json;charset=utf-8;'
-                  : 'application/octet-stream';
+            const mimeType = format === 'csv' || format === 'tsv' ? 'text/csv;charset=utf-8;' : format === 'json' ? 'application/json;charset=utf-8;' : 'application/octet-stream';
 
             const blob = new Blob([fileBuffer as unknown as BlobPart], { type: mimeType });
             const url = URL.createObjectURL(blob);
@@ -84,19 +66,8 @@ export function ExportButton({ disabled }: { disabled?: boolean }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0 shrink-0"
-          onClick={() => void handleExport('csv')}
-          disabled={disabled || isDownloading}
-          title="Download (Right-click for options)"
-        >
-          {isDownloading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Download className="h-3.5 w-3.5" />
-          )}
+        <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" onClick={() => void handleExport('csv')} disabled={disabled || isDownloading} title="Download (Right-click for options)">
+          {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
         </Button>
       </ContextMenuTrigger>
       <ContextMenuContent alignOffset={-5}>

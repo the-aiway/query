@@ -5,12 +5,14 @@ A high-performance, feature-rich React data table component that brings SQL anal
 ## Features
 
 ### Data Handling
+
 - **Multiple Data Sources**: SQL queries, JSON arrays, Apache Arrow tables
 - **In-Browser SQL Analytics**: Full DuckDB SQL capabilities with zero backend setup
 - **Type-Aware Rendering**: Automatic formatting for dates, numbers, booleans, UUIDs, and nested structures
 - **Large Dataset Support**: Virtual scrolling and pagination for millions of rows
 
 ### Interactive Features
+
 - **Dynamic Filtering**: Global text search and column-specific filters (categorical & range)
 - **Column Management**: Show/hide, resize, pin, and reorder columns
 - **Sorting**: Click headers to sort data
@@ -18,12 +20,14 @@ A high-performance, feature-rich React data table component that brings SQL anal
 - **CSV Export**: Download filtered/sorted data
 
 ### Performance
+
 - **Virtual Scrolling**: Renders only visible rows using TanStack Virtual
 - **Connection Pooling**: Reuses DuckDB connections for optimal performance
 - **Smart Caching**: React Query integration with automatic deduplication
 - **Optimized Queries**: Page-based data fetching (1000 rows per page)
 
 ### Developer Experience
+
 - **TypeScript Native**: Full type inference for SQL queries
 - **Flexible API**: Simple for basic use, powerful for advanced scenarios
 - **Custom Cell Rendering**: Override default formatting with custom components
@@ -72,12 +76,7 @@ function App() {
 import { QueryTable, query } from 'query';
 
 function MyComponent() {
-  return (
-    <QueryTable
-      table={query('SELECT * FROM my_table WHERE status = ?', ['active'])}
-      height={600}
-    />
-  );
+  return <QueryTable table={query('SELECT * FROM my_table WHERE status = ?', ['active'])} height={600} />;
 }
 ```
 
@@ -117,21 +116,21 @@ function MyComponent() {
 
 ### `<QueryTable>` Props
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `table` | `DataTableSource \| string \| Record<string, unknown>[] \| Table` | - | Data source for the table |
-| `sql` | `string` | - | SQL query (legacy, use `table` instead) |
-| `params` | `unknown[]` | - | SQL parameters for parameterized queries |
-| `height` | `number` | - | Table height in pixels |
-| `rowHeight` | `number` | `35` | Height of each row in pixels |
-| `overscan` | `number` | `10` | Number of rows to render outside viewport |
-| `enableFilters` | `boolean` | `true` | Enable column filtering |
-| `showRowNumbers` | `boolean` | `false` | Show fixed row number column |
-| `colDefaultWidth` | `number` | `140` | Default column width |
-| `colMinWidth` | `number` | `80` | Minimum column width |
-| `colMaxWidth` | `number` | `180` | Maximum column width |
-| `getRowClassName` | `function` | - | Custom row className function |
-| `renderCell` | `function` | - | Custom cell renderer |
+| Prop              | Type                                                              | Default | Description                               |
+| ----------------- | ----------------------------------------------------------------- | ------- | ----------------------------------------- |
+| `table`           | `DataTableSource \| string \| Record<string, unknown>[] \| Table` | -       | Data source for the table                 |
+| `sql`             | `string`                                                          | -       | SQL query (legacy, use `table` instead)   |
+| `params`          | `unknown[]`                                                       | -       | SQL parameters for parameterized queries  |
+| `height`          | `number`                                                          | -       | Table height in pixels                    |
+| `rowHeight`       | `number`                                                          | `35`    | Height of each row in pixels              |
+| `overscan`        | `number`                                                          | `10`    | Number of rows to render outside viewport |
+| `enableFilters`   | `boolean`                                                         | `true`  | Enable column filtering                   |
+| `showRowNumbers`  | `boolean`                                                         | `false` | Show fixed row number column              |
+| `colDefaultWidth` | `number`                                                          | `140`   | Default column width                      |
+| `colMinWidth`     | `number`                                                          | `80`    | Minimum column width                      |
+| `colMaxWidth`     | `number`                                                          | `180`   | Maximum column width                      |
+| `getRowClassName` | `function`                                                        | -       | Custom row className function             |
+| `renderCell`      | `function`                                                        | -       | Custom cell renderer                      |
 
 ### Helper Functions
 
@@ -140,7 +139,7 @@ function MyComponent() {
 Creates a SQL data source with optional parameters.
 
 ```tsx
-query('SELECT * FROM users WHERE age > ?', [18])
+query('SELECT * FROM users WHERE age > ?', [18]);
 ```
 
 #### `fromJSON(data, tableName?)`
@@ -148,7 +147,7 @@ query('SELECT * FROM users WHERE age > ?', [18])
 Creates a data source from an array of objects.
 
 ```tsx
-fromJSON([{ id: 1, name: 'Alice' }], 'users')
+fromJSON([{ id: 1, name: 'Alice' }], 'users');
 ```
 
 ### Custom Cell Rendering
@@ -160,11 +159,7 @@ Override default cell rendering for specific use cases:
   table={query('SELECT * FROM products')}
   renderCell={({ colName, rawValue, display, type }) => {
     if (colName === 'status') {
-      return (
-        <span className={`status-${rawValue}`}>
-          {display}
-        </span>
-      );
+      return <span className={`status-${rawValue}`}>{display}</span>;
     }
     // Return undefined to use default rendering
     return undefined;
@@ -208,8 +203,10 @@ function UserList() {
 
   return (
     <ul>
-      {data?.map(user => (
-        <li key={user.id}>{user.name} - {user.email}</li>
+      {data?.map((user) => (
+        <li key={user.id}>
+          {user.name} - {user.email}
+        </li>
       ))}
     </ul>
   );
@@ -248,23 +245,14 @@ Load CSV, Parquet, or JSON files:
 import { useFile } from 'query';
 
 function FileAnalyzer() {
-  
   const {
     data: { name: tableName },
-    isLoading
-  } = useFile(
-    'sales_data',
-    'https://example.com/data.csv'
-  );
+    isLoading,
+  } = useFile('sales_data', 'https://example.com/data.csv');
 
   if (isLoading) return <div>Loading file...</div>;
 
-  return (
-    <QueryTable
-      table={query(`SELECT * FROM ${tableName}`)}
-      height={600}
-    />
-  );
+  return <QueryTable table={query(`SELECT * FROM ${tableName}`)} height={600} />;
 }
 ```
 
@@ -308,9 +296,7 @@ function TypedComponent() {
   // TypeScript knows the shape of data:
   // data: Array<{ id: number, name: string, email: string }>
 
-  return data?.map(user => (
-    <div key={user.id}>{user.name}</div>
-  ));
+  return data?.map((user) => <div key={user.id}>{user.name}</div>);
 }
 
 // Or use explicit type inference
@@ -373,14 +359,8 @@ Check out these common use cases:
 function Dashboard() {
   return (
     <div className="grid grid-cols-2 gap-4">
-      <QueryTable
-        table={query('SELECT date, SUM(revenue) as total FROM sales GROUP BY date')}
-        height={400}
-      />
-      <QueryTable
-        table={query('SELECT product, COUNT(*) as orders FROM sales GROUP BY product')}
-        height={400}
-      />
+      <QueryTable table={query('SELECT date, SUM(revenue) as total FROM sales GROUP BY date')} height={400} />
+      <QueryTable table={query('SELECT product, COUNT(*) as orders FROM sales GROUP BY product')} height={400} />
     </div>
   );
 }
@@ -394,11 +374,7 @@ function DataExplorer() {
 
   return (
     <div>
-      <textarea
-        value={sqlQuery}
-        onChange={(e) => setSqlQuery(e.target.value)}
-        className="w-full mb-4"
-      />
+      <textarea value={sqlQuery} onChange={(e) => setSqlQuery(e.target.value)} className="mb-4 w-full" />
       <QueryTable table={query(sqlQuery)} height={600} />
     </div>
   );
@@ -422,6 +398,7 @@ MIT — see [LICENSE](./LICENSE) for details.
 ## Support
 
 For issues and questions:
+
 - Open an issue on GitHub
 - Check existing discussions
 - Review the API documentation above

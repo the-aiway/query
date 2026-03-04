@@ -64,7 +64,14 @@ export class DumpLogger implements Logger {
       const match = value.match(/^--:re:(\w+):([\w-]+)/);
       const [tag, retype, reslug] = match || [];
       const query = tag ? value.replace(tag, '').trim() : value;
-      const state = { start: performance.now(), query, localId: this.count++, retype, reslug, timer: null as any };
+      const state = {
+        start: performance.now(),
+        query,
+        localId: this.count++,
+        retype,
+        reslug,
+        timer: null as any,
+      };
 
       state.timer = setTimeout(() => {
         const { fmt, args } = this.formatHeader(state, 0);
@@ -87,7 +94,7 @@ export class DumpLogger implements Logger {
       let previewFmt = '%c' + preview.text;
       let previewArgs = ['color: inherit'];
       const pool = typeof window === 'undefined' ? undefined : (window as Window & { pool?: ConnectionPool }).pool;
-      const tokenizeFn = pool?.db?.tokenize?.bind(pool.db) as AsyncDuckDB['tokenize'] | undefined;
+      const tokenizeFn = pool?.db?.tokenize?.bind(pool.db);
 
       if (tokenizeFn) {
         try {
@@ -134,8 +141,15 @@ export class DumpLogger implements Logger {
   }
 
   private preview(sql: string) {
-    const HEAD_CHARS = 60;
-    const TAIL_CHARS = 60;
+    let maxChars = 120;
+    if (typeof window !== 'undefined') {
+      // Heuristic for console character width (9px) minus header and padding
+      maxChars = Math.floor(window.innerWidth / 9) - 45;
+    }
+
+    const half = Math.max(20, Math.floor(maxChars / 2));
+    const HEAD_CHARS = half;
+    const TAIL_CHARS = half;
     const ELLIPSIS = ' ... ';
     const isCompact = sql.length > HEAD_CHARS + TAIL_CHARS + ELLIPSIS.length;
     const head = isCompact ? sql.slice(0, HEAD_CHARS) : sql;
@@ -144,12 +158,7 @@ export class DumpLogger implements Logger {
     return { text, head, tail, isCompact };
   }
 
-  private pushTokenizedPreview(
-    fmtParts: string[],
-    argParts: string[],
-    sql: string,
-    tokens: Awaited<ReturnType<AsyncDuckDB['tokenize']>>,
-  ) {
+  private pushTokenizedPreview(fmtParts: string[], argParts: string[], sql: string, tokens: Awaited<ReturnType<AsyncDuckDB['tokenize']>>) {
     tokens.offsets.forEach((offset: number, i: number) => {
       const nextOffset = tokens.offsets[i + 1] ?? sql.length;
       fmtParts.push('%c' + sql.substring(offset, nextOffset));
@@ -177,4 +186,3 @@ export class DumpLogger implements Logger {
     };
   }
 }
-

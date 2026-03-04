@@ -17,10 +17,10 @@ function useColumnStats(col: string | null, isInteger: boolean) {
   const baseFiltered = useFilteredRef(col ?? undefined);
   const colIdent = col ? quoteIdent(col) : '';
 
-  const filtered = useSql(
-    (t) => `SELECT * FROM ${t.base} WHERE ${t.raw.colIdent} IS NOT NULL`,
-    { base: baseFiltered, colIdent },
-  );
+  const filtered = useSql((t) => `SELECT * FROM ${t.base} WHERE ${t.raw.colIdent} IS NOT NULL`, {
+    base: baseFiltered,
+    colIdent,
+  });
 
   const stats = useSql(
     (t) => `SELECT
@@ -29,7 +29,7 @@ function useColumnStats(col: string | null, isInteger: boolean) {
       quantile_cont(${t.raw.colIdent}, 0.01) as p01, quantile_cont(${t.raw.colIdent}, 0.90) as p90,
       quantile_cont(${t.raw.colIdent}, 0.99) as p99, COUNT(*)::BIGINT as total
       FROM ${t.filtered}`,
-    { filtered, colIdent },
+    { filtered, colIdent }
   );
 
   const hist = useSql(
@@ -45,14 +45,14 @@ function useColumnStats(col: string | null, isInteger: boolean) {
           END as bucket, COUNT(*)::BIGINT as cnt
           FROM ${t.filtered}, ${t.stats} s
           GROUP BY 1`,
-    { filtered, stats, colIdent, buckets: FLOAT_BUCKETS, bucketsPlus1: FLOAT_BUCKETS + 1 },
+    { filtered, stats, colIdent, buckets: FLOAT_BUCKETS, bucketsPlus1: FLOAT_BUCKETS + 1 }
   );
 
   return useSql(
     (t) => `SELECT s.min_val, s.max_val, s.avg_val, s.median_val, s.p01, s.p90, s.p99, s.total, h.bucket, h.cnt
       FROM ${t.stats} s, ${t.hist} h
       ORDER BY h.bucket`,
-    { stats, hist },
+    { stats, hist }
   );
 }
 
@@ -139,10 +139,7 @@ function processStatsRows(rows: Record<string, unknown>[], isInteger: boolean): 
       count: 0,
     }));
     for (const v of rawValues) {
-      const idx = Math.min(
-        FLOAT_BUCKETS - 1,
-        Math.max(0, Math.floor(((v.value - min) / (max - min)) * FLOAT_BUCKETS)),
-      );
+      const idx = Math.min(FLOAT_BUCKETS - 1, Math.max(0, Math.floor(((v.value - min) / (max - min)) * FLOAT_BUCKETS)));
       histogram[idx]!.count += v.count;
     }
     return { ...base, histogram, discrete: false, discreteValues: null };
@@ -166,18 +163,8 @@ function processStatsRows(rows: Record<string, unknown>[], isInteger: boolean): 
   return { ...base, histogram, discrete: false, discreteValues: null };
 }
 
-function RangeFilterContent({
-  stats,
-  isInteger,
-  col,
-  colType,
-}: {
-  stats: ColumnStatsData;
-  isInteger: boolean;
-  col: string;
-  colType: string;
-}) {
-  const { columnFilters, onChangeFilter, } = useQT();
+function RangeFilterContent({ stats, isInteger, col, colType }: { stats: ColumnStatsData; isInteger: boolean; col: string; colType: string }) {
+  const { columnFilters, onChangeFilter } = useQT();
   const filterValue = columnFilters[col];
 
   const committedRange = useMemo(() => {
@@ -234,18 +221,11 @@ function RangeFilterContent({
     }
   };
 
-  const currentRange =
-    sliderPos && sliderPos.length === 2
-      ? ([posToVal(sliderPos[0]), posToVal(sliderPos[1])] as [number, number])
-      : (committedRange ?? ([stats.min, stats.max] as [number, number]));
+  const currentRange = sliderPos && sliderPos.length === 2 ? ([posToVal(sliderPos[0]), posToVal(sliderPos[1])] as [number, number]) : (committedRange ?? ([stats.min, stats.max] as [number, number]));
 
-  const displayFrom = currentRange
-    ? isInteger ? Math.round(currentRange[0]) : Math.round(currentRange[0] * 100) / 100
-    : isInteger ? Math.round(stats.min) : Math.round(stats.min * 100) / 100;
+  const displayFrom = currentRange ? (isInteger ? Math.round(currentRange[0]) : Math.round(currentRange[0] * 100) / 100) : isInteger ? Math.round(stats.min) : Math.round(stats.min * 100) / 100;
 
-  const displayTo = currentRange
-    ? isInteger ? Math.round(currentRange[1]) : Math.round(currentRange[1] * 100) / 100
-    : isInteger ? Math.round(stats.max) : Math.round(stats.max * 100) / 100;
+  const displayTo = currentRange ? (isInteger ? Math.round(currentRange[1]) : Math.round(currentRange[1] * 100) / 100) : isInteger ? Math.round(stats.max) : Math.round(stats.max * 100) / 100;
 
   const [hoveredBin, setHoveredBin] = useState<null | { label: string; count: number }>(null);
 
@@ -261,57 +241,35 @@ function RangeFilterContent({
             ['max', stats.max_val],
           ] as const
         ).map(([k, v]) => (
-          <div key={k} className="rounded-md border bg-background/40 px-2 py-1">
-            <div className="text-[10px] text-muted-foreground uppercase">{k}</div>
-            <div className="text-[11px] font-semibold tabular-nums">
-              {fmtNum(v)}
-            </div>
+          <div key={k} className="bg-background/40 rounded-md border px-2 py-1">
+            <div className="text-muted-foreground text-[10px] uppercase">{k}</div>
+            <div className="text-[11px] font-semibold tabular-nums">{fmtNum(v)}</div>
           </div>
         ))}
       </div>
 
-      <div className="rounded-lg border bg-background/40 p-2 relative">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-[10px] text-muted-foreground uppercase">
-            distribution (log)
-          </div>
-          <div className="text-[10px] text-muted-foreground">
-            non-null: {stats.total.toLocaleString()}
-          </div>
+      <div className="bg-background/40 relative rounded-lg border p-2">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-muted-foreground text-[10px] uppercase">distribution (log)</div>
+          <div className="text-muted-foreground text-[10px]">non-null: {stats.total.toLocaleString()}</div>
         </div>
 
-        <Histogram
-          stats={stats}
-          currentRange={currentRange}
-          sliderPos={sliderPos}
-          fmtNum={fmtNum}
-          hoveredBin={hoveredBin}
-          setHoveredBin={setHoveredBin}
-        />
+        <Histogram stats={stats} currentRange={currentRange} sliderPos={sliderPos} fmtNum={fmtNum} hoveredBin={hoveredBin} setHoveredBin={setHoveredBin} />
       </div>
 
-      <div className="rounded-lg border bg-background/40 p-2 space-y-2">
+      <div className="bg-background/40 space-y-2 rounded-lg border p-2">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-[10px] text-muted-foreground uppercase">range</div>
-          <div className="text-[10px] text-muted-foreground">
+          <div className="text-muted-foreground text-[10px] uppercase">range</div>
+          <div className="text-muted-foreground text-[10px]">
             avg: {fmtNum(stats.avg)} · total: {stats.total.toLocaleString()}
           </div>
         </div>
 
-        <div className="pt-2 border-t">
-          <Slider
-            min={0}
-            max={100}
-            step={0.1}
-            value={sliderPos ?? [0, 100]}
-            onValueChange={handleRangeChange}
-            onValueCommit={handleRangeCommit}
-          />
+        <div className="border-t pt-2">
+          <Slider min={0} max={100} step={0.1} value={sliderPos ?? [0, 100]} onValueChange={handleRangeChange} onValueCommit={handleRangeCommit} />
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <div className="text-[10px] text-muted-foreground uppercase">
-                from
-              </div>
+              <div className="text-muted-foreground text-[10px] uppercase">from</div>
               <Input
                 type="number"
                 step={isInteger ? 1 : 0.01}
@@ -321,8 +279,7 @@ function RangeFilterContent({
                   if (!Number.isNaN(val)) {
                     const rounded = normalizeValue(val);
                     const pos0 = valToPos(rounded);
-                    const pos1 =
-                      sliderPos?.[1] ?? valToPos(committedRange?.[1] ?? stats.max);
+                    const pos1 = sliderPos?.[1] ?? valToPos(committedRange?.[1] ?? stats.max);
                     const newPos: [number, number] = [pos0, pos1];
                     setSliderPos(newPos);
                     handleRangeCommit(newPos);
@@ -332,9 +289,7 @@ function RangeFilterContent({
               />
             </div>
             <div className="space-y-1">
-              <div className="text-[10px] text-muted-foreground uppercase text-right">
-                to
-              </div>
+              <div className="text-muted-foreground text-right text-[10px] uppercase">to</div>
               <Input
                 type="number"
                 step={isInteger ? 1 : 0.01}
@@ -343,15 +298,14 @@ function RangeFilterContent({
                   const val = Number(e.target.value);
                   if (!Number.isNaN(val)) {
                     const rounded = normalizeValue(val);
-                    const pos0 =
-                      sliderPos?.[0] ?? valToPos(committedRange?.[0] ?? stats.min);
+                    const pos0 = sliderPos?.[0] ?? valToPos(committedRange?.[0] ?? stats.min);
                     const pos1 = valToPos(rounded);
                     const newPos: [number, number] = [pos0, pos1];
                     setSliderPos(newPos);
                     handleRangeCommit(newPos);
                   }
                 }}
-                className="h-8 text-xs text-right"
+                className="h-8 text-right text-xs"
               />
             </div>
           </div>
@@ -361,22 +315,8 @@ function RangeFilterContent({
   );
 }
 
-export function RangeFilter({
-  col,
-  icon,
-  triggerClassName,
-}: {
-  col: string;
-  icon: React.ReactNode;
-  triggerClassName?: string;
-}) {
-  const {
-    schema,
-    columnFilters,
-    onClearCol,
-    openFilterCol,
-    onOpenFilterCol,
-  } = useQT();
+export function RangeFilter({ col, icon, triggerClassName }: { col: string; icon: React.ReactNode; triggerClassName?: string }) {
+  const { schema, columnFilters, onClearCol, openFilterCol, onOpenFilterCol } = useQT();
 
   const open = openFilterCol === col;
   const filterValue = columnFilters[col];
@@ -387,10 +327,7 @@ export function RangeFilter({
   }, [schema, col]);
 
   const isInteger = INT_TYPES.test(colType);
-  const formatValue = (value: number) =>
-    isInteger
-      ? Math.round(value).toLocaleString()
-      : value.toFixed(2);
+  const formatValue = (value: number) => (isInteger ? Math.round(value).toLocaleString() : value.toFixed(2));
 
   const statsRef = useColumnStats(col, isInteger);
 
@@ -399,50 +336,31 @@ export function RangeFilter({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={`relative h-6 w-6 inline-flex items-center justify-center rounded border border-border bg-background/40 backdrop-blur hover:bg-background/60 ${triggerClassName ?? ''}`}
-          title={
-            filterValue && isRangeFilter(filterValue)
-              ? `Filter [${formatValue(filterValue.$between[0])}, ${formatValue(filterValue.$between[1])}]`
-              : 'Filter values'
-          }
+          className={`border-border bg-background/40 hover:bg-background/60 relative inline-flex h-6 w-6 items-center justify-center rounded border backdrop-blur ${triggerClassName ?? ''}`}
+          title={filterValue && isRangeFilter(filterValue) ? `Filter [${formatValue(filterValue.$between[0])}, ${formatValue(filterValue.$between[1])}]` : 'Filter values'}
           onClick={(e) => e.stopPropagation()}
         >
           {icon}
-          {filterValue && (
-            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-mono leading-4 text-center">
-              R
-            </span>
-          )}
+          {filterValue && <span className="bg-primary text-primary-foreground absolute -top-1 -right-1 h-4 min-w-4 rounded-full px-1 text-center font-mono text-[10px] leading-4">R</span>}
         </button>
       </PopoverTrigger>
 
-      <PopoverContent
-        align="start"
-        side="bottom"
-        className="w-[420px] p-3 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <div className="flex items-start justify-between gap-3 mb-3">
+      <PopoverContent align="start" side="bottom" className="bg-background/95 supports-backdrop-filter:bg-background/80 w-[420px] p-3 backdrop-blur" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs font-semibold truncate">{col}</div>
-            <div className="mt-1 text-[10px] text-muted-foreground">
-              {filterValue && isRangeFilter(filterValue)
-                ? `${formatValue(filterValue.$between[0])} → ${formatValue(filterValue.$between[1])}`
-                : 'no range filter'}
+            <div className="truncate text-xs font-semibold">{col}</div>
+            <div className="text-muted-foreground mt-1 text-[10px]">
+              {filterValue && isRangeFilter(filterValue) ? `${formatValue(filterValue.$between[0])} → ${formatValue(filterValue.$between[1])}` : 'no range filter'}
               {colType && <span className="ml-2 opacity-60">({colType})</span>}
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] text-muted-foreground hover:text-foreground"
-              onClick={() => onClearCol(col)}
-            >
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" className="bg-background/60 hover:bg-background text-muted-foreground hover:text-foreground h-7 rounded border px-2 text-[11px]" onClick={() => onClearCol(col)}>
               clear
             </button>
             <button
               type="button"
-              className="h-7 px-2 rounded border bg-background/60 hover:bg-background text-[11px] text-muted-foreground hover:text-foreground"
+              className="bg-background/60 hover:bg-background text-muted-foreground hover:text-foreground h-7 rounded border px-2 text-[11px]"
               onClick={() => onOpenFilterCol(null)}
             >
               close
@@ -450,14 +368,10 @@ export function RangeFilter({
           </div>
         </div>
 
-        <Materialize
-          source={{ raw: statsRef }}
-          disabled={!open}
-          fallback={<div className="text-xs text-muted-foreground font-mono">loading…</div>}
-        >
+        <Materialize source={{ raw: statsRef }} disabled={!open} fallback={<div className="text-muted-foreground font-mono text-xs">loading…</div>}>
           {({ raw }) => {
             const stats = processStatsRows(raw as Record<string, unknown>[], isInteger);
-            if (!stats) return <div className="text-xs text-muted-foreground font-mono">Stats not available</div>;
+            if (!stats) return <div className="text-muted-foreground font-mono text-xs">Stats not available</div>;
             return <RangeFilterContent stats={stats} isInteger={isInteger} col={col} colType={colType} />;
           }}
         </Materialize>
@@ -524,44 +438,18 @@ function DiscreteHistogram({
 }) {
   const n = values.length;
   const maxLog = Math.max(1, ...values.map((d) => Math.log(d.count + 1)));
-  const [r0, r1] =
-    currentRange[0] <= currentRange[1] ? currentRange : [currentRange[1], currentRange[0]];
+  const [r0, r1] = currentRange[0] <= currentRange[1] ? currentRange : [currentRange[1], currentRange[0]];
 
-  const selPos =
-    sliderPos && sliderPos.length === 2
-      ? ([Math.min(sliderPos[0], sliderPos[1]), Math.max(sliderPos[0], sliderPos[1])] as [
-          number,
-          number,
-        ])
-      : ([0, 100] as [number, number]);
+  const selPos = sliderPos && sliderPos.length === 2 ? ([Math.min(sliderPos[0], sliderPos[1]), Math.max(sliderPos[0], sliderPos[1])] as [number, number]) : ([0, 100] as [number, number]);
 
   const barWidth = 100 / n;
   const gap = Math.min(barWidth * 0.15, 1.5);
 
   return (
     <>
-      <svg
-        viewBox="0 0 100 44"
-        className="w-full h-[160px] block"
-        preserveAspectRatio="none"
-        onMouseLeave={() => setHoveredBin(null)}
-      >
-        <line
-          x1="0"
-          y1="39.5"
-          x2="100"
-          y2="39.5"
-          stroke="hsl(var(--border))"
-          strokeWidth="0.5"
-        />
-        <rect
-          x={selPos[0]}
-          y="0"
-          width={Math.max(0.1, selPos[1] - selPos[0])}
-          height="40"
-          fill="hsl(var(--primary))"
-          fillOpacity="0.06"
-        />
+      <svg viewBox="0 0 100 44" className="block h-[160px] w-full" preserveAspectRatio="none" onMouseLeave={() => setHoveredBin(null)}>
+        <line x1="0" y1="39.5" x2="100" y2="39.5" stroke="hsl(var(--border))" strokeWidth="0.5" />
+        <rect x={selPos[0]} y="0" width={Math.max(0.1, selPos[1] - selPos[0])} height="40" fill="hsl(var(--primary))" fillOpacity="0.06" />
 
         {values.map((d, i) => {
           const logCount = Math.log(d.count + 1);
@@ -573,19 +461,7 @@ function DiscreteHistogram({
           const fill = inRange ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))';
           const opacity = inRange ? 0.9 : 0.18;
           return (
-            <rect
-              key={d.value}
-              x={x}
-              y={y}
-              width={w}
-              height={h}
-              fill={fill}
-              fillOpacity={opacity}
-              rx="0.6"
-              onMouseMove={() =>
-                setHoveredBin({ label: String(d.value), count: d.count })
-              }
-            >
+            <rect key={d.value} x={x} y={y} width={w} height={h} fill={fill} fillOpacity={opacity} rx="0.6" onMouseMove={() => setHoveredBin({ label: String(d.value), count: d.count })}>
               <title>{`${d.value}\n${d.count.toLocaleString()} rows`}</title>
             </rect>
           );
@@ -595,15 +471,7 @@ function DiscreteHistogram({
           values.map((d, i) => {
             const cx = i * barWidth + barWidth / 2;
             return (
-              <text
-                key={`label-${d.value}`}
-                x={cx}
-                y="43"
-                textAnchor="middle"
-                fill="hsl(var(--muted-foreground))"
-                fontSize="2.8"
-                fontFamily="monospace"
-              >
+              <text key={`label-${d.value}`} x={cx} y="43" textAnchor="middle" fill="hsl(var(--muted-foreground))" fontSize="2.8" fontFamily="monospace">
                 {d.value}
               </text>
             );
@@ -611,14 +479,9 @@ function DiscreteHistogram({
       </svg>
 
       {hoveredBin && (
-        <div
-          className="pointer-events-none absolute z-50 rounded-md border bg-popover px-2 py-1 shadow-sm"
-          style={{ left: 8, top: 8 }}
-        >
-          <div className="text-[10px] font-mono text-muted-foreground">value {hoveredBin.label}</div>
-          <div className="text-[11px] font-mono font-semibold">
-            {hoveredBin.count.toLocaleString()} rows
-          </div>
+        <div className="bg-popover pointer-events-none absolute z-50 rounded-md border px-2 py-1 shadow-sm" style={{ left: 8, top: 8 }}>
+          <div className="text-muted-foreground font-mono text-[10px]">value {hoveredBin.label}</div>
+          <div className="font-mono text-[11px] font-semibold">{hoveredBin.count.toLocaleString()} rows</div>
         </div>
       )}
     </>
@@ -644,20 +507,10 @@ function ContinuousHistogram({
 }) {
   const bucketCount = Math.max(1, histogram.length);
   const width = (stats.max - stats.min) / bucketCount;
-  const maxLog = Math.max(
-    1,
-    ...histogram.map((d) => Math.log(d.count + 1)),
-  );
-  const [r0, r1] =
-    currentRange[0] <= currentRange[1] ? currentRange : [currentRange[1], currentRange[0]];
+  const maxLog = Math.max(1, ...histogram.map((d) => Math.log(d.count + 1)));
+  const [r0, r1] = currentRange[0] <= currentRange[1] ? currentRange : [currentRange[1], currentRange[0]];
 
-  const selPos =
-    sliderPos && sliderPos.length === 2
-      ? ([Math.min(sliderPos[0], sliderPos[1]), Math.max(sliderPos[0], sliderPos[1])] as [
-          number,
-          number,
-        ])
-      : ([0, 100] as [number, number]);
+  const selPos = sliderPos && sliderPos.length === 2 ? ([Math.min(sliderPos[0], sliderPos[1]), Math.max(sliderPos[0], sliderPos[1])] as [number, number]) : ([0, 100] as [number, number]);
 
   const linePoints = histogram
     .map((d) => {
@@ -669,44 +522,11 @@ function ContinuousHistogram({
 
   return (
     <>
-      <svg
-        viewBox="0 0 100 40"
-        className="w-full h-[160px] block"
-        preserveAspectRatio="none"
-        onMouseLeave={() => setHoveredBin(null)}
-      >
-        <line
-          x1="0"
-          y1="39.5"
-          x2="100"
-          y2="39.5"
-          stroke="hsl(var(--border))"
-          strokeWidth="0.5"
-        />
-        <rect
-          x={selPos[0]}
-          y="0"
-          width={Math.max(0.1, selPos[1] - selPos[0])}
-          height="40"
-          fill="hsl(var(--primary))"
-          fillOpacity="0.06"
-        />
-        <rect
-          x={selPos[0]}
-          y="0"
-          width="0.4"
-          height="40"
-          fill="hsl(var(--primary))"
-          fillOpacity="0.35"
-        />
-        <rect
-          x={selPos[1] - 0.4}
-          y="0"
-          width="0.4"
-          height="40"
-          fill="hsl(var(--primary))"
-          fillOpacity="0.35"
-        />
+      <svg viewBox="0 0 100 40" className="block h-[160px] w-full" preserveAspectRatio="none" onMouseLeave={() => setHoveredBin(null)}>
+        <line x1="0" y1="39.5" x2="100" y2="39.5" stroke="hsl(var(--border))" strokeWidth="0.5" />
+        <rect x={selPos[0]} y="0" width={Math.max(0.1, selPos[1] - selPos[0])} height="40" fill="hsl(var(--primary))" fillOpacity="0.06" />
+        <rect x={selPos[0]} y="0" width="0.4" height="40" fill="hsl(var(--primary))" fillOpacity="0.35" />
+        <rect x={selPos[1] - 0.4} y="0" width="0.4" height="40" fill="hsl(var(--primary))" fillOpacity="0.35" />
 
         {histogram.map((d) => {
           const x0 = (d.bin / bucketCount) * 100;
@@ -742,24 +562,13 @@ function ContinuousHistogram({
           );
         })}
 
-        <polyline
-          points={linePoints}
-          fill="none"
-          stroke="hsl(var(--primary))"
-          strokeOpacity="0.45"
-          strokeWidth="0.6"
-        />
+        <polyline points={linePoints} fill="none" stroke="hsl(var(--primary))" strokeOpacity="0.45" strokeWidth="0.6" />
       </svg>
 
       {hoveredBin && (
-        <div
-          className="pointer-events-none absolute z-50 rounded-md border bg-popover px-2 py-1 shadow-sm"
-          style={{ left: 8, top: 8 }}
-        >
-          <div className="text-[10px] font-mono text-muted-foreground">{hoveredBin.label}</div>
-          <div className="text-[11px] font-mono font-semibold">
-            {hoveredBin.count.toLocaleString()} rows
-          </div>
+        <div className="bg-popover pointer-events-none absolute z-50 rounded-md border px-2 py-1 shadow-sm" style={{ left: 8, top: 8 }}>
+          <div className="text-muted-foreground font-mono text-[10px]">{hoveredBin.label}</div>
+          <div className="font-mono text-[11px] font-semibold">{hoveredBin.count.toLocaleString()} rows</div>
         </div>
       )}
     </>

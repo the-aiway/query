@@ -51,7 +51,7 @@ type TabContextValue = {
   activeTabId: string | null;
   activeTab: Tab | undefined;
   preview: PreviewState | null;
-  
+
   setActiveTabId: (id: string) => void;
   createCustomTab: (sql: string) => void;
   setPreviewRef: (source: QueryRef, label: string) => void;
@@ -59,9 +59,9 @@ type TabContextValue = {
   clearPreview: () => void;
   updateCustomTab: (tabId: string, sql: string) => void;
   deleteCustomTab: (tabId: string) => void;
-  
+
   onSqlEdit: (sql: string) => void;
-  
+
   tableState: TableState;
   setTableState: <K extends keyof TableState>(key: K, value: TableState[K]) => void;
   resetTableState: () => void;
@@ -104,7 +104,7 @@ export function TabProvider({ children, sourceTabs }: TabProviderProps) {
 
   const tabs = useMemo<Tab[]>(() => {
     const result: Tab[] = [];
-    
+
     for (const { key, ref } of sourceTabs) {
       result.push({
         id: `source:${key}`,
@@ -113,7 +113,7 @@ export function TabProvider({ children, sourceTabs }: TabProviderProps) {
         source: ref,
       });
     }
-    
+
     for (const tab of customTabs) {
       result.push({
         id: `custom:${tab.id}`,
@@ -122,13 +122,11 @@ export function TabProvider({ children, sourceTabs }: TabProviderProps) {
         sql: tab.sql,
       });
     }
-    
+
     return result;
   }, [sourceTabs, customTabs]);
 
-  const activeTabId = tabs.some((t) => t.id === selectedTabId)
-    ? selectedTabId
-    : (tabs[0]?.id ?? null);
+  const activeTabId = tabs.some((t) => t.id === selectedTabId) ? selectedTabId : (tabs[0]?.id ?? null);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -142,16 +140,19 @@ export function TabProvider({ children, sourceTabs }: TabProviderProps) {
     setPreview(null);
   }, []);
 
-  const createCustomTab = useCallback((sql: string) => {
-    const newTab: CustomSqlTab = {
-      id: Date.now().toString(),
-      label: `Custom SQL ${customTabs.length + 1}`,
-      sql,
-      createdAt: Date.now(),
-    };
-    setCustomTabs((prev) => [...prev, newTab]);
-    setSelectedTabId(`custom:${newTab.id}`);
-  }, [customTabs.length]);
+  const createCustomTab = useCallback(
+    (sql: string) => {
+      const newTab: CustomSqlTab = {
+        id: Date.now().toString(),
+        label: `Custom SQL ${customTabs.length + 1}`,
+        sql,
+        createdAt: Date.now(),
+      };
+      setCustomTabs((prev) => [...prev, newTab]);
+      setSelectedTabId(`custom:${newTab.id}`);
+    },
+    [customTabs.length]
+  );
 
   const setPreviewRef = useCallback((source: QueryRef, label: string) => {
     setPreview({ label, source, sql: null, nonce: ++nonceRef.current });
@@ -169,39 +170,48 @@ export function TabProvider({ children, sourceTabs }: TabProviderProps) {
     setCustomTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, sql } : t)));
   }, []);
 
-  const deleteCustomTab = useCallback((tabId: string) => {
-    setCustomTabs((prev) => prev.filter((t) => t.id !== tabId));
-    const deletedId = `custom:${tabId}`;
-    setTableStateByTab((prev) => {
-      const next = { ...prev };
-      delete next[deletedId];
-      return next;
-    });
-    if (selectedTabId === deletedId) {
-      setSelectedTabId(tabs[0]?.id ?? null);
-    }
-  }, [selectedTabId, tabs]);
+  const deleteCustomTab = useCallback(
+    (tabId: string) => {
+      setCustomTabs((prev) => prev.filter((t) => t.id !== tabId));
+      const deletedId = `custom:${tabId}`;
+      setTableStateByTab((prev) => {
+        const next = { ...prev };
+        delete next[deletedId];
+        return next;
+      });
+      if (selectedTabId === deletedId) {
+        setSelectedTabId(tabs[0]?.id ?? null);
+      }
+    },
+    [selectedTabId, tabs]
+  );
 
-  const onSqlEdit = useCallback((sql: string) => {
-    if (!activeTab) return;
-    if (activeTab.type === 'custom') {
-      const customTabId = activeTab.id.replace('custom:', '');
-      updateCustomTab(customTabId, sql);
-    } else {
-      createCustomTab(sql);
-    }
-  }, [activeTab, updateCustomTab, createCustomTab]);
+  const onSqlEdit = useCallback(
+    (sql: string) => {
+      if (!activeTab) return;
+      if (activeTab.type === 'custom') {
+        const customTabId = activeTab.id.replace('custom:', '');
+        updateCustomTab(customTabId, sql);
+      } else {
+        createCustomTab(sql);
+      }
+    },
+    [activeTab, updateCustomTab, createCustomTab]
+  );
 
-  const setTableState = useCallback(<K extends keyof TableState>(key: K, value: TableState[K]) => {
-    if (!activeTabId) return;
-    setTableStateByTab((prev) => ({
-      ...prev,
-      [activeTabId]: {
-        ...(prev[activeTabId] ?? createDefaultTableState()),
-        [key]: value,
-      },
-    }));
-  }, [activeTabId]);
+  const setTableState = useCallback(
+    <K extends keyof TableState>(key: K, value: TableState[K]) => {
+      if (!activeTabId) return;
+      setTableStateByTab((prev) => ({
+        ...prev,
+        [activeTabId]: {
+          ...(prev[activeTabId] ?? createDefaultTableState()),
+          [key]: value,
+        },
+      }));
+    },
+    [activeTabId]
+  );
 
   const resetTableState = useCallback(() => {
     if (!activeTabId) return;
@@ -212,23 +222,42 @@ export function TabProvider({ children, sourceTabs }: TabProviderProps) {
     });
   }, [activeTabId]);
 
-  const value = useMemo<TabContextValue>(() => ({
-    tabs,
-    activeTabId,
-    activeTab,
-    preview,
-    setActiveTabId,
-    createCustomTab,
-    setPreviewRef,
-    setPreviewSql,
-    clearPreview,
-    updateCustomTab,
-    deleteCustomTab,
-    onSqlEdit,
-    tableState,
-    setTableState,
-    resetTableState,
-  }), [tabs, activeTabId, activeTab, preview, setActiveTabId, createCustomTab, setPreviewRef, setPreviewSql, clearPreview, updateCustomTab, deleteCustomTab, onSqlEdit, tableState, setTableState, resetTableState]);
+  const value = useMemo<TabContextValue>(
+    () => ({
+      tabs,
+      activeTabId,
+      activeTab,
+      preview,
+      setActiveTabId,
+      createCustomTab,
+      setPreviewRef,
+      setPreviewSql,
+      clearPreview,
+      updateCustomTab,
+      deleteCustomTab,
+      onSqlEdit,
+      tableState,
+      setTableState,
+      resetTableState,
+    }),
+    [
+      tabs,
+      activeTabId,
+      activeTab,
+      preview,
+      setActiveTabId,
+      createCustomTab,
+      setPreviewRef,
+      setPreviewSql,
+      clearPreview,
+      updateCustomTab,
+      deleteCustomTab,
+      onSqlEdit,
+      tableState,
+      setTableState,
+      resetTableState,
+    ]
+  );
 
   return <TabContext.Provider value={value}>{children}</TabContext.Provider>;
 }

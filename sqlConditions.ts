@@ -1,15 +1,5 @@
 export type SqlValue = string | number | boolean | string[] | number[] | null | undefined;
-export type SqlOperator =
-  | '$in'
-  | '$between'
-  | '$gte'
-  | '$lte'
-  | '$gt'
-  | '$lt'
-  | '$eq'
-  | '$neq'
-  | '$like'
-  | '$ilike';
+export type SqlOperator = '$in' | '$between' | '$gte' | '$lte' | '$gt' | '$lt' | '$eq' | '$neq' | '$like' | '$ilike';
 export type SqlConditionValue = SqlValue | Partial<Record<SqlOperator, SqlValue>>;
 
 const formatValue = (v: unknown): string => {
@@ -21,8 +11,7 @@ const formatValue = (v: unknown): string => {
 export function sqlConditions(conditions: Record<string, SqlConditionValue>): string {
   const parts = Object.entries(conditions)
     .map(([column, condition]) => {
-      if (condition === undefined || condition === null || condition === false || condition === '')
-        return null;
+      if (condition === undefined || condition === null || condition === false || condition === '') return null;
 
       if (typeof condition !== 'object' || Array.isArray(condition)) {
         if (Array.isArray(condition)) {
@@ -84,13 +73,13 @@ export function buildWhere(conditions: Record<string, SqlConditionValue>): strin
 
 type ScalarValue = string | number | boolean | null | undefined;
 
-export const eq = (col: string, val: ScalarValue): string => val == null ? `${col} IS NULL` : `${col} = ${formatValue(val)}`;
-export const neq = (col: string, val: ScalarValue): string => val == null ? `${col} IS NOT NULL` : `${col} <> ${formatValue(val)}`;
+export const eq = (col: string, val: ScalarValue): string => (val == null ? `${col} IS NULL` : `${col} = ${formatValue(val)}`);
+export const neq = (col: string, val: ScalarValue): string => (val == null ? `${col} IS NOT NULL` : `${col} <> ${formatValue(val)}`);
 export const gt = (col: string, val: ScalarValue): string => `${col} > ${formatValue(val)}`;
 export const gte = (col: string, val: ScalarValue): string => `${col} >= ${formatValue(val)}`;
 export const lt = (col: string, val: ScalarValue): string => `${col} < ${formatValue(val)}`;
 export const lte = (col: string, val: ScalarValue): string => `${col} <= ${formatValue(val)}`;
 export const between = (col: string, a: ScalarValue, b: ScalarValue): string => `${col} BETWEEN ${formatValue(a)} AND ${formatValue(b)}`;
-export const $in = (col: string, vals: (string | number)[]): string => vals.length === 0 ? 'FALSE' : `${col} IN (${vals.map(formatValue).join(',')})`;
+export const $in = (col: string, vals: (string | number)[]): string => (vals.length === 0 ? 'FALSE' : `${col} IN (${vals.map(formatValue).join(',')})`);
 export const like = (col: string, val: string): string => `${col} LIKE ${formatValue(val)}`;
 export const ilike = (col: string, val: string): string => `${col} ILIKE ${formatValue(val)}`;
