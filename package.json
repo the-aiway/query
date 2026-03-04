@@ -1,6 +1,7 @@
 {
   "name": "@the-aiway/query",
   "version": "1.2.0-rc.7",
+  "license": "MIT",
   "type": "module",
   "main": "./index.ts",
   "types": "./index.ts",
