@@ -137,7 +137,7 @@ export interface DuckResult {
   toArray?: () => unknown[];
   row?: () => unknown;
   arrowTable?: unknown;
-  toArrow(): Promise<Table>;
+  toArrow?(): Promise<Table>;
   raw?: unknown;
 }
 
