@@ -173,7 +173,7 @@ export function useRow<T, R>(ref: Duckable<T>, select?: (row: NonNullable<T> | n
     let cancelled = false;
     ref.row().then(
       (data) => {
-        if (!cancelled) setState({ data, isLoading: false, error: undefined });
+        if (!cancelled) setState({ data: data as NonNullable<T> | null, isLoading: false, error: undefined });
       },
       (err) => {
         if (!cancelled) setState({ data: null, isLoading: false, error: err instanceof Error ? err : new Error(String(err)) });
