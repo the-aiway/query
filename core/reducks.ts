@@ -61,11 +61,9 @@ type TrimLeft<T extends string> = T extends `${WhitespaceChar}${infer R}` ? Trim
 
 export type ValidSQL<T extends string> = string extends T
   ? T
-  : TrimLeft<T> extends `${"WITH" | "with"}${string}`
-    ? "ERROR: WITH clauses are forbidden — split into separate sql refs"
-    : TrimLeft<T> extends `${"SELECT" | "FROM" | "PIVOT" | "--sql" | "--SQL"}${string}`
+  : TrimLeft<T> extends `${"SELECT" | "FROM" | "PIVOT" | "--sql" | "--SQL" | "WITH" | "with"}${string}`
       ? T
-      : "ERROR: SQL must start with SELECT, FROM, PIVOT or --sql";
+    : "ERROR: SQL must start with SELECT, FROM, PIVOT, WITH or --sql";
 
 type InferRow<TQuery extends string> = InferSQLStrict<TQuery>[number];
 
