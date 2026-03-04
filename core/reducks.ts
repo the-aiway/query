@@ -126,7 +126,7 @@ export interface UseValuesHook {
 }
 
 export type StoreRef<TRow = unknown> = Duckable<TRow> & {
-  insert: (rows: TRow | TRow[]) => void;
+  insert: (rows: TRow | TRow[]) => Promise<void>;
   clear: () => Promise<void>;
 };
 
@@ -286,7 +286,7 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
     const tag = `--:re:${ref.type}:${ref.name ?? ref.id}\n`;
     if (ref.type === "fragment") return tag + ref.query;
     if (ref.type === "opfs") return tag + `FROM 'opfs://${ref.id}.parquet'`;
-    return tag + `FROM "${ref.id}"`;
+    return tag + `FROM ${ref.id}`;
   }
 
   static toExpr(ref: Duckable) {
@@ -383,11 +383,11 @@ async function materializeRef(ref: Duckable): Promise<void> {
         const cols = Object.entries(ref._storeSchema)
           .map(([c, t]) => `${c} ${t}`)
           .join(", ");
-        await runtime.exec(`--:re:table:${name}\nCREATE TABLE IF NOT EXISTS "${ref.id}" (${cols})`);
+        await runtime.exec(`--:re:table:${name}\nCREATE TABLE IF NOT EXISTS ${ref.id} (${cols})`);
         if (ref._storeBuffer && ref._storeBuffer.length > 0) {
           const colNames = Object.keys(ref._storeSchema);
           await runtime.exec(
-            `--:re:table:${name}\nINSERT INTO "${ref.id}" SELECT * FROM (VALUES ${toValues(ref._storeBuffer, ref._storeSchema)}) AS _v(${colNames.join(",")})`,
+            `--:re:table:${name}\nINSERT INTO ${ref.id} SELECT * FROM (VALUES ${toValues(ref._storeBuffer, ref._storeSchema)}) AS _v(${colNames.join(",")})`,
           );
           ref._storeBuffer = [];
         }
@@ -456,20 +456,27 @@ export function makeRef(
 }
 
 export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(
-  schema: TSchema,
+  id: string,
+  _schema: TSchema,
+): StoreRef<InferDuckTable<TSchema>>;
+export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(
+  _schema: TSchema,
+): StoreRef<InferDuckTable<TSchema>>;
+export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(
+  ...params: [string | TSchema, TSchema?]
 ): StoreRef<InferDuckTable<TSchema>> {
-  const id = uid("s");
+  const [id, schema] = params.length === 1 ? [uid("s"), params[0]!] : [params[0]! as string, params[1]! as TSchema];
   const ref = new Duckable("idle", "table", "", [], { id });
   ref._storeSchema = schema as Record<string, string>;
   ref._storeBuffer = [];
 
-  const insert = (rows: Partial<InferDuckTable<TSchema>> | Partial<InferDuckTable<TSchema>>[]) => {
+  const insert = async (rows: Partial<InferDuckTable<TSchema>> | Partial<InferDuckTable<TSchema>>[]) => {
     const arr = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
     if (ref.status === "ready") {
       if (arr.length === 0) return;
       const colNames = Object.keys(schema);
-      void getRuntime().exec(
-        `--:re:table:${ref.name ?? ref.id}\nINSERT INTO "${id}" SELECT * FROM (VALUES ${toValues(arr, schema as Record<string, string>)}) AS _v(${colNames.join(",")})`,
+      await getRuntime().exec(
+        `--:re:table:${ref.name ?? ref.id}\nINSERT INTO ${id} SELECT * FROM (VALUES ${toValues(arr, schema as Record<string, string>)}) AS _v(${colNames.join(",")})`,
       );
     } else {
       ref._storeBuffer!.push(...arr);
@@ -477,7 +484,7 @@ export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(
   };
 
   const clear = async () => {
-    await getRuntime().exec(`DELETE FROM "${id}"`);
+    await getRuntime().exec(`DELETE FROM ${id}`);
     ref._storeBuffer = [];
   };
 
@@ -510,7 +517,7 @@ const valuesFn: UseValuesHook = ((
 
 function fromArrowFn(arrowTable: Table) {
   const id = uid("a");
-  return new Duckable("idle", "arrow", `FROM "${id}"`, [], { id, arrowTable });
+  return new Duckable("idle", "arrow", `FROM ${id}`, [], { id, arrowTable });
 }
 
 export function statement<TVariable extends Record<string, unknown>>(): <
@@ -549,8 +556,11 @@ export const re = {
 };
 
 export {
-    fromArrowFn as fromArrow, opfsFn as opfs, sqlFn as sql,
-    tableFn as table, valuesFn as values
+  fromArrowFn as fromArrow,
+  opfsFn as opfs,
+  sqlFn as sql,
+  tableFn as table,
+  valuesFn as values,
 };
 /** @deprecated Use re.table */
 export const cacheTable = tableFn;
