@@ -11,14 +11,9 @@ import {
   isRangeFilter,
   serializeQTLayout,
   parseQTLayout,
-  serializeSort,
-  parseSort,
-  serializeFilters,
-  parseFilters,
 } from '../../sqlUtils';
 import { useDuckDB } from '../../react/DuckDBProvider';
 import { useSql, type QueryRef } from '../../react/reducks';
-import { useQueryState } from 'nuqs';
 
 export type QueryResolutionStrategy = 'direct' | 'materialized' | 'lazy';
 
@@ -95,30 +90,9 @@ function useQueryTableState({
   dependencyRootRef?: QueryRef;
   pool: ReturnType<typeof useDuckDB>['pool'];
 } & Omit<QueryTableProps, 'table' | 'pool' | 'height' | 'rowHeight' | 'overscan'>) {
-  // --- URL state: separate params per concern ---
-  const qsOpts = { shallow: true, history: 'replace' as const };
-  const [rawSort, setRawSort] = useQueryState(`qt_${id}_s`, qsOpts);
-  const [rawFilters, setRawFilters] = useQueryState(`qt_${id}_f`, qsOpts);
-  const [rawQ, setRawQ] = useQueryState(`qt_${id}_q`, qsOpts);
-
-  const initSort = useRef(persistStateInUrl ? parseSort(rawSort) : []);
-  const initFilters = useRef(persistStateInUrl ? parseFilters(rawFilters) : {});
-  const isFirstSync = useRef(true);
-
-  const [sorting, setSorting] = useState<SortingState>(initSort.current);
-  const [globalFilter, setGlobalFilter] = useState(persistStateInUrl ? (rawQ ?? '') : '');
-  const [columnFilters, setColumnFilters] = useState<FiltersState>(initFilters.current);
-
-  useEffect(() => {
-    if (isFirstSync.current) {
-      isFirstSync.current = false;
-      return;
-    }
-    if (!persistStateInUrl) return;
-    void setRawSort(serializeSort(sorting));
-    void setRawFilters(serializeFilters(columnFilters));
-    void setRawQ(globalFilter.trim() || null);
-  }, [persistStateInUrl, sorting, columnFilters, globalFilter, setRawSort, setRawFilters, setRawQ]);
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [columnFilters, setColumnFilters] = useState<FiltersState>({});
 
   // --- localStorage: column sizing + visibility ---
   const layoutKey = `qt_layout_${id}`;
