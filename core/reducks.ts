@@ -137,6 +137,7 @@ export interface DuckResult {
   toArray?: () => unknown[];
   row?: () => unknown;
   arrowTable?: unknown;
+  toArrow(): Promise<Table>;
   raw?: unknown;
 }
 
@@ -328,6 +329,11 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
   /** @deprecated Use rows() */
   toArray(): Duckable<TRow> & PromiseLike<NonNullable<TRow>[]> {
     return this.rows() as any;
+  }
+
+  /** @deprecated Use rows() */
+  toArrow(): Duckable<TRow> & PromiseLike<NonNullable<TRow>[]> {
+    return this.arrowTable() as any;
   }
 
   arrowTable(): Promise<Table> {
