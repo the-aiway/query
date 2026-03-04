@@ -1,22 +1,22 @@
 import type { Table } from "apache-arrow";
 import {
-    type InferDuckTable,
-    type InferSQLStrict,
-    type Materialize,
+  type InferDuckTable,
+  type InferSQLStrict,
+  type Materialize,
 } from "../duck/inferSqlReturntype";
 import {
-    $in,
-    between,
-    buildWhere,
-    eq,
-    gt,
-    gte,
-    ilike,
-    like,
-    lt,
-    lte,
-    neq,
-    type SqlConditionValue,
+  $in,
+  between,
+  buildWhere,
+  eq,
+  gt,
+  gte,
+  ilike,
+  like,
+  lt,
+  lte,
+  neq,
+  type SqlConditionValue,
 } from "../sqlConditions";
 import { escapeSQL, fnv1a32 } from "../sqlUtils";
 import { toValues, toValuesSelect } from "../toValues";
@@ -62,7 +62,7 @@ type TrimLeft<T extends string> = T extends `${WhitespaceChar}${infer R}` ? Trim
 export type ValidSQL<T extends string> = string extends T
   ? T
   : TrimLeft<T> extends `${"SELECT" | "FROM" | "PIVOT" | "--sql" | "--SQL" | "WITH" | "with"}${string}`
-      ? T
+    ? T
     : "ERROR: SQL must start with SELECT, FROM, PIVOT, WITH or --sql";
 
 type InferRow<TQuery extends string> = InferSQLStrict<TQuery>[number];
@@ -161,9 +161,11 @@ function rowFromResult(result: DuckResult): unknown {
 }
 
 function arrowTableFromResult(result: DuckResult): unknown {
-  const value = result.arrowTable ?? result.raw;
+  const value = result.toArrow ?? result.arrowTable ?? result.raw;
   if (value == null)
-    throw new Error("[reducks] Runtime exec() result must provide arrowTable or raw for arrowTable()");
+    throw new Error(
+      "[reducks] Runtime exec() result must provide arrowTable or raw for arrowTable()",
+    );
   return value;
 }
 
@@ -347,7 +349,6 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
     return this.cached("n", async () => rowFromResult(await this.execute()) as never);
   }
 
-
   async toSql(): Promise<string> {
     await materializeChain(this);
     return Duckable.toStatement(this);
@@ -471,12 +472,15 @@ export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(
 export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(
   ...params: [string | TSchema, TSchema?]
 ): StoreRef<InferDuckTable<TSchema>> {
-  const [id, schema] = params.length === 1 ? [uid("s"), params[0]!] : [params[0]! as string, params[1]! as TSchema];
+  const [id, schema] =
+    params.length === 1 ? [uid("s"), params[0]!] : [params[0]! as string, params[1]! as TSchema];
   const ref = new Duckable("idle", "table", "", [], { id });
   ref._storeSchema = schema as Record<string, string>;
   ref._storeBuffer = [];
 
-  const insert = async (rows: Partial<InferDuckTable<TSchema>> | Partial<InferDuckTable<TSchema>>[]) => {
+  const insert = async (
+    rows: Partial<InferDuckTable<TSchema>> | Partial<InferDuckTable<TSchema>>[],
+  ) => {
     const arr = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
     if (ref.status === "ready") {
       if (arr.length === 0) return;
