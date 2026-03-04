@@ -136,6 +136,7 @@ export interface DuckResult {
   rows?: () => unknown[];
   toArray?: () => unknown[];
   row?: () => unknown;
+  arrowTable?: unknown;
   raw?: unknown;
 }
 
@@ -156,6 +157,13 @@ function rowsFromResult(result: DuckResult): unknown[] {
 function rowFromResult(result: DuckResult): unknown {
   if (result.row) return result.row();
   return rowsFromResult(result)[0] ?? null;
+}
+
+function arrowTableFromResult(result: DuckResult): unknown {
+  const value = result.arrowTable ?? result.raw;
+  if (value == null)
+    throw new Error("[reducks] Runtime exec() result must provide arrowTable or raw for arrowTable()");
+  return value;
 }
 
 export function setRuntime(runtime: DuckRuntime) {
@@ -322,10 +330,10 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
     return this.rows() as any;
   }
 
-  toArrow(): Promise<Table> {
+  arrowTable(): Promise<Table> {
     return this.cached("w", async () => {
       const result = await this.execute();
-      return result.raw as Table;
+      return arrowTableFromResult(result) as Table;
     });
   }
 
@@ -587,7 +595,7 @@ export async function _typeCheck() {
     name: unknown;
   };
 
-  // --- toArray / next / toArrow ---
+  // --- toArray / next / arrowTable ---
 
   const rows1 = await typed.rows();
   rows1 satisfies { total: number; name: unknown }[];
@@ -616,7 +624,7 @@ export async function _typeCheck() {
   const inlineRows = await re.sql(() => `SELECT 'abc' as s`, {}).rows();
   inlineRows satisfies { s: string }[];
 
-  const arrowTable = await typed.toArrow();
+  const arrowTable = await typed.arrowTable();
   arrowTable satisfies Table;
 
   // --- useValues ---
