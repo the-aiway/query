@@ -1,25 +1,25 @@
 import type { Table } from "apache-arrow";
 import {
-  buildWhere,
-  eq,
-  neq,
-  gt,
-  gte,
-  lt,
-  lte,
-  between,
-  $in,
-  like,
-  ilike,
-  type SqlConditionValue,
+    type InferDuckTable,
+    type InferSQLStrict,
+    type Materialize,
+} from "../duck/inferSqlReturntype";
+import {
+    $in,
+    between,
+    buildWhere,
+    eq,
+    gt,
+    gte,
+    ilike,
+    like,
+    lt,
+    lte,
+    neq,
+    type SqlConditionValue,
 } from "../sqlConditions";
 import { escapeSQL, fnv1a32 } from "../sqlUtils";
 import { toValues, toValuesSelect } from "../toValues";
-import {
-  type InferSQLStrict,
-  type InferDuckTable,
-  type Materialize,
-} from "../duck/inferSqlReturntype";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -226,7 +226,7 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
   _materializing?: Promise<void>;
   private _promises = new Map<string, Promise<unknown>>();
 
-  then<TResult1 = NonNullable<TRow>[], TResult2 = never>(
+  then<TResult1 = NonNullable<TRow>[] | null, TResult2 = never>(
     onfulfilled?: ((value: NonNullable<TRow>[]) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): PromiseLike<TResult1 | TResult2> {
@@ -320,17 +320,13 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
     });
   }
 
-  row<TFill = never>(): Duckable<ApplyFill<TRow, TFill>> &
-    PromiseLike<NonNullable<ApplyFill<TRow, TFill>> | null> {
-    return Object.assign(this as any, {
-      then: (onfulfilled?: any, onrejected?: any) => {
-        return this.cached(
-          "n",
-          async () => ((await this.execute()).rows()[0] ?? null) as never,
-        ).then(onfulfilled, onrejected);
-      },
-    });
+  row<TFill = never>(): Promise<NonNullable<ApplyFill<TRow, TFill>> | null> {
+    return this.cached(
+      "n",
+      async () => ((await this.execute()).rows()[0] ?? null) as never,
+    );
   }
+
 
   async toSql(): Promise<string> {
     await materializeChain(this);
@@ -538,11 +534,8 @@ export const re = {
 };
 
 export {
-  sqlFn as sql,
-  tableFn as table,
-  opfsFn as opfs,
-  valuesFn as values,
-  fromArrowFn as fromArrow,
+    fromArrowFn as fromArrow, opfsFn as opfs, sqlFn as sql,
+    tableFn as table, valuesFn as values
 };
 /** @deprecated Use re.table */
 export const cacheTable = tableFn;
@@ -648,7 +641,7 @@ export async function _typeCheck() {
   const s1 = re.sql((t) => "SELECT 42 AS TOTO  FROM LOL");
   s1 satisfies ThenableRef<{ TOTO: number }>;
   const r1 = re.statement((t) => `SELECT 42 AS TOTO  FROM LOL = ${t.xx}`, {xx: 312})
-  // @ts-expect-error 
+  // @ts-expect-error
   r1()
   const execed = await r1({ lol: "t" })
   execed satisfies { TOTO: number }[];

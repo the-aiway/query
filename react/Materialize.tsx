@@ -1,6 +1,6 @@
-import { use, Suspense, createElement, type ReactNode } from 'react';
+import { Suspense, createElement, use, type ReactNode } from 'react';
 
-import { type QueryRef, isRef } from './reducks';
+import { isRef, type QueryRef } from './reducks';
 
 type SourceValue = QueryRef | Promise<unknown>;
 type ResolvedData<T extends Record<string, SourceValue>> = {
@@ -20,7 +20,7 @@ export function resolveSource<T extends Record<string, SourceValue>>(source: T):
   for (const [key, value] of Object.entries(source)) {
     if (isQueryRef(value)) {
       value.ensureName(key);
-      out[key] = use(value.rows());
+      out[key] = use(value.rows() as PromiseLike<unknown[]>);
     } else {
       out[key] = use(value as Promise<unknown>);
     }

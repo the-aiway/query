@@ -2,7 +2,7 @@ import Editor from '@monaco-editor/react';
 import { Code2, Database, GitBranch, Globe, Pencil } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'sql-formatter';
-import { Duckable } from '../../react/reducks';
+import { Duckable, QueryRef } from '../../react/reducks';
 import { Button } from '../ui/Button';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { ScrollArea } from '../ui/ScrollArea';
