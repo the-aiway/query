@@ -1,7 +1,5 @@
 // --- CONFIGURATION & ENUMS ---
 
-import { useTable } from '../react';
-
 type Whitespace = ' ' | '\n' | '\t' | '\r';
 type AsKeyword = 'AS' | 'as';
 type FromKeyword = 'FROM' | 'from';
@@ -238,16 +236,32 @@ export type ParseField<S extends string> =
       ? { name: Trim<Alias>; type: ResolveCast<Trim<CastType>> }
       : Rest extends `${infer CastType} as ${infer Alias}`
         ? { name: Trim<Alias>; type: ResolveCast<Trim<CastType>> }
-        : // No alias, just cast. The name is the identifier part of Expr.
-          // We use GetColName to handle "db.field" -> "field".
-          IsClean<GetColName<Trim<Expr>>> extends true
-          ? { name: GetColName<Trim<Expr>>; type: ResolveCast<Trim<Rest>> }
-          : { name: never; type: unknown }
+        : // Support DuckDB-style key-first alias with cast: "alias: expr::type"
+          Trim<Expr> extends `${infer Alias}:${infer _ValueExpr}`
+          ? IsClean<Trim<Alias>> extends true
+            ? { name: Trim<Alias>; type: ResolveCast<Trim<Rest>> }
+            : { name: never; type: ResolveCast<Trim<Rest>> }
+          : // No alias, just cast. The name is the identifier part of Expr.
+            // We use GetColName to handle "db.field" -> "field".
+            IsClean<GetColName<Trim<Expr>>> extends true
+            ? { name: GetColName<Trim<Expr>>; type: ResolveCast<Trim<Rest>> }
+            : { name: never; type: unknown }
     : ExtractAliasName<S> extends never
-      ? // CASE 4: Bare identifier
-        IsClean<GetColName<Trim<S>>> extends true
-        ? { name: GetColName<Trim<S>>; type: unknown }
-        : { name: never; type: unknown }
+      ? // Support DuckDB-style key-first alias without cast: "alias: expr"
+        S extends `${infer Alias}:${infer ValueExpr}`
+        ? IsClean<Trim<Alias>> extends true
+          ? // If the value contains a cast, prefer the cast type
+            Trim<ValueExpr> extends `${infer _Inner}::${infer Cast}`
+            ? { name: Trim<Alias>; type: ResolveCast<Trim<Cast>> }
+            : { name: Trim<Alias>; type: ResolveImplicitType<Trim<ValueExpr>> }
+          : // Alias is not clean; still try to infer type but drop the name
+            Trim<ValueExpr> extends `${infer _Inner}::${infer Cast}`
+            ? { name: never; type: ResolveCast<Trim<Cast>> }
+            : { name: never; type: ResolveImplicitType<Trim<ValueExpr>> }
+        : // CASE 4: Bare identifier
+          IsClean<GetColName<Trim<S>>> extends true
+          ? { name: GetColName<Trim<S>>; type: unknown }
+          : { name: never; type: unknown }
       : // CASE 3: No Cast, but has AS alias
         SplitAlias<S> extends [infer Expr extends string, infer Alias]
         ? { name: Alias; type: ResolveImplicitType<Expr> }
@@ -643,6 +657,25 @@ SELECT xxx, cccc
     `SELECT count(*)::int as total, lol::INT as xxx WHERE id=$id FROM ${t.table_1} xx`
   );
   test59 satisfies { total: number; xxx: number }[];
+  const test60 = sqlStrict(`SELECT id: 1, name: 'toto'`);
+  test60 satisfies { id: number; name: string }[];
+  const test61 = sqlStrict(`SELECT
+        zone: zone::VARCHAR,
+        unit: unit::VARCHAR,
+        total_orders: COUNT(*)::INT,
+        actual_cost: SUM(actual_cost)::DOUBLE
+      FROM whatever
+      GROUP BY ALL`);
+
+  test61 satisfies { zone: string; unit: string; total_orders: number; actual_cost: number }[];
+  const test62 = sqlStrict(`FROM whatever
+    SELECT
+        zone: zone::VARCHAR,
+        unit: unit::VARCHAR,
+        total_orders: COUNT(*),
+        actual_cost: SUM(actual_cost)
+      GROUP BY ALL`);
+  test62 satisfies { zone: string; unit: string; total_orders: number; actual_cost: number }[];
 
   // const runsLiteStore = useTable({
   //   cost: 'DECIMAL(10, 2)',
