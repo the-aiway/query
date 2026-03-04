@@ -331,8 +331,8 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
     return this.rows() as any;
   }
 
-  /** @deprecated Use rows() */
-  toArrow(): Duckable<TRow> & PromiseLike<NonNullable<TRow>[]> {
+  /** @deprecated Use arrowTable() */
+  toArrow(): Promise<Table> {
     return this.arrowTable() as any;
   }
 
