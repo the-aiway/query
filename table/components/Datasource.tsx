@@ -1,7 +1,7 @@
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
-import { buildWhereClause, type FiltersState } from '../../sqlUtils';
 import { useSql, type QueryRef } from '../../react/reducks';
+import { buildWhereClause, type FiltersState } from '../../sqlUtils';
 
 export type SortingState = Array<{ id: string; desc: boolean }>;
 export type ColumnOption = { key: string; label: string; count: number; frac: number };
@@ -40,7 +40,7 @@ export function useTableSchema(tableRef: QueryRef | null) {
   return useQuery({
     queryKey: ['reducks-schema', schemaRef.id],
     queryFn: async () => {
-      const table = await schemaRef.toArrow();
+      const table = await schemaRef.arrowTable();
       return table.schema.fields.map((f) => ({
         name: f.name,
         type: String(f.type as unknown as string).toUpperCase(),
