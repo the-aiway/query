@@ -133,9 +133,9 @@ export type StoreRef<TRow = unknown> = Duckable<TRow> & {
 // ─── Runtime ─────────────────────────────────────────────────
 
 export interface DuckResult {
-  rows(): unknown[];
-  /** @deprecated Use rows() */
-  toArray(): unknown[];
+  rows?: () => unknown[];
+  toArray?: () => unknown[];
+  row?: () => unknown;
   raw?: unknown;
 }
 
@@ -146,6 +146,17 @@ export interface DuckRuntime {
 }
 
 let _runtime: DuckRuntime | null = null;
+
+function rowsFromResult(result: DuckResult): unknown[] {
+  if (result.rows) return result.rows();
+  if (result.toArray) return result.toArray();
+  throw new Error("[reducks] Runtime exec() result must provide rows() or toArray()");
+}
+
+function rowFromResult(result: DuckResult): unknown {
+  if (result.row) return result.row();
+  return rowsFromResult(result)[0] ?? null;
+}
 
 export function setRuntime(runtime: DuckRuntime) {
   _runtime = runtime;
@@ -298,7 +309,7 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
     PromiseLike<NonNullable<ApplyFill<TRow, TFill>>[]> {
     return Object.assign(this as any, {
       then: (onfulfilled?: any, onrejected?: any) => {
-        return this.cached("a", async () => (await this.execute()).rows() as never).then(
+        return this.cached("a", async () => rowsFromResult(await this.execute()) as never).then(
           onfulfilled,
           onrejected,
         );
@@ -319,10 +330,7 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
   }
 
   row<TFill = never>(): Promise<NonNullable<ApplyFill<TRow, TFill>> | null> {
-    return this.cached(
-      "n",
-      async () => ((await this.execute()).rows()[0] ?? null) as never,
-    );
+    return this.cached("n", async () => rowFromResult(await this.execute()) as never);
   }
 
 
@@ -525,6 +533,7 @@ export const re = {
   sql: sqlFn,
   table: tableFn,
   opfs: opfsFn,
+  setRuntime,
   store: makeStoreRef,
   values: valuesFn,
   fromArrow: fromArrowFn,
