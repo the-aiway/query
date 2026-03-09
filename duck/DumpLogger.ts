@@ -127,7 +127,7 @@ export class DumpLogger implements Logger {
       const log = event === LogEvent.OK ? console.groupCollapsed : console.group;
       log(`${fmt} ${previewFmt}`, ...args, ...previewArgs);
       console.log(highlighted);
-      if (event === LogEvent.ERROR) console.error(value);
+      console.log(state.query.replaceAll(/\-\-.*/g, '').replaceAll(/\n\s+/g, ' '))
       console.groupEnd();
     }
   }

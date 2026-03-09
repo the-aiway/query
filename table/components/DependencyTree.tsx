@@ -5,7 +5,7 @@ import { format } from 'sql-formatter';
 import { Duckable, type QueryRef } from '../../react/reducks';
 import { Button } from '../ui/Button';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
-import { ScrollArea } from '../ui/ScrollArea';
+import { ScrollArea, ScrollBar } from '../ui/ScrollArea';
 import { SqlQueryEditorPopover } from './SqlQueryEditorPopover';
 import { useTab } from './TabContext';
 
@@ -105,7 +105,7 @@ function PathNodeRow({ node, depth, selectedId, onSelect }: { node: TreeNode; de
     <button
       type="button"
       onClick={() => onSelect(node)}
-      className={`flex w-full items-center gap-2 rounded py-1.5 text-left font-mono text-[11px] transition-colors ${isSelected ? 'bg-sky-500/10 text-sky-700 ring-1 ring-sky-500/30 ring-inset dark:text-sky-300' : 'hover:bg-muted/40 text-foreground/60'} `}
+      className={`flex min-w-full items-center gap-2 rounded py-1.5 text-left font-mono text-[11px] transition-colors ${isSelected ? 'bg-sky-500/10 text-sky-700 ring-1 ring-sky-500/30 ring-inset dark:text-sky-300' : 'hover:bg-muted/40 text-foreground/60'} `}
       style={{ paddingLeft: `${depth * 16 + 8}px`, paddingRight: 8 }}
       title={node.path}
     >
@@ -128,7 +128,7 @@ function TreeNodeRow({ node, depth, isRoot, selectedId, onSelect }: { node: Tree
       <button
         type="button"
         onClick={() => onSelect(node)}
-        className={`flex w-full items-center gap-2 rounded py-1.5 text-left font-mono text-[11px] transition-colors ${isSelected ? 'bg-sky-500/10 text-sky-700 ring-1 ring-sky-500/30 ring-inset dark:text-sky-300' : 'hover:bg-muted/40 text-foreground/80'} ${isRoot ? 'font-bold' : ''} `}
+        className={`flex min-w-full items-center gap-2 rounded py-1.5 text-left font-mono text-[11px] transition-colors ${isSelected ? 'bg-sky-500/10 text-sky-700 ring-1 ring-sky-500/30 ring-inset dark:text-sky-300' : 'hover:bg-muted/40 text-foreground/80'} ${isRoot ? 'font-bold' : ''} `}
         style={{ paddingLeft: `${depth * 16 + 8}px`, paddingRight: 8 }}
         title={node.displaySql.replace(/\s+/g, ' ').trim()}
       >
@@ -285,6 +285,7 @@ export function DependencyTree({ entry }: DependencyTreeProps) {
 
   return (
     <Popover
+      modal={true}
       open={open}
       onOpenChange={(nextOpen) => {
         dependencyPopoverOpenState = nextOpen;
@@ -296,17 +297,24 @@ export function DependencyTree({ entry }: DependencyTreeProps) {
           <GitBranch className="h-3.5 w-3.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={8} collisionPadding={12} className="max-h-[85vh] w-[min(28rem,calc(100vw-1rem))] overflow-hidden p-0">
-        <div className="border-border bg-muted/30 flex items-center justify-between border-b px-3 py-2">
+      <PopoverContent
+        align="start"
+        sideOffset={8}
+        collisionPadding={12}
+        className="flex max-h-[85vh] w-[min(28rem,calc(100vw-1rem))] flex-col overflow-hidden p-0 shadow-2xl"
+        onWheel={(e) => e.stopPropagation()}
+      >
+        <div className="border-border bg-muted/30 flex shrink-0 items-center justify-between border-b px-3 py-2">
           <span className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">Dependency Graph</span>
         </div>
-        <ScrollArea className="max-h-[min(60vh,420px)]">
-          <div className="p-1">
+        <ScrollArea className="flex-1 min-h-0 overflow-y-auto">
+          <div className="min-w-max p-1">
             <TreeNodeRow node={tree} depth={0} isRoot={true} selectedId={selectedId} onSelect={handleSelect} />
           </div>
+          <ScrollBar orientation="horizontal" />
         </ScrollArea>
         {selectedNode && (
-          <div className="border-border bg-muted/20 flex items-center justify-between gap-2 border-t px-3 py-2">
+          <div className="border-border bg-muted/20 flex shrink-0 items-center justify-between gap-2 border-t px-3 py-2">
             <span className="text-muted-foreground truncate font-mono text-[10px]">{selectedLabel}</span>
             <SqlQueryEditorPopover title={`Edit ${selectedLabel}`} sql={selectedSql || selectedNode.displaySql} onSave={(sql) => setPreviewSql(sql, `Dependency: ${selectedLabel}`)}>
               <Button variant="ghost" size="sm" className="h-6 shrink-0 px-2 font-mono text-[10px]" title="Edit dependency SQL">
@@ -316,7 +324,11 @@ export function DependencyTree({ entry }: DependencyTreeProps) {
             </SqlQueryEditorPopover>
           </div>
         )}
-        {selectedNode && <SqlPreview sql={selectedSql || selectedNode.displaySql} />}
+        {selectedNode && (
+          <div className="shrink-0">
+            <SqlPreview sql={selectedSql || selectedNode.displaySql} />
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

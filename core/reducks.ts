@@ -84,6 +84,15 @@ type OverrideRow<TQuery extends string, TOverride> = [TOverride] extends [never]
       : FillUnknown<InferRow<TQuery>, TOverride>;
 
 export type ExtractRow<T> = T extends Duckable<infer R> ? R : unknown;
+type IndexByKey<TRow> = Extract<keyof NonNullable<TRow>, string>;
+export type IndexByResult<TRow, TKeys extends readonly PropertyKey[]> =
+  TKeys extends readonly [infer TKey, ...infer TRest]
+    ? TKey extends keyof NonNullable<TRow>
+      ? TRest extends readonly []
+        ? Record<NonNullable<TRow>[TKey], NonNullable<TRow>>
+        : Record<NonNullable<TRow>[TKey], IndexByResult<NonNullable<TRow>, Extract<TRest, readonly PropertyKey[]>>>
+      : never
+    : never;
 /** @deprecated Use Duckable directly */
 export type QueryRef<TRow = unknown> = Duckable<TRow>;
 
@@ -114,13 +123,24 @@ export type UseTableHook = SqlCallable;
 export type UseCacheTableHook = SqlCallable;
 
 export interface UseValuesHook {
-  <TData extends Record<string, unknown>>(data: TData[]): Duckable<TData>;
+  <TData extends Record<string, unknown>>(
+    data:
+      | TData[]
+      | Promise<TData[]>
+      | (() => TData[] | Promise<TData[]>),
+  ): Duckable<TData>;
   <TSchema extends Record<string, DuckDBType>>(
-    data: Partial<InferDuckTable<TSchema>>[],
+    data:
+      | Partial<InferDuckTable<TSchema>>[]
+      | Promise<Partial<InferDuckTable<TSchema>>[]>
+      | (() => Partial<InferDuckTable<TSchema>>[] | Promise<Partial<InferDuckTable<TSchema>>[]>),
     schema: TSchema,
   ): Duckable<InferDuckTable<TSchema>>;
   <TKey extends string>(
-    data: Record<string, unknown>[],
+    data:
+      | Record<string, unknown>[]
+      | Promise<Record<string, unknown>[]>
+      | (() => Record<string, unknown>[] | Promise<Record<string, unknown>[]>),
     columns: readonly TKey[],
   ): Duckable<{ [K in TKey]: unknown }>;
 }
@@ -167,6 +187,42 @@ function arrowTableFromResult(result: DuckResult): unknown {
       "[reducks] Runtime exec() result must provide arrowTable or raw for arrowTable()",
     );
   return value;
+}
+
+function indexRowsBy(rows: readonly Record<string, unknown>[], keys: readonly string[]) {
+  if (keys.length === 0) throw new Error('[reducks] indexBy() requires at least one key');
+
+  const root: Record<string, unknown> = {};
+
+  for (const row of rows) {
+    let current = root;
+
+    for (const [index, key] of keys.entries()) {
+      const keyValue = String(row[key]);
+
+      if (index === keys.length - 1) {
+        if (Object.hasOwn(current, keyValue)) {
+          throw new Error(`[reducks] indexBy(${keys.join(', ')}) found duplicate key path`);
+        }
+        current[keyValue] = row;
+        continue;
+      }
+
+      const next = current[keyValue];
+      if (next == null) {
+        const child: Record<string, unknown> = {};
+        current[keyValue] = child;
+        current = child;
+        continue;
+      }
+      if (typeof next !== 'object' || Array.isArray(next)) {
+        throw new Error(`[reducks] indexBy(${keys.join(', ')}) encountered a conflicting key path`);
+      }
+      current = next as Record<string, unknown>;
+    }
+  }
+
+  return root;
 }
 
 export function setRuntime(runtime: DuckRuntime) {
@@ -228,8 +284,17 @@ export function resolveSql(queryFn: unknown, params: Record<string, unknown>) {
   return typeof queryFn === "function" ? queryFn(buildProxy(params)) : queryFn;
 }
 
+function isPromiseLike<T>(value: unknown): value is Promise<T> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "then" in value &&
+    typeof (value as { then?: unknown }).then === "function"
+  );
+}
+
 // ─── DuckRef ───────────────────────────────────────────────
-export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]> {
+export class Duckable<TRow = any> implements PromiseLike<NonNullable<TRow>[]> {
   readonly id: string;
   readonly type: QueryType;
   readonly query: string;
@@ -241,6 +306,9 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
   error?: Error;
 
   _arrowTable?: unknown;
+  _valuesPromise?: Promise<Record<string, unknown>[]>;
+  _valuesLoader?: () => Promise<Record<string, unknown>[]>;
+  _valuesSchema?: Record<string, string> | readonly string[];
   _storeSchema?: Record<string, string>;
   _storeBuffer?: Record<string, unknown>[];
   _materializing?: Promise<void>;
@@ -312,7 +380,7 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
   }
 
   private async execute(): Promise<DuckResult> {
-    await materializeChain(this);
+    await materializeChain(this as Duckable);
     return getRuntime().exec(Duckable.toStatement(this));
   }
 
@@ -347,6 +415,14 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
 
   row<TFill = never>(): Promise<NonNullable<ApplyFill<TRow, TFill>> | null> {
     return this.cached("n", async () => rowFromResult(await this.execute()) as never);
+  }
+
+  indexBy<const TKeys extends readonly [IndexByKey<TRow>, ...IndexByKey<TRow>[]]>(
+    ...keys: TKeys
+  ): Promise<IndexByResult<TRow, TKeys>> {
+    return this.cached(`m:${keys.join('\u001f')}`, async () =>
+      indexRowsBy((await this.rows()) as Record<string, unknown>[], keys) as never
+    );
   }
 
   async toSql(): Promise<string> {
@@ -386,6 +462,24 @@ async function materializeRef(ref: Duckable): Promise<void> {
         if (!runtime.insertArrow)
           throw new Error(`[materialize:${name}] Runtime does not support insertArrow`);
         await runtime.insertArrow(ref.id, arrowTable);
+      } else if (ref._valuesPromise) {
+        const rows = await ref._valuesPromise;
+        const selectSql = toValuesSelect(rows, ref._valuesSchema);
+        await runtime.exec(
+          `--:re:table:${name}\nCREATE TABLE IF NOT EXISTS "${ref.id}" AS SELECT * FROM (${selectSql}) AS _v WHERE FALSE`,
+        );
+        if (rows.length > 0) {
+          await runtime.exec(`--:re:table:${name}\nINSERT INTO "${ref.id}" ${selectSql}`);
+        }
+      } else if (ref._valuesLoader) {
+        const rows = await ref._valuesLoader();
+        const selectSql = toValuesSelect(rows, ref._valuesSchema);
+        await runtime.exec(
+          `--:re:table:${name}\nCREATE TABLE IF NOT EXISTS "${ref.id}" AS SELECT * FROM (${selectSql}) AS _v WHERE FALSE`,
+        );
+        if (rows.length > 0) {
+          await runtime.exec(`--:re:table:${name}\nINSERT INTO "${ref.id}" ${selectSql}`);
+        }
       } else if (ref._storeSchema) {
         const cols = Object.entries(ref._storeSchema)
           .map(([c, t]) => `${c} ${t}`)
@@ -400,7 +494,7 @@ async function materializeRef(ref: Duckable): Promise<void> {
         }
       } else if (ref.type === "opfs") {
         const path = `opfs://${ref.id}.parquet`;
-        await runtime.registerOPFSFileName!(path);
+        await runtime.registerOPFSFileName?.(path);
         await runtime.exec(`--:re:opfs:${name}\nCOPY (${ref.query}) TO '${path}' (FORMAT PARQUET)`);
       } else {
         await runtime.exec(
@@ -440,6 +534,24 @@ export async function runSql(query: string): Promise<void> {
 // ─── Factories (content-addressed cache: same SQL → same ref) ─
 
 const _refCache = new Map<string, Duckable>();
+const _valuesSourceIds = new WeakMap<object, string>();
+let _valuesSourceSeq = 0;
+
+function valuesSchemaCacheKey(schema?: Record<string, string> | readonly string[]) {
+  if (!schema) return "";
+  if (Array.isArray(schema)) return `cols:${schema.join("\u001f")}`;
+  return `schema:${Object.entries(schema)
+    .map(([k, v]) => `${k}:${v}`)
+    .join("\u001f")}`;
+}
+
+function valuesSourceId(source: object) {
+  const hit = _valuesSourceIds.get(source);
+  if (hit) return hit;
+  const id = `vs_${++_valuesSourceSeq}`;
+  _valuesSourceIds.set(source, id);
+  return id;
+}
 
 export function makeRef(
   type: "fragment" | "table" | "opfs",
@@ -513,9 +625,35 @@ const opfsFn = ((queryFn: unknown, params?: Record<string, unknown>) =>
   makeRef("opfs", queryFn, params ?? {})) as SqlFunction;
 
 const valuesFn: UseValuesHook = ((
-  data: Record<string, unknown>[],
+  data:
+    | Record<string, unknown>[]
+    | Promise<Record<string, unknown>[]>
+    | (() => Record<string, unknown>[] | Promise<Record<string, unknown>[]>),
   schema?: Record<string, string> | readonly string[],
 ): Duckable => {
+  if (typeof data === "function") {
+    const schemaKey = valuesSchemaCacheKey(schema);
+    const keyByIdentity = `table\0values_async:${valuesSourceId(data)}:${schemaKey}`;
+    const hit = _refCache.get(keyByIdentity);
+    if (hit) return hit;
+    const ref = new Duckable("idle", "table", "", [], { id: uid("v") });
+    ref._valuesLoader = () => Promise.resolve().then(() => data());
+    ref._valuesSchema = schema;
+    _refCache.set(keyByIdentity, ref);
+    return ref;
+  }
+
+  if (isPromiseLike<Record<string, unknown>[]>(data)) {
+    const key = `table\0values_async:${valuesSourceId(data)}:${valuesSchemaCacheKey(schema)}`;
+    const hit = _refCache.get(key);
+    if (hit) return hit;
+    const ref = new Duckable("idle", "table", "", [], { id: uid("v") });
+    ref._valuesPromise = data;
+    ref._valuesSchema = schema;
+    _refCache.set(key, ref);
+    return ref;
+  }
+
   const valSql = toValuesSelect(data, schema);
   const key = `fragment\0${valSql}`;
   const hit = _refCache.get(key);
@@ -644,6 +782,12 @@ export async function _typeCheck() {
   const inlineRows = await re.sql(() => `SELECT 'abc' as s`, {}).rows();
   inlineRows satisfies { s: string }[];
 
+  const byUnit = await re.sql(() => `SELECT 'kg'::VARCHAR as unit, 100::INT as value`).indexBy('unit');
+  byUnit satisfies Record<string, { value: number }>;
+
+  const byZoneUnit = await re.sql(() => `SELECT 'A'::VARCHAR as zone, 'kg'::VARCHAR as unit, 100::INT as value`).indexBy('zone', 'unit');
+  byZoneUnit satisfies Record<string, Record<string, { value: number }>>;
+
   const arrowTable = await typed.arrowTable();
   arrowTable satisfies Table;
 
@@ -672,6 +816,18 @@ export async function _typeCheck() {
 
   const emptySimple = re.values([], ["id", "name"] as const);
   emptySimple && (emptySimple satisfies ThenableRef<{ id: unknown; name: unknown }>);
+
+  const asyncRows = re.values(Promise.resolve([{ id: 1, name: "x" }]), {
+    id: "INT",
+    name: "VARCHAR",
+  });
+  asyncRows && (asyncRows satisfies ThenableRef<{ id: unknown; name: unknown }>);
+
+  const asyncRowsFn = re.values(async () => [{ id: 2, name: "y" }], {
+    id: "INT",
+    name: "VARCHAR",
+  });
+  asyncRowsFn && (asyncRowsFn satisfies ThenableRef<{ id: unknown; name: unknown }>);
 
   const s1 = re.sql((t) => "SELECT 42 AS TOTO  FROM LOL");
   s1 satisfies ThenableRef<{ TOTO: number }>;

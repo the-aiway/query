@@ -76,10 +76,12 @@ type FindMainSelect<
   : never;
 
 export type StripWith<S extends string> =
-  Trim<S> extends `WITH ${infer Body}`
-    ? FindMainSelect<Body> extends never
-      ? Trim<S> // Fallback
-      : FindMainSelect<Body>
+  Trim<S> extends `WITH${infer Body}`
+    ? TrimLeft<Body> extends `${infer Rest}`
+      ? FindMainSelect<Rest> extends never
+        ? Trim<S> // Fallback
+        : FindMainSelect<Rest>
+      : Trim<S>
     : Trim<S>;
 
 type ClauseKeywords = [
@@ -94,10 +96,14 @@ type ClauseKeywords = [
   'QUALIFY',
 ];
 
-type StripKeyword<S, K extends string> = S extends `${infer Fields}${Whitespace}${K} ${string}`
-  ? Fields
-  : S extends `${infer Fields}${Whitespace}${Lowercase<K>} ${string}`
+type StripKeyword<S, K extends string> = S extends `${infer Fields}${Whitespace}${K}${infer Rest}`
+  ? TrimLeft<Rest> extends `${string}`
     ? Fields
+    : S
+  : S extends `${infer Fields}${Whitespace}${Lowercase<K>}${infer Rest}`
+    ? TrimLeft<Rest> extends `${string}`
+      ? Fields
+      : S
     : S;
 
 type StripClauses<S extends string, K extends string[] = ClauseKeywords> = K extends [
@@ -110,7 +116,7 @@ type StripClauses<S extends string, K extends string[] = ClauseKeywords> = K ext
 export type ExtractSelect<S extends string> =
   StripWith<S> extends `SELECT${infer Rest}`
     ? StripClauses<Trim<Rest>>
-    : StripWith<S> extends `${FromKeyword}${Whitespace}${string}SELECT${infer Rest}`
+    : StripWith<S> extends `${FromKeyword}${Whitespace}${infer _}SELECT${infer Rest}`
       ? StripClauses<Trim<Rest>>
       : never;
 
@@ -134,7 +140,7 @@ type IsBalanced<
       : false;
 
 type EndsWithAsAlias<S extends string> =
-  Trim<S> extends `${string} ${AsKeyword} ${infer Alias}` ? IsClean<Alias> : false;
+  Trim<S> extends `${string}${Whitespace}${AsKeyword}${Whitespace}${infer Alias}` ? IsClean<Alias> : false;
 
 type SplitNewline<
   S extends string,
@@ -195,29 +201,55 @@ type IsClean<S extends string> = S extends ''
 type ExtractAliasName<
   S extends string,
   Current extends string = '',
-> = S extends `${infer Head} AS ${infer Tail}`
+> = S extends `${infer Head}${Whitespace}AS${Whitespace}${infer Tail}`
   ? IsBalanced<`${Current}${Head}`> extends true
     ? Trim<Tail>
-    : ExtractAliasName<Tail, `${Current}${Head} AS `>
-  : S extends `${infer Head} as ${infer Tail}`
+    : ExtractAliasName<Tail, `${Current}${Head}${Whitespace}AS${Whitespace}`>
+  : S extends `${infer Head}${Whitespace}as${Whitespace}${infer Tail}`
     ? IsBalanced<`${Current}${Head}`> extends true
       ? Trim<Tail>
-      : ExtractAliasName<Tail, `${Current}${Head} as `>
+      : ExtractAliasName<Tail, `${Current}${Head}${Whitespace}as${Whitespace}`>
     : never;
 type SplitAlias<
   S extends string,
   Current extends string = '',
-> = S extends `${infer Head} AS ${infer Tail}`
+> = S extends `${infer Head}${Whitespace}AS${Whitespace}${infer Tail}`
   ? IsBalanced<`${Current}${Head}`> extends true
     ? [Trim<`${Current}${Head}`>, Trim<Tail>]
-    : SplitAlias<Tail, `${Current}${Head} AS `>
-  : S extends `${infer Head} as ${infer Tail}`
+    : SplitAlias<Tail, `${Current}${Head}${Whitespace}AS${Whitespace}`>
+  : S extends `${infer Head}${Whitespace}as${Whitespace}${infer Tail}`
     ? IsBalanced<`${Current}${Head}`> extends true
       ? [Trim<`${Current}${Head}`>, Trim<Tail>]
-      : SplitAlias<Tail, `${Current}${Head} as `>
+      : SplitAlias<Tail, `${Current}${Head}${Whitespace}as${Whitespace}`>
     : never;
 
-type ResolveImplicitType<T extends string> =
+type NumberFieldSuffix =
+  | 'price'
+  | 'cost'
+  | 'amount'
+  | 'total'
+  | 'sum'
+  | 'qty'
+  | 'quantity'
+  | 'rate'
+  | 'value'
+  | 'balance'
+  | 'weight'
+  | 'volume'
+  | 'count'
+  | 'num'
+  | 'tax'
+  | 'fee'
+  | 'discount'
+  | 'surcharge';
+
+type InferFromFieldName<T extends string> = Lowercase<T> extends `${string}${NumberFieldSuffix}`
+  ? number
+  : Lowercase<T> extends `${string}${NumberFieldSuffix}s`  // plural forms
+    ? number
+    : unknown;
+
+type ResolveImplicitType<T extends string, FieldName extends string = ''> =
   Lowercase<T> extends `${NumericSqlFunction}(${string}`
     ? number
     : T extends `${number}`
@@ -226,15 +258,17 @@ type ResolveImplicitType<T extends string> =
         ? string
         : Lowercase<T> extends 'true' | 'false'
           ? boolean
-          : unknown;
+          : InferFromFieldName<FieldName> extends number
+            ? number
+            : unknown;
 
 export type ParseField<S extends string> =
   // CASE 1 & 2: Has Cast "::"
   S extends `${infer Expr}::${infer Rest}`
     ? // Check if there is an AS alias after the cast
-      Rest extends `${infer CastType} AS ${infer Alias}`
+      Rest extends `${infer CastType}${Whitespace}AS${Whitespace}${infer Alias}`
       ? { name: Trim<Alias>; type: ResolveCast<Trim<CastType>> }
-      : Rest extends `${infer CastType} as ${infer Alias}`
+      : Rest extends `${infer CastType}${Whitespace}as${Whitespace}${infer Alias}`
         ? { name: Trim<Alias>; type: ResolveCast<Trim<CastType>> }
         : // Support DuckDB-style key-first alias with cast: "alias: expr::type"
           Trim<Expr> extends `${infer Alias}:${infer _ValueExpr}`
@@ -253,18 +287,18 @@ export type ParseField<S extends string> =
           ? // If the value contains a cast, prefer the cast type
             Trim<ValueExpr> extends `${infer _Inner}::${infer Cast}`
             ? { name: Trim<Alias>; type: ResolveCast<Trim<Cast>> }
-            : { name: Trim<Alias>; type: ResolveImplicitType<Trim<ValueExpr>> }
+            : { name: Trim<Alias>; type: ResolveImplicitType<Trim<ValueExpr>, Trim<Alias>> }
           : // Alias is not clean; still try to infer type but drop the name
             Trim<ValueExpr> extends `${infer _Inner}::${infer Cast}`
             ? { name: never; type: ResolveCast<Trim<Cast>> }
             : { name: never; type: ResolveImplicitType<Trim<ValueExpr>> }
         : // CASE 4: Bare identifier
           IsClean<GetColName<Trim<S>>> extends true
-          ? { name: GetColName<Trim<S>>; type: unknown }
+          ? { name: GetColName<Trim<S>>; type: ResolveImplicitType<Trim<S>, GetColName<Trim<S>>> }
           : { name: never; type: unknown }
       : // CASE 3: No Cast, but has AS alias
         SplitAlias<S> extends [infer Expr extends string, infer Alias]
-        ? { name: Alias; type: ResolveImplicitType<Expr> }
+        ? { name: Alias; type: ResolveImplicitType<Expr, Alias> }
         : { name: ExtractAliasName<S>; type: unknown };
 
 type FieldsToObject<F extends string[]> = {
@@ -420,6 +454,14 @@ val::decimal`);
 `);
   test19 satisfies { val: number }[];
 
+const test19b = sqlStrict(`
+  WITH
+  cte1 AS (SELECT 1), cte2 AS (SELECT 2)
+  SELECT val::int FROM cte2
+`);
+  test19b satisfies { val: number }[];
+
+
   const test20 = sqlStrict(`SELECT NULL::int AS nothing`);
   test20 satisfies {
     nothing: number;
@@ -431,7 +473,7 @@ val::decimal`);
   }[];
 
   const test22 = sqlStrict(`SELECT now::timestamptz AS currentTime`);
-  test22 satisfies {
+  test22 satisfies {  
     currentTime: string;
   }[];
 
