@@ -385,7 +385,12 @@ export class Duckable<TRow = any> implements PromiseLike<NonNullable<TRow>[]> {
   }
 
   rows<TFill = never>(): Duckable<ApplyFill<TRow, TFill>> &
-    PromiseLike<NonNullable<ApplyFill<TRow, TFill>>[]> {
+    PromiseLike<NonNullable<ApplyFill<TRow, TFill>>[]>;
+  rows<R>(select: (rows: NonNullable<TRow>[]) => R): Promise<R>;
+  rows<R>(select?: (rows: NonNullable<TRow>[]) => R): any {
+    if (select) {
+      return this.cached("a", async () => rowsFromResult(await this.execute()) as never).then(select);
+    }
     return Object.assign(this as any, {
       then: (onfulfilled?: any, onrejected?: any) => {
         return this.cached("a", async () => rowsFromResult(await this.execute()) as never).then(
@@ -413,7 +418,12 @@ export class Duckable<TRow = any> implements PromiseLike<NonNullable<TRow>[]> {
     });
   }
 
-  row<TFill = never>(): Promise<NonNullable<ApplyFill<TRow, TFill>> | null> {
+  row<TFill = never>(): Promise<NonNullable<ApplyFill<TRow, TFill>> | null>;
+  row<R>(select: (row: NonNullable<TRow> | null) => R): Promise<R>;
+  row<R>(select?: (row: NonNullable<TRow> | null) => R): Promise<any> {
+    if (select) {
+      return this.cached("n", async () => rowFromResult(await this.execute()) as never).then(select);
+    }
     return this.cached("n", async () => rowFromResult(await this.execute()) as never);
   }
 
@@ -504,6 +514,7 @@ async function materializeRef(ref: Duckable): Promise<void> {
       ref.setStatus("ready");
     } catch (err) {
       ref.setStatus("error", err as Error);
+      console.log({ref})
       console.error(`[materialize:${name}]`, err);
       throw err;
     } finally {
@@ -763,6 +774,14 @@ export async function _typeCheck() {
 
   const fragRows = await f3.rows();
   fragRows && (fragRows satisfies { total_cost: number; best: unknown }[]);
+
+  // Test rows() with callback
+  const rowsFormatted = await typed.rows(rows => rows.map(r => ({ ...r, formatted: true })));
+  rowsFormatted satisfies { total: number; name: unknown; formatted: boolean }[];
+
+  // Test row() with callback
+  const rowFormatted = await f2.row(row => row ? { doubled: row.val * 2 } : null);
+  rowFormatted && (rowFormatted satisfies { doubled: number } | null);
 
   const multi = await Promise.all([typed.rows(), f2.rows()]);
   multi satisfies [{ total: number; name: unknown }[], { val: number }[]];
