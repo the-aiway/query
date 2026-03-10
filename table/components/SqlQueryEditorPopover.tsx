@@ -1,6 +1,6 @@
 import Editor, { type OnMount } from '@monaco-editor/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'sql-formatter';
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 
 import { Dialog, DialogContent, DialogTrigger } from '../ui/Dialog';
 
@@ -120,7 +120,7 @@ export function SqlQueryEditorPopover({ sql, title = 'SQL', children, onSave }: 
           </div>
           <Editor
             height={editorHeight}
-            defaultLanguage="sql"
+            defaultLanguage="pgsql"
             value={value}
             onChange={(v) => !isReadOnly && setDraft(v ?? '')}
             onMount={handleEditorMount}
