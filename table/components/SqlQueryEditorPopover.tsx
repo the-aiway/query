@@ -65,7 +65,7 @@ export function SqlQueryEditorPopover({ sql, title = 'SQL', children, onSave }: 
     (editor, monaco) => {
       editorRef.current = editor;
 
-      monaco.languages.registerDocumentFormattingEditProvider('sql', {
+      monaco.languages.registerDocumentFormattingEditProvider('duckdb', {
         provideDocumentFormattingEdits(model: unknown & { getValue: () => string; getFullModelRange: () => unknown }) {
           try {
             const formatted = format(model.getValue(), { language: 'duckdb' });
