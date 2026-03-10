@@ -36,7 +36,7 @@ export function SqlQueryEditorPopover({ sql, title = 'SQL', children, onSave }: 
   const formatted = useMemo(() => {
     if (!resolvedSql) return '';
     try {
-      return format(resolvedSql, { language: 'sql' });
+      return format(resolvedSql, { language: 'duckdb' });
     } catch {
       return resolvedSql;
     }
@@ -68,7 +68,7 @@ export function SqlQueryEditorPopover({ sql, title = 'SQL', children, onSave }: 
       monaco.languages.registerDocumentFormattingEditProvider('sql', {
         provideDocumentFormattingEdits(model: unknown & { getValue: () => string; getFullModelRange: () => unknown }) {
           try {
-            const formatted = format(model.getValue(), { language: 'sql' });
+            const formatted = format(model.getValue(), { language: 'duckdb' });
             return [{ range: model.getFullModelRange(), text: formatted }];
           } catch {
             return [];
@@ -120,7 +120,7 @@ export function SqlQueryEditorPopover({ sql, title = 'SQL', children, onSave }: 
           </div>
           <Editor
             height={editorHeight}
-            defaultLanguage="pgsql"
+            defaultLanguage="duckdb"
             value={value}
             onChange={(v) => !isReadOnly && setDraft(v ?? '')}
             onMount={handleEditorMount}
