@@ -1,6 +1,6 @@
 import Editor, { type OnMount } from '@monaco-editor/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'sql-formatter';
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 
 import { Dialog, DialogContent, DialogTrigger } from '../ui/Dialog';
 
@@ -36,7 +36,7 @@ export function SqlQueryEditorPopover({ sql, title = 'SQL', children, onSave }: 
   const formatted = useMemo(() => {
     if (!resolvedSql) return '';
     try {
-      return format(resolvedSql, { language: 'sql' });
+      return format(resolvedSql, { language: 'duckdb' });
     } catch {
       return resolvedSql;
     }
@@ -68,7 +68,7 @@ export function SqlQueryEditorPopover({ sql, title = 'SQL', children, onSave }: 
       monaco.languages.registerDocumentFormattingEditProvider('sql', {
         provideDocumentFormattingEdits(model: unknown & { getValue: () => string; getFullModelRange: () => unknown }) {
           try {
-            const formatted = format(model.getValue(), { language: 'sql' });
+            const formatted = format(model.getValue(), { language: 'duckdb' });
             return [{ range: model.getFullModelRange(), text: formatted }];
           } catch {
             return [];
