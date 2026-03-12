@@ -98,10 +98,10 @@ export function OptionsFilter({
   }).useRows((arr) =>
     arr?.map(
       (r): ColumnOption => ({
-        key: String(r.key),
-        label: r.key === "__NULL__" ? "(null)" : String(r.key),
-        count: Number(r.cnt),
-        frac: Number(r.frac),
+        key: String((r as Record<string, unknown>).key),
+        label: (r as Record<string, unknown>).key === "__NULL__" ? "(null)" : String((r as Record<string, unknown>).key),
+        count: Number((r as Record<string, unknown>).cnt),
+        frac: Number((r as Record<string, unknown>).frac),
       }),
     ) ?? [],
   );

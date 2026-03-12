@@ -108,7 +108,8 @@ function rowsFromResult(result: DuckResult, select = (e: unknown[]) => e): unkno
 
 function rowFromResult(result: DuckResult, select = (e: unknown) => e): unknown {
   if (result.row) return result.row();
-  return rowsFromResult(result, select)[0] ?? null;
+  const rows = rowsFromResult(result);
+  return rows[0] != null ? select(rows[0]) : null;
 }
 
 function arrowTableFromResult(result: DuckResult): unknown {
@@ -262,7 +263,7 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
   rows<R>(select: (rows: NonNullable<TRow>[]) => R): Promise<R>;
   rows<R>(select?: (rows: NonNullable<TRow>[]) => R): any {
     if (select) {
-      this._formatter = select;
+      this._formatter = select as (e: unknown[]) => unknown[];
     }
     // if (select) {
     //   return this.cached('a', async () => rowsFromResult(await this.execute()) as never).then(select);

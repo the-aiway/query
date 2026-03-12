@@ -257,11 +257,11 @@ export type DataTableProps = Omit<QueryTableProps, 'table'> & {
 
 type DataTableInnerShellProps = Omit<DataTableProps, 'table'> & { tableRef: QueryRef };
 export type FullScreenProps = {
-  isFullscreen: boolean;
-  setIsFullscreen: (isFullscreen: boolean) => void;
+  isFullscreen?: boolean;
+  setIsFullscreen?: (isFullscreen: boolean) => void;
 };
 
-function DataTableShell({ id, tableRef, height, compact = true, resolutionStrategy = 'direct', rowHeight, overscan = 12, pool: poolProp, footer, ...props }: DataTableInnerShellProps & FullScreenProps) {
+function DataTableShell({ id, tableRef, height, compact = true, resolutionStrategy = 'direct', rowHeight, overscan = 12, pool: poolProp, footer, isFullscreen = false, setIsFullscreen = () => {}, ...props }: DataTableInnerShellProps & FullScreenProps) {
   const effectiveRowHeight = rowHeight ?? (compact ? 24 : 28);
   const { pool: contextPool } = useDuckDB();
   const pool = poolProp ?? contextPool;
@@ -284,7 +284,7 @@ function DataTableShell({ id, tableRef, height, compact = true, resolutionStrate
 
   return (
     <QueryTableProvider key={`${resolvedId}:${effectiveTableRef.id}`} id={resolvedId} tableRef={effectiveTableRef} pool={pool} title={title} compact={compact} {...props}>
-      <DataTableInternal height={height} rowHeight={effectiveRowHeight} overscan={overscan} footer={footer} isFullscreen={props.isFullscreen} setIsFullscreen={props.setIsFullscreen} />
+      <DataTableInternal height={height} rowHeight={effectiveRowHeight} overscan={overscan} footer={footer} isFullscreen={isFullscreen} setIsFullscreen={setIsFullscreen} />
     </QueryTableProvider>
   );
 }

@@ -297,7 +297,7 @@ export type ParseField<S extends string> =
           ? { name: GetColName<Trim<S>>; type: ResolveImplicitType<Trim<S>, GetColName<Trim<S>>> }
           : { name: never; type: unknown }
       : // CASE 3: No Cast, but has AS alias
-        SplitAlias<S> extends [infer Expr extends string, infer Alias]
+        SplitAlias<S> extends [infer Expr extends string, infer Alias extends string]
         ? { name: Alias; type: ResolveImplicitType<Expr, Alias> }
         : { name: ExtractAliasName<S>; type: unknown };
 
