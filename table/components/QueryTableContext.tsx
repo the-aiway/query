@@ -1,8 +1,33 @@
-import { type ColumnDef, getCoreRowModel, useReactTable, type ColumnSizingState, type ColumnPinningState, type SortingState, type VisibilityState } from '@tanstack/react-table';
-import { Table } from 'apache-arrow';
-import React, { createContext, useContext, useMemo, useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import {
+  type ColumnDef,
+  getCoreRowModel,
+  useReactTable,
+  type ColumnSizingState,
+  type ColumnPinningState,
+  type SortingState,
+  type VisibilityState,
+} from "@tanstack/react-table";
+import { Table } from "apache-arrow";
+import React, {
+  createContext,
+  useContext,
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type ReactNode,
+} from "react";
 
-import { type ColumnDescribe, useColumnDescribe, useColumnSummaries, useColumnSizes, useQueryParts, useTableCount, useTableSchema } from './Datasource';
+import {
+  type ColumnDescribe,
+  useColumnDescribe,
+  useColumnSummaries,
+  useColumnSizes,
+  useQueryParts,
+  useTableCount,
+  useTableSchema,
+} from "./Datasource";
 import {
   type FilterValue,
   type FiltersState,
@@ -11,11 +36,11 @@ import {
   isRangeFilter,
   serializeQTLayout,
   parseQTLayout,
-} from '../../sqlUtils';
-import { useDuckDB } from '../../react/DuckDBProvider';
-import { useSql, type QueryRef } from '../../react/reducks';
+} from "../../sqlUtils";
+import { useDuckDB } from "../../react/DuckDBProvider";
+import { useSql, type QueryRef } from "../../react/reducks";
 
-export type QueryResolutionStrategy = 'direct' | 'materialized' | 'lazy';
+export type QueryResolutionStrategy = "direct" | "materialized" | "lazy";
 
 type QueryTableCommonProps = {
   height?: number;
@@ -25,12 +50,19 @@ type QueryTableCommonProps = {
   persistStateInUrl?: boolean;
   overscan?: number;
   getRowClassName?: (ctx: { get: (col: string) => unknown; rowIndex: number }) => string;
-  renderCell?: (ctx: { colName: string; type: string; rawValue: unknown; display: string; rowIndex: number; pageRowIndex: number }) => React.ReactNode | undefined;
+  renderCell?: (ctx: {
+    colName: string;
+    type: string;
+    rawValue: unknown;
+    display: string;
+    rowIndex: number;
+    pageRowIndex: number;
+  }) => React.ReactNode | undefined;
   enableFilters?: boolean;
   colDefaultWidth?: number;
   colMinWidth?: number;
   colMaxWidth?: number;
-  pool?: ReturnType<typeof useDuckDB>['pool'];
+  pool?: ReturnType<typeof useDuckDB>["pool"];
   showRowNumbers?: boolean;
   onClose?: () => void;
   title?: string;
@@ -39,7 +71,10 @@ type QueryTableCommonProps = {
 };
 
 type QueryTableNonEntryInput = string | Record<string, unknown>[] | Table;
-export type QueryTableSourceMap = Record<string, QueryRef | QueryTableNonEntryInput | null | undefined>;
+export type QueryTableSourceMap = Record<
+  string,
+  QueryRef | QueryTableNonEntryInput | null | undefined
+>;
 
 export type QueryTableProps =
   | (QueryTableCommonProps & {
@@ -88,10 +123,10 @@ function useQueryTableState({
   title?: string;
   tableRef: QueryRef;
   dependencyRootRef?: QueryRef;
-  pool: ReturnType<typeof useDuckDB>['pool'];
-} & Omit<QueryTableProps, 'table' | 'pool' | 'height' | 'rowHeight' | 'overscan'>) {
+  pool: ReturnType<typeof useDuckDB>["pool"];
+} & Omit<QueryTableProps, "table" | "pool" | "height" | "rowHeight" | "overscan">) {
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [globalFilter, setGlobalFilter] = useState('');
+  const [globalFilter, setGlobalFilter] = useState("");
   const [columnFilters, setColumnFilters] = useState<FiltersState>({});
 
   // --- localStorage: column sizing + visibility ---
@@ -110,13 +145,13 @@ function useQueryTableState({
         localStorage.setItem(layoutKey, serializeQTLayout(visibility, sizing));
       }, LAYOUT_DEBOUNCE_MS);
     },
-    [layoutKey]
+    [layoutKey],
   );
 
   const setColumnSizingWithSave = useCallback(
     (updater: ColumnSizingState | ((prev: ColumnSizingState) => ColumnSizingState)) => {
       setColumnSizing((prev) => {
-        const next = typeof updater === 'function' ? updater(prev) : updater;
+        const next = typeof updater === "function" ? updater(prev) : updater;
         setColumnVisibility((vis) => {
           saveLayout(next, vis);
           return vis;
@@ -124,13 +159,13 @@ function useQueryTableState({
         return next;
       });
     },
-    [saveLayout]
+    [saveLayout],
   );
 
   const setColumnVisibilityWithSave = useCallback(
     (updater: VisibilityState | ((prev: VisibilityState) => VisibilityState)) => {
       setColumnVisibility((prev) => {
-        const next = typeof updater === 'function' ? updater(prev) : updater;
+        const next = typeof updater === "function" ? updater(prev) : updater;
         setColumnSizing((sz) => {
           saveLayout(sz, next);
           return sz;
@@ -138,13 +173,12 @@ function useQueryTableState({
         return next;
       });
     },
-    [saveLayout]
+    [saveLayout],
   );
 
   const [openFilterCol, setOpenFilterCol] = useState<string | null>(null);
-  const [filterSearch, setFilterSearch] = useState('');
+  const [filterSearch, setFilterSearch] = useState("");
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const onClearCol = useCallback((col: string) => {
@@ -166,9 +200,9 @@ function useQueryTableState({
 
   const clearAllFilters = useCallback(() => {
     setColumnFilters({});
-    setGlobalFilter('');
+    setGlobalFilter("");
     setOpenFilterCol(null);
-    setFilterSearch('');
+    setFilterSearch("");
   }, []);
 
   const schemaQuery = useTableSchema(tableRef);
@@ -183,19 +217,30 @@ function useQueryTableState({
 
   const summariesQuery = useColumnSummaries(tableRef);
   const columnSummaries = summariesQuery.data ?? [];
-  const summaryMap = useMemo(() => new Map(columnSummaries.map((s) => [s.name, s])), [columnSummaries]);
+  const summaryMap = useMemo(
+    () => new Map(columnSummaries.map((s) => [s.name, s])),
+    [columnSummaries],
+  );
 
   const describeQuery = useColumnDescribe(tableRef);
   const columnDescribe = describeQuery.data ?? [];
-  const describeMap = useMemo(() => new Map<string, ColumnDescribe>(columnDescribe.map((d) => [d.name, d])), [columnDescribe]);
+  const describeMap = useMemo(
+    () => new Map<string, ColumnDescribe>(columnDescribe.map((d) => [d.name, d])),
+    [columnDescribe],
+  );
 
   const sizesQuery = useColumnSizes(tableRef, { enabled: compact });
   const columnSizes = sizesQuery.data ?? [];
   const sizeMap = useMemo(() => new Map(columnSizes.map((s) => [s.name, s])), [columnSizes]);
 
-  const refreshing = countQuery.isFetching || summariesQuery.isFetching || describeQuery.isFetching || sizesQuery.isFetching;
+  const refreshing =
+    countQuery.isFetching ||
+    summariesQuery.isFetching ||
+    describeQuery.isFetching ||
+    sizesQuery.isFetching;
 
-  const hasActiveFiltersOrSorting = sorting.length > 0 || Object.keys(columnFilters).length > 0 || globalFilter.trim().length > 0;
+  const hasActiveFiltersOrSorting =
+    sorting.length > 0 || Object.keys(columnFilters).length > 0 || globalFilter.trim().length > 0;
 
   const queryError = schemaQuery.error || countQuery.error;
 
@@ -203,9 +248,9 @@ function useQueryTableState({
     if (queryError && hasActiveFiltersOrSorting) {
       setSorting([]);
       setColumnFilters({});
-      setGlobalFilter('');
+      setGlobalFilter("");
       setOpenFilterCol(null);
-      setFilterSearch('');
+      setFilterSearch("");
     }
   }, [queryError, hasActiveFiltersOrSorting]);
 
@@ -219,7 +264,7 @@ function useQueryTableState({
         {
           id: col.name,
           accessorKey: col.name,
-          header: col.name.replace(/^\d+_/, ''),
+          header: col.name.replace(/^\d+_/, ""),
           size: effDefault,
           minSize: effMin,
           maxSize: effMax,
@@ -230,9 +275,9 @@ function useQueryTableState({
     if (showRowNumbers) {
       return [
         {
-          id: '_row_index',
-          accessorKey: '_row_index',
-          header: '#',
+          id: "_row_index",
+          accessorKey: "_row_index",
+          header: "#",
           size: 60,
           minSize: 50,
           maxSize: 80,
@@ -254,24 +299,30 @@ function useQueryTableState({
     enableColumnResizing: compact,
     onSortingChange: setSorting,
     onColumnSizingChange: (updater) => {
-      setColumnSizingWithSave((prev) => (typeof updater === 'function' ? updater(prev) : updater));
+      setColumnSizingWithSave((prev) => (typeof updater === "function" ? updater(prev) : updater));
     },
     onColumnPinningChange: setColumnPinning,
     onColumnVisibilityChange: (updater) => {
-      setColumnVisibilityWithSave((prev) => (typeof updater === 'function' ? updater(prev) : updater));
+      setColumnVisibilityWithSave((prev) =>
+        typeof updater === "function" ? updater(prev) : updater,
+      );
     },
-    columnResizeMode: 'onChange',
+    columnResizeMode: "onChange",
     getCoreRowModel: getCoreRowModel(),
     manualSorting: true,
   });
 
-  const initializedSchemaRef = useRef<string>('');
-  const initializedVisibilityRef = useRef<string>('');
+  const initializedSchemaRef = useRef<string>("");
+  const initializedVisibilityRef = useRef<string>("");
 
   useEffect(() => {
-    const schemaKey = fieldNames.join(',');
+    const schemaKey = fieldNames.join(",");
 
-    if (schemaKey && (compact ? !sizesQuery.isLoading : true) && initializedSchemaRef.current !== schemaKey) {
+    if (
+      schemaKey &&
+      (compact ? !sizesQuery.isLoading : true) &&
+      initializedSchemaRef.current !== schemaKey
+    ) {
       const effMin = enableFilters ? colMinWidth : Math.min(colMinWidth, 44);
       const effMax = enableFilters ? colMaxWidth : Math.min(colMaxWidth, 110);
       const effDefault = enableFilters ? colDefaultWidth : Math.min(colDefaultWidth, 72);
@@ -279,7 +330,7 @@ function useQueryTableState({
       const savedLayout = parseQTLayout(localStorage.getItem(layoutKey));
 
       const newSizing: ColumnSizingState = { ...savedLayout?.sizing };
-      if (showRowNumbers) newSizing['_row_index'] = 60;
+      if (showRowNumbers) newSizing["_row_index"] = 60;
 
       for (const name of fieldNames) {
         if (newSizing[name] !== undefined) continue;
@@ -305,36 +356,52 @@ function useQueryTableState({
         initializedVisibilityRef.current = schemaKey;
       } else if (Object.keys(columnVisibility).length === 0) {
         const nextVisibility: VisibilityState = {};
-        if (showRowNumbers) nextVisibility['_row_index'] = true;
+        if (showRowNumbers) nextVisibility["_row_index"] = true;
         for (const name of fieldNames) nextVisibility[name] = true;
         setColumnVisibility(nextVisibility);
         initializedVisibilityRef.current = schemaKey;
       }
     }
-  }, [fieldNames, columnSummaries, showRowNumbers, sizeMap, enableFilters, colMinWidth, colMaxWidth, colDefaultWidth, columnVisibility, layoutKey, sizesQuery.isLoading, compact]);
+  }, [
+    fieldNames,
+    columnSummaries,
+    showRowNumbers,
+    sizeMap,
+    enableFilters,
+    colMinWidth,
+    colMaxWidth,
+    colDefaultWidth,
+    columnVisibility,
+    layoutKey,
+    sizesQuery.isLoading,
+    compact,
+  ]);
 
   const hasChanges = hasActiveFiltersOrSorting;
   const isCompactColumnSizingReady = useMemo(() => {
     if (!compact) return true;
     if (schema.length === 0) return true;
-    if (showRowNumbers && columnSizing['_row_index'] === undefined) return false;
+    if (showRowNumbers && columnSizing["_row_index"] === undefined) return false;
     return fieldNames.every((name) => columnSizing[name] !== undefined);
   }, [compact, schema.length, showRowNumbers, columnSizing, fieldNames]);
 
   const resetAll = useCallback(() => {
     setSorting([]);
     setColumnFilters({});
-    setGlobalFilter('');
+    setGlobalFilter("");
     setOpenFilterCol(null);
-    setFilterSearch('');
+    setFilterSearch("");
     setColumnSizing({});
     setColumnVisibility({});
     setColumnPinning({});
-    initializedSchemaRef.current = '';
-    initializedVisibilityRef.current = '';
+    initializedSchemaRef.current = "";
+    initializedVisibilityRef.current = "";
   }, []);
 
-  const fieldNamesForGlobal = useMemo(() => (globalFilter.trim() ? fieldNames : []), [globalFilter, fieldNames]);
+  const fieldNamesForGlobal = useMemo(
+    () => (globalFilter.trim() ? fieldNames : []),
+    [globalFilter, fieldNames],
+  );
 
   const activeColumnFilters = useMemo(() => {
     return Object.entries(columnFilters)
@@ -348,12 +415,12 @@ function useQueryTableState({
 
   const globalFilterActive = !!globalFilter.trim();
   const totalFilterCount = (globalFilterActive ? 1 : 0) + activeColumnFilters.length;
-
+  const sql = useMemo(() => tableRef.type === 'table' && tableRef.dependencies?.length === 1 ? tableRef.dependencies[0].toSqlSync() : tableRef.query, [tableRef]);
   return {
     id,
     pool,
-    sql: tableRef.query ?? `SELECT * FROM '${tableRef.id}'`,
-    originalSql: tableRef.query ?? `SELECT * FROM '${tableRef.id}'`,
+    sql,
+    originalSql: sql,
     entry: tableRef,
     dependencyRootRef,
     schema,
@@ -389,8 +456,6 @@ function useQueryTableState({
     setFilterSearch,
     isSearchExpanded,
     setIsSearchExpanded,
-    isFullscreen,
-    setIsFullscreen,
     searchInputRef,
 
     activeColumnFilters,
@@ -419,7 +484,7 @@ const QTContext = createContext<QTContextValue | null>(null);
 
 export function useQT() {
   const ctx = useContext(QTContext);
-  if (!ctx) throw new Error('useQT must be used within a QueryTableProvider');
+  if (!ctx) throw new Error("useQT must be used within a QueryTableProvider");
   return ctx;
 }
 
@@ -441,8 +506,8 @@ export function QueryTableProvider({
   id: string;
   children: ReactNode;
   tableRef: QueryRef;
-  pool: ReturnType<typeof useDuckDB>['pool'];
-} & Omit<QueryTableProps, 'table' | 'pool' | 'height' | 'rowHeight' | 'overscan'>) {
+  pool: ReturnType<typeof useDuckDB>["pool"];
+} & Omit<QueryTableProps, "table" | "pool" | "height" | "rowHeight" | "overscan">) {
   const value = useQueryTableState(stateProps);
   return <QTContext.Provider value={value}>{children}</QTContext.Provider>;
 }

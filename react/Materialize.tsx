@@ -1,4 +1,4 @@
-import { Suspense, createElement, use, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { isRef, type QueryRef } from './reducks';
 
@@ -7,25 +7,13 @@ type ResolvedData<T extends Record<string, SourceValue>> = {
   [K in keyof T]: T[K] extends QueryRef<infer R> ? NonNullable<R>[] : T[K] extends Promise<infer R> ? NonNullable<R> : never;
 };
 
-export interface MaterializeComponent {
-  <T extends Record<string, SourceValue>>(props: { source: T; fallback?: ReactNode; disabled?: boolean; children: (data: ResolvedData<T>) => ReactNode }): ReactNode;
-}
+type MaterializeState<T> =
+  | { status: 'pending' }
+  | { status: 'error'; error: unknown }
+  | { status: 'success'; data: T };
 
 export function isQueryRef(value: unknown): value is QueryRef {
   return isRef(value);
-}
-
-export function resolveSource<T extends Record<string, SourceValue>>(source: T): ResolvedData<T> {
-  const out: any = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (isQueryRef(value)) {
-      value.ensureName(key);
-      out[key] = use(value.rows() as PromiseLike<unknown[]>);
-    } else {
-      out[key] = use(value as Promise<unknown>);
-    }
-  }
-  return out;
 }
 
 export async function resolveSourceAsync<T extends Record<string, SourceValue>>(source: T): Promise<ResolvedData<T>> {
@@ -48,25 +36,51 @@ export function toQueryTableSource(source: Record<string, unknown>): Record<stri
   return Object.fromEntries(Object.entries(source).filter(([, value]) => isQueryRef(value))) as Record<string, QueryRef>;
 }
 
-function MaterializeImpl<T extends Record<string, SourceValue>>({ source, children }: { source: T; children: (data: ResolvedData<T>) => ReactNode }): ReactNode {
-  const data = resolveSource(source);
-  return children(data);
-}
-
 /**
- * Low-level reactive data boundary. Resolves QueryRef/Promise sources with Suspense
- * and renders children with typed named data. Does not include UI chrome.
+ * Simple reactive data boundary. Resolves QueryRef/Promise sources and renders children
+ * with typed named data. Explicit loading/error/success states.
  *
  * Usage:
  *   const orders = useSql(() => `SELECT * FROM orders`);
- *   <Materialize source={{ orders }}>{({orders}) => <MyChart data={orders} />}</Materialize>
+ *   <Materialize source={{ orders }} fallback={<div>Loading...</div>}>
+ *     {({orders}) => <MyChart data={orders} />}
+ *   </Materialize>
  */
-export const Materialize: MaterializeComponent = (<T extends Record<string, SourceValue>>(props: {
+export function Materialize<T extends Record<string, SourceValue>>({
+  source,
+  fallback,
+  error: errorFallback,
+  disabled = false,
+  children,
+}: {
   source: T;
   fallback?: ReactNode;
+  error?: ReactNode;
   disabled?: boolean;
   children: (data: ResolvedData<T>) => ReactNode;
-}): ReactNode => {
-  if (props?.disabled) return null;
-  return <Suspense fallback={props?.fallback ?? null}>{createElement(MaterializeImpl<T>, { source: props.source, children: props.children })}</Suspense>;
-}) as MaterializeComponent;
+}): ReactNode {
+  const [state, setState] = useState<MaterializeState<ResolvedData<T>>>({ status: 'pending' });
+
+  useEffect(() => {
+    if (disabled) return;
+
+    let isMounted = true;
+    resolveSourceAsync(source).then(
+      (data) => {
+        if (isMounted) setState({ status: 'success', data });
+      },
+      (err) => {
+        if (isMounted) setState({ status: 'error', error: err });
+      }
+    );
+
+    return () => {
+      isMounted = false;
+    };
+  }, [source, disabled]);
+
+  if (disabled) return null;
+  if (state.status === 'pending') return fallback ?? null;
+  if (state.status === 'error') return errorFallback ?? null;
+  return children(state.data);
+}

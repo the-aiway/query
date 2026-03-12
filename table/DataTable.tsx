@@ -2,7 +2,7 @@ import { useQueries } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { type Vector, Table, tableFromJSON } from 'apache-arrow';
 import { Database, Loader2, AlertCircle } from 'lucide-react';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Cell } from './components/Cell';
 import { Headers } from './components/Headers';
@@ -256,8 +256,12 @@ export type DataTableProps = Omit<QueryTableProps, 'table'> & {
 };
 
 type DataTableInnerShellProps = Omit<DataTableProps, 'table'> & { tableRef: QueryRef };
+export type FullScreenProps = {
+  isFullscreen: boolean;
+  setIsFullscreen: (isFullscreen: boolean) => void;
+};
 
-function DataTableShell({ id, tableRef, height, compact = true, resolutionStrategy = 'direct', rowHeight, overscan = 12, pool: poolProp, footer, ...props }: DataTableInnerShellProps) {
+function DataTableShell({ id, tableRef, height, compact = true, resolutionStrategy = 'direct', rowHeight, overscan = 12, pool: poolProp, footer, ...props }: DataTableInnerShellProps & FullScreenProps) {
   const effectiveRowHeight = rowHeight ?? (compact ? 24 : 28);
   const { pool: contextPool } = useDuckDB();
   const pool = poolProp ?? contextPool;
@@ -280,7 +284,7 @@ function DataTableShell({ id, tableRef, height, compact = true, resolutionStrate
 
   return (
     <QueryTableProvider key={`${resolvedId}:${effectiveTableRef.id}`} id={resolvedId} tableRef={effectiveTableRef} pool={pool} title={title} compact={compact} {...props}>
-      <DataTableInternal height={height} rowHeight={effectiveRowHeight} overscan={overscan} footer={footer} />
+      <DataTableInternal height={height} rowHeight={effectiveRowHeight} overscan={overscan} footer={footer} isFullscreen={props.isFullscreen} setIsFullscreen={props.setIsFullscreen} />
     </QueryTableProvider>
   );
 }
@@ -304,22 +308,22 @@ export function tableInputToRef(input: DataTableProps['table'], cache?: Map<obje
   return null;
 }
 
-export function DataTable({ table: tableInput, ...props }: DataTableProps) {
+export function DataTable({ table: tableInput, ...props }: DataTableProps & FullScreenProps) {
   const cache = React.useRef(new Map<object, QueryRef>()).current;
   const ref = tableInputToRef(tableInput, cache);
   if (!ref) return null;
   return <DataTableShell {...props} tableRef={ref} />;
 }
 
-function DataTableInternal({ height, rowHeight, overscan, footer }: { height?: number; rowHeight: number; overscan: number; footer?: React.ReactNode }) {
-  const { isFullscreen, schemaError, countError, compact, isCompactColumnSizingReady } = useQT();
+function DataTableInternal({ height, rowHeight, overscan, footer, isFullscreen, setIsFullscreen }: { height?: number; rowHeight: number; overscan: number; footer?: React.ReactNode; isFullscreen: boolean; setIsFullscreen: (isFullscreen: boolean) => void }) {
+  const { schemaError, countError, compact, isCompactColumnSizingReady } = useQT();
 
   const tableContent = (
     <Card
       className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full min-w-0'} relative flex max-w-full flex-1 flex-col overflow-hidden ${height != null ? 'min-h-0' : 'min-h-80'}`}
     >
       <CardContent className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-0">
-        <QueryTableToolbar />
+        <QueryTableToolbar isFullscreen={isFullscreen} setIsFullscreen={setIsFullscreen} />
 
         {schemaError || countError ? (
           <QueryError error={schemaError || countError} />
