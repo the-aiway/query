@@ -15,8 +15,10 @@ import { useTab } from './TabContext';
 import { isSetFilter, isRangeFilter } from '../../sqlUtils';
 import { cn } from '../ui/utils';
 
-export function QueryTableToolbar({ isFullscreen, setIsFullscreen }: { isFullscreen: boolean; setIsFullscreen: (isFullscreen: boolean) => void }) {
+export function QueryTableToolbar() {
   const {
+    isFullscreen,
+    setIsFullscreen,
     title,
     isInitialLoad,
     rowCount,

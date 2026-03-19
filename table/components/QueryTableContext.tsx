@@ -179,6 +179,7 @@ function useQueryTableState({
   const [openFilterCol, setOpenFilterCol] = useState<string | null>(null);
   const [filterSearch, setFilterSearch] = useState("");
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const onClearCol = useCallback((col: string) => {
@@ -456,6 +457,8 @@ function useQueryTableState({
     setFilterSearch,
     isSearchExpanded,
     setIsSearchExpanded,
+    isFullscreen,
+    setIsFullscreen,
     searchInputRef,
 
     activeColumnFilters,

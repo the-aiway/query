@@ -256,12 +256,8 @@ export type DataTableProps = Omit<QueryTableProps, 'table'> & {
 };
 
 type DataTableInnerShellProps = Omit<DataTableProps, 'table'> & { tableRef: QueryRef };
-export type FullScreenProps = {
-  isFullscreen?: boolean;
-  setIsFullscreen?: (isFullscreen: boolean) => void;
-};
 
-function DataTableShell({ id, tableRef, height, compact = true, resolutionStrategy = 'direct', rowHeight, overscan = 12, pool: poolProp, footer, isFullscreen = false, setIsFullscreen = () => {}, ...props }: DataTableInnerShellProps & FullScreenProps) {
+function DataTableShell({ id, tableRef, height, compact = true, resolutionStrategy = 'direct', rowHeight, overscan = 12, pool: poolProp, footer, ...props }: DataTableInnerShellProps) {
   const effectiveRowHeight = rowHeight ?? (compact ? 24 : 28);
   const { pool: contextPool } = useDuckDB();
   const pool = poolProp ?? contextPool;
@@ -284,7 +280,7 @@ function DataTableShell({ id, tableRef, height, compact = true, resolutionStrate
 
   return (
     <QueryTableProvider key={`${resolvedId}:${effectiveTableRef.id}`} id={resolvedId} tableRef={effectiveTableRef} pool={pool} title={title} compact={compact} {...props}>
-      <DataTableInternal height={height} rowHeight={effectiveRowHeight} overscan={overscan} footer={footer} isFullscreen={isFullscreen} setIsFullscreen={setIsFullscreen} />
+      <DataTableInternal height={height} rowHeight={effectiveRowHeight} overscan={overscan} footer={footer} />
     </QueryTableProvider>
   );
 }
@@ -308,22 +304,22 @@ export function tableInputToRef(input: DataTableProps['table'], cache?: Map<obje
   return null;
 }
 
-export function DataTable({ table: tableInput, ...props }: DataTableProps & FullScreenProps) {
+export function DataTable({ table: tableInput, ...props }: DataTableProps) {
   const cache = React.useRef(new Map<object, QueryRef>()).current;
   const ref = tableInputToRef(tableInput, cache);
   if (!ref) return null;
   return <DataTableShell {...props} tableRef={ref} />;
 }
 
-function DataTableInternal({ height, rowHeight, overscan, footer, isFullscreen, setIsFullscreen }: { height?: number; rowHeight: number; overscan: number; footer?: React.ReactNode; isFullscreen: boolean; setIsFullscreen: (isFullscreen: boolean) => void }) {
-  const { schemaError, countError, compact, isCompactColumnSizingReady } = useQT();
+function DataTableInternal({ height, rowHeight, overscan, footer }: { height?: number; rowHeight: number; overscan: number; footer?: React.ReactNode }) {
+  const { isFullscreen, schemaError, countError, compact, isCompactColumnSizingReady } = useQT();
 
   const tableContent = (
     <Card
       className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full min-w-0'} relative flex max-w-full flex-1 flex-col overflow-hidden ${height != null ? 'min-h-0' : 'min-h-80'}`}
     >
       <CardContent className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-0">
-        <QueryTableToolbar isFullscreen={isFullscreen} setIsFullscreen={setIsFullscreen} />
+        <QueryTableToolbar />
 
         {schemaError || countError ? (
           <QueryError error={schemaError || countError} />
