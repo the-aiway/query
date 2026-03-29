@@ -20,7 +20,7 @@ export function resolveSource<T extends Record<string, SourceValue>>(source: T):
   for (const [key, value] of Object.entries(source)) {
     if (isQueryRef(value)) {
       value.ensureName(key);
-      out[key] = use(value.rows() as PromiseLike<unknown[]>);
+      out[key] = use(value.rows());
     } else {
       out[key] = use(value as Promise<unknown>);
     }
