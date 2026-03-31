@@ -229,7 +229,8 @@ export function resolveSql(queryFn: unknown, params: Record<string, unknown>) {
 }
 
 // ─── DuckRef ───────────────────────────────────────────────
-export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]> {
+export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
+  readonly [Symbol.toStringTag] = "Duckable";
   readonly id: string;
   readonly type: QueryType;
   readonly query: string;
@@ -246,11 +247,21 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
   _materializing?: Promise<void>;
   private _promises = new Map<string, Promise<unknown>>();
 
-  then<TResult1 = NonNullable<TRow>[] | null, TResult2 = never>(
+  then<TResult1 = NonNullable<TRow>[], TResult2 = never>(
     onfulfilled?: ((value: NonNullable<TRow>[]) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
-  ): PromiseLike<TResult1 | TResult2> {
+  ): Promise<TResult1 | TResult2> {
     return this.rows().then(onfulfilled, onrejected);
+  }
+
+  catch<TResult = never>(
+    onrejected?: ((reason: unknown) => TResult | PromiseLike<TResult>) | null,
+  ): Promise<NonNullable<TRow>[] | TResult> {
+    return this.rows().catch(onrejected);
+  }
+
+  finally(onfinally?: (() => void) | null): Promise<NonNullable<TRow>[]> {
+    return this.rows().finally(onfinally);
   }
 
   constructor(
@@ -316,21 +327,13 @@ export class Duckable<TRow = unknown> implements PromiseLike<NonNullable<TRow>[]
     return getRuntime().exec(Duckable.toStatement(this));
   }
 
-  rows<TFill = never>(): Duckable<ApplyFill<TRow, TFill>> &
-    PromiseLike<NonNullable<ApplyFill<TRow, TFill>>[]> {
-    return Object.assign(this as any, {
-      then: (onfulfilled?: any, onrejected?: any) => {
-        return this.cached("a", async () => rowsFromResult(await this.execute()) as never).then(
-          onfulfilled,
-          onrejected,
-        );
-      },
-    });
+  rows<TFill = never>(): Promise<NonNullable<ApplyFill<TRow, TFill>>[]> {
+    return this.cached("a", async () => rowsFromResult(await this.execute()) as never);
   }
 
   /** @deprecated Use rows() */
-  toArray(): Duckable<TRow> & PromiseLike<NonNullable<TRow>[]> {
-    return this.rows() as any;
+  toArray(): Promise<NonNullable<TRow>[]> {
+    return this.rows() as Promise<NonNullable<TRow>[]>;
   }
 
   /** @deprecated Use arrowTable() */
