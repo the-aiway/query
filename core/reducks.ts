@@ -327,8 +327,11 @@ export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
     return getRuntime().exec(Duckable.toStatement(this));
   }
 
-  rows<TFill = never>(): Promise<NonNullable<ApplyFill<TRow, TFill>>[]> {
-    return this.cached("a", async () => rowsFromResult(await this.execute()) as never);
+  rows(): Promise<NonNullable<TRow>[]>;
+  rows<R>(select: (rows: NonNullable<TRow>[]) => R): Promise<R>;
+  rows<R>(select?: (rows: NonNullable<TRow>[]) => R): Promise<NonNullable<TRow>[] | R> {
+    const base = this.cached("a", async () => rowsFromResult(await this.execute()) as NonNullable<TRow>[]);
+    return select ? base.then(select) : base;
   }
 
   /** @deprecated Use rows() */
@@ -348,8 +351,11 @@ export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
     });
   }
 
-  row<TFill = never>(): Promise<NonNullable<ApplyFill<TRow, TFill>> | null> {
-    return this.cached("n", async () => rowFromResult(await this.execute()) as never);
+  row(): Promise<NonNullable<TRow> | null>;
+  row<R>(select: (row: NonNullable<TRow> | null) => R): Promise<R>;
+  row<R>(select?: (row: NonNullable<TRow> | null) => R): Promise<NonNullable<TRow> | null | R> {
+    const base = this.cached("n", async () => rowFromResult(await this.execute()) as NonNullable<TRow> | null);
+    return select ? base.then(select) : base;
   }
 
   async toSql(): Promise<string> {
