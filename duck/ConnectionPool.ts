@@ -1,5 +1,5 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
-import { Table as ArrowTable, tableFromJSON, type TypeMap } from 'apache-arrow';
+import { Table as ArrowTable, tableFromJSON, tableFromIPC, tableToIPC, type TypeMap } from 'apache-arrow';
 
 import type { Materialize, InferSQL } from './inferSqlReturntype';
 
@@ -13,6 +13,18 @@ function withToMaterialized<TRow>(table: ArrowTable<TypeMap>): InferredArrowTabl
   return Object.assign(table, {
     toMaterialized: () => Array.from(table).map((e = {}) => e?.toJSON?.() ?? { ...e }),
   }) as InferredArrowTable<TRow>;
+}
+
+/**
+ * The vendored DuckDB-WASM build returns query results as Arrow IPC bytes
+ * (a `Uint8Array`) instead of an Arrow `Table`. Decode those into a `Table`
+ * so the rest of the pipeline (toArray / toMaterialized / Vector access) keeps
+ * working. Older builds that already returned a `Table` are passed through.
+ */
+function decodeArrowResult(result: unknown): ArrowTable<TypeMap> {
+  if (result == null) return new ArrowTable();
+  if (result instanceof Uint8Array) return tableFromIPC(result);
+  return result as ArrowTable<TypeMap>;
 }
 
 export class ConnectionPool {
@@ -70,25 +82,21 @@ export class ConnectionPool {
     const conn = await this.acquire();
     await this.ensureQueryHook(conn);
     try {
-      let result;
+      // DuckDB-WASM returns Arrow IPC bytes (Uint8Array); the npm types still
+      // declare a Table return, so treat the result as unknown and decode it.
+      let result: unknown;
       if (!params || params.length === 0) {
         result = await conn.query(query);
       } else {
         const stmt = await conn.prepare(query);
         try {
-          if (typeof stmt.query === 'function') {
-            result = await stmt.query(...params);
-          } else {
-            const stream = await stmt.send(...params);
-            const res = await stream.readAll();
-            result = new ArrowTable(res);
-          }
+          result = await stmt.query(...params);
         } finally {
           await stmt.close();
         }
       }
 
-      const table = result || new ArrowTable();
+      const table = decodeArrowResult(result);
       return withToMaterialized<Materialize<InferSQL<Q, TOverride>>[number]>(table);
     } finally {
       this.release(conn);
@@ -125,8 +133,10 @@ export class ConnectionPool {
     await this.ensureQueryHook(conn);
     try {
       await conn.query(`DROP TABLE IF EXISTS ${tableName};`);
-      await conn.insertArrowTable(table, {
+      // insertArrowTable was removed; feed the table as an Arrow IPC stream.
+      await conn.insertArrowFromIPCStream(tableToIPC(table, 'stream'), {
         name: tableName,
+        create: true,
       });
     } finally {
       this.release(conn);

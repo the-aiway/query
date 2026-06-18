@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Table } from 'apache-arrow';
+import { tableToIPC, type Table } from 'apache-arrow';
 import { DuckQueryWasmProvider, useDuckDB } from '../react/DuckDBProvider';
 import { setRuntime } from '../react/reducks';
 import { LoadingCard } from '../table/DataTable';
@@ -30,7 +30,7 @@ function RuntimeBridge({ children }: { children: React.ReactNode }) {
     async insertArrow(name: string, arrowTable: unknown) {
       const conn = await pool.acquire();
       try {
-        await conn.insertArrowTable(arrowTable as Table, { name, create: true });
+        await conn.insertArrowFromIPCStream(tableToIPC(arrowTable as Table, 'stream'), { name, create: true });
       } finally {
         pool.release(conn);
       }
