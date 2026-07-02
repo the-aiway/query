@@ -26,6 +26,16 @@ const ORDERS_DATA = Array.from({ length: 100 }, (_, i) => ({
   date: `2024-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
 }));
 
+const WIDE_COLUMN_COUNT = 30;
+const WIDE_ROW_COUNT = 15;
+const WIDE_DATA = Array.from({ length: WIDE_ROW_COUNT }, (_, row) => {
+  const record: Record<string, string | number> = { id: row + 1 };
+  for (let col = 1; col <= WIDE_COLUMN_COUNT; col++) {
+    record[`col_${String(col).padStart(2, '0')}`] = `r${row + 1}c${col}`;
+  }
+  return record;
+});
+
 const meta: Meta<typeof QueryTable> = {
   title: 'Table/DataTable',
   component: QueryTable,
@@ -92,6 +102,14 @@ export const CustomRowHeight: Story = {
     table: SAMPLE_DATA,
     height: 400,
     rowHeight: 36,
+  },
+};
+
+export const Wide: Story = {
+  args: {
+    id: 'wide',
+    table: WIDE_DATA,
+    height: 400,
   },
 };
 
