@@ -8,6 +8,7 @@ import { Cell } from './components/Cell';
 import { Headers } from './components/Headers';
 import { QueryTableToolbar } from './components/QueryTableToolbar';
 import { QueryTableProvider, useQT, type QueryTableProps } from './components/QueryTableContext';
+import { useContainSwipeNav } from './useContainSwipeNav';
 import { quoteIdent, normalizeSelectSql } from '../sqlUtils';
 
 import { Card, CardContent } from './ui/Card';
@@ -313,9 +314,12 @@ export function DataTable({ table: tableInput, ...props }: DataTableProps) {
 
 function DataTableInternal({ height, rowHeight, overscan, footer }: { height?: number; rowHeight: number; overscan: number; footer?: React.ReactNode }) {
   const { isFullscreen, schemaError, countError, compact, isCompactColumnSizingReady } = useQT();
+  const rootRef = useRef<HTMLDivElement>(null);
+  useContainSwipeNav(rootRef);
 
   const tableContent = (
     <Card
+      ref={rootRef}
       className={`${isFullscreen ? 'h-full w-full rounded-none border-0' : 'h-full w-full min-w-0'} relative flex max-w-full flex-1 flex-col overflow-hidden ${height != null ? 'min-h-0' : 'min-h-80'}`}
     >
       <CardContent className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-0">
