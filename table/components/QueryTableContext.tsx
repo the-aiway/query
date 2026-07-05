@@ -174,8 +174,9 @@ function useQueryTableState({
   const schemaQuery = useTableSchema(tableRef);
   const schema = schemaQuery.data ?? [];
   const fieldNames = useMemo(() => schema.map((f) => f.name), [schema]);
+  const columnTypes = useMemo(() => Object.fromEntries(schema.map((f) => [f.name, f.type])), [schema]);
 
-  const queryParts = useQueryParts({ tableRef, globalFilter, columnFilters, fieldNames });
+  const queryParts = useQueryParts({ tableRef, globalFilter, columnFilters, fieldNames, columnTypes });
 
   const countQuery = useTableCount(queryParts.filteredRef);
   const rowCount = countQuery.data ?? 0;
@@ -357,6 +358,7 @@ function useQueryTableState({
     entry: tableRef,
     dependencyRootRef,
     schema,
+    columnTypes,
     rowCount,
     columnSummaries,
     summaryMap,
@@ -424,12 +426,13 @@ export function useQT() {
 }
 
 export function useFilteredRef(excludeCol?: string): QueryRef {
-  const { queryParts, globalFilter, fieldNamesForGlobal, columnFilters } = useQT();
+  const { queryParts, globalFilter, fieldNamesForGlobal, columnFilters, columnTypes } = useQT();
   const { whereClause } = buildWhereClause({
     globalFilter,
     fieldNamesForGlobal,
     columnFilters,
     excludeCol,
+    columnTypes,
   });
   return useSql((t) => `SELECT * FROM ${t.base}${whereClause}`, { base: queryParts.tableRef });
 }

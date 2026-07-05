@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { useQT, useFilteredRef } from './QueryTableContext';
-import { isRangeFilter, quoteIdent } from '../../sqlUtils';
+import { isRangeFilter, quoteIdent, isTemporalType, isDateOnlyType, isTimeOnlyType, formatEpoch } from '../../sqlUtils';
 import { useSql } from '../../react/reducks';
 import { Materialize } from '../../react/Materialize';
 
@@ -13,9 +13,36 @@ const FLOAT_BUCKETS = 80;
 const MAX_DISCRETE_BINS = 200;
 const INT_TYPES = /INT|TINYINT|SMALLINT|BIGINT|HUGEINT|UBIGINT|UINTEGER|USMALLINT|UTINYINT/i;
 
-function useColumnStats(col: string | null, isInteger: boolean) {
+// HTML input type + value/parse helpers for the from/to fields of a temporal column.
+// Temporal range values live in epoch seconds, read as UTC (DuckDB timestamps are tz-naive).
+const temporalInputType = (colType: string) => (isDateOnlyType(colType) ? 'date' : isTimeOnlyType(colType) ? 'time' : 'datetime-local');
+
+function epochToInputValue(sec: number, colType: string): string {
+  const d = new Date(sec * 1000);
+  if (Number.isNaN(d.getTime())) return '';
+  const iso = d.toISOString();
+  if (isDateOnlyType(colType)) return iso.slice(0, 10);
+  if (isTimeOnlyType(colType)) return iso.slice(11, 16);
+  return iso.slice(0, 16);
+}
+
+function inputValueToEpoch(value: string, colType: string): number | null {
+  if (!value) return null;
+  const iso = isDateOnlyType(colType) ? `${value}T00:00:00Z` : isTimeOnlyType(colType) ? `1970-01-01T${value}:00Z` : `${value}:00Z`;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : ms / 1000;
+}
+
+function useColumnStats(col: string | null, isInteger: boolean, isTemporal: boolean) {
   const baseFiltered = useFilteredRef(col ?? undefined);
   const colIdent = col ? quoteIdent(col) : '';
+  // Temporal columns are projected to epoch seconds so all numeric stats/bucketing
+  // arithmetic works (subtracting timestamps yields INTERVAL, which cannot be divided).
+  const colExpr = isTemporal ? `epoch(${colIdent})` : colIdent;
+  // The histogram joins the source with the stats subquery, so the data column is
+  // qualified with the source alias `f` to avoid collisions with stats output aliases
+  // (e.g. a data column literally named "total", "min_val", …).
+  const histColExpr = isTemporal ? `epoch(f.${colIdent})` : `f.${colIdent}`;
 
   const filtered = useSql((t) => `SELECT * FROM ${t.base} WHERE ${t.raw.colIdent} IS NOT NULL`, {
     base: baseFiltered,
@@ -24,28 +51,28 @@ function useColumnStats(col: string | null, isInteger: boolean) {
 
   const stats = useSql(
     (t) => `SELECT
-      MIN(${t.raw.colIdent}) as min_val, MAX(${t.raw.colIdent}) as max_val,
-      AVG(${t.raw.colIdent}) as avg_val, quantile_cont(${t.raw.colIdent}, 0.5) as median_val,
-      quantile_cont(${t.raw.colIdent}, 0.01) as p01, quantile_cont(${t.raw.colIdent}, 0.90) as p90,
-      quantile_cont(${t.raw.colIdent}, 0.99) as p99, COUNT(*)::BIGINT as total
+      MIN(${t.raw.colExpr}) as min_val, MAX(${t.raw.colExpr}) as max_val,
+      AVG(${t.raw.colExpr}) as avg_val, quantile_cont(${t.raw.colExpr}, 0.5) as median_val,
+      quantile_cont(${t.raw.colExpr}, 0.01) as p01, quantile_cont(${t.raw.colExpr}, 0.90) as p90,
+      quantile_cont(${t.raw.colExpr}, 0.99) as p99, COUNT(*)::BIGINT as total
       FROM ${t.filtered}`,
-    { filtered, colIdent }
+    { filtered, colExpr }
   );
 
   const hist = useSql(
     isInteger
-      ? (t) => `SELECT ${t.raw.colIdent}::BIGINT as bucket, COUNT(*)::BIGINT as cnt
-          FROM ${t.filtered} GROUP BY 1`
+      ? (t) => `SELECT ${t.raw.histColExpr}::BIGINT as bucket, COUNT(*)::BIGINT as cnt
+          FROM ${t.filtered} f GROUP BY 1`
       : (t) => `SELECT
           CASE
-            WHEN ${t.raw.colIdent} < s.min_val THEN 0
-            WHEN ${t.raw.colIdent} >= s.max_val THEN ${t.bucketsPlus1}
+            WHEN ${t.raw.histColExpr} < s.min_val THEN 0
+            WHEN ${t.raw.histColExpr} >= s.max_val THEN ${t.bucketsPlus1}
             WHEN s.max_val = s.min_val THEN 1
-            ELSE floor(((${t.raw.colIdent} - s.min_val) / (s.max_val - s.min_val)) * ${t.buckets})::INT + 1
+            ELSE floor(((${t.raw.histColExpr} - s.min_val) / (s.max_val - s.min_val)) * ${t.buckets})::INT + 1
           END as bucket, COUNT(*)::BIGINT as cnt
-          FROM ${t.filtered}, ${t.stats} s
+          FROM ${t.filtered} f, ${t.stats} s
           GROUP BY 1`,
-    { filtered, stats, colIdent, buckets: FLOAT_BUCKETS, bucketsPlus1: FLOAT_BUCKETS + 1 }
+    { filtered, stats, histColExpr, buckets: FLOAT_BUCKETS, bucketsPlus1: FLOAT_BUCKETS + 1 }
   );
 
   return useSql(
@@ -163,7 +190,7 @@ function processStatsRows(rows: Record<string, unknown>[], isInteger: boolean): 
   return { ...base, histogram, discrete: false, discreteValues: null };
 }
 
-function RangeFilterContent({ stats, isInteger, col, colType }: { stats: ColumnStatsData; isInteger: boolean; col: string; colType: string }) {
+function RangeFilterContent({ stats, isInteger, isTemporal, col, colType }: { stats: ColumnStatsData; isInteger: boolean; isTemporal: boolean; col: string; colType: string }) {
   const { columnFilters, onChangeFilter } = useQT();
   const filterValue = columnFilters[col];
 
@@ -174,11 +201,12 @@ function RangeFilterContent({ stats, isInteger, col, colType }: { stats: ColumnS
 
   const fmtNum = (n: number | undefined) => {
     if (n === undefined || n === null) return '—';
+    if (isTemporal) return formatEpoch(n, colType);
     if (isInteger) return Math.round(n).toLocaleString();
     return n.toFixed(2);
   };
   const normalizeValue = (value: number) => {
-    if (isInteger) return Math.round(value);
+    if (isInteger || isTemporal) return Math.round(value);
     return Number(value.toFixed(2));
   };
 
@@ -227,6 +255,18 @@ function RangeFilterContent({ stats, isInteger, col, colType }: { stats: ColumnS
 
   const displayTo = currentRange ? (isInteger ? Math.round(currentRange[1]) : Math.round(currentRange[1] * 100) / 100) : isInteger ? Math.round(stats.max) : Math.round(stats.max * 100) / 100;
 
+  const [curFrom, curTo] = currentRange;
+  const commitFrom = (rounded: number) => {
+    const newPos: [number, number] = [valToPos(rounded), sliderPos?.[1] ?? valToPos(committedRange?.[1] ?? stats.max)];
+    setSliderPos(newPos);
+    handleRangeCommit(newPos);
+  };
+  const commitTo = (rounded: number) => {
+    const newPos: [number, number] = [sliderPos?.[0] ?? valToPos(committedRange?.[0] ?? stats.min), valToPos(rounded)];
+    setSliderPos(newPos);
+    handleRangeCommit(newPos);
+  };
+
   const [hoveredBin, setHoveredBin] = useState<null | { label: string; count: number }>(null);
 
   return (
@@ -270,43 +310,53 @@ function RangeFilterContent({ stats, isInteger, col, colType }: { stats: ColumnS
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <div className="text-muted-foreground text-[10px] uppercase">from</div>
-              <Input
-                type="number"
-                step={isInteger ? 1 : 0.01}
-                value={displayFrom}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  if (!Number.isNaN(val)) {
-                    const rounded = normalizeValue(val);
-                    const pos0 = valToPos(rounded);
-                    const pos1 = sliderPos?.[1] ?? valToPos(committedRange?.[1] ?? stats.max);
-                    const newPos: [number, number] = [pos0, pos1];
-                    setSliderPos(newPos);
-                    handleRangeCommit(newPos);
-                  }
-                }}
-                className="h-8 text-xs"
-              />
+              {isTemporal ? (
+                <Input
+                  type={temporalInputType(colType)}
+                  value={epochToInputValue(curFrom, colType)}
+                  onChange={(e) => {
+                    const sec = inputValueToEpoch(e.target.value, colType);
+                    if (sec !== null) commitFrom(normalizeValue(sec));
+                  }}
+                  className="h-8 text-xs"
+                />
+              ) : (
+                <Input
+                  type="number"
+                  step={isInteger ? 1 : 0.01}
+                  value={displayFrom}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (!Number.isNaN(val)) commitFrom(normalizeValue(val));
+                  }}
+                  className="h-8 text-xs"
+                />
+              )}
             </div>
             <div className="space-y-1">
               <div className="text-muted-foreground text-right text-[10px] uppercase">to</div>
-              <Input
-                type="number"
-                step={isInteger ? 1 : 0.01}
-                value={displayTo}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  if (!Number.isNaN(val)) {
-                    const rounded = normalizeValue(val);
-                    const pos0 = sliderPos?.[0] ?? valToPos(committedRange?.[0] ?? stats.min);
-                    const pos1 = valToPos(rounded);
-                    const newPos: [number, number] = [pos0, pos1];
-                    setSliderPos(newPos);
-                    handleRangeCommit(newPos);
-                  }
-                }}
-                className="h-8 text-right text-xs"
-              />
+              {isTemporal ? (
+                <Input
+                  type={temporalInputType(colType)}
+                  value={epochToInputValue(curTo, colType)}
+                  onChange={(e) => {
+                    const sec = inputValueToEpoch(e.target.value, colType);
+                    if (sec !== null) commitTo(normalizeValue(sec));
+                  }}
+                  className="h-8 text-xs"
+                />
+              ) : (
+                <Input
+                  type="number"
+                  step={isInteger ? 1 : 0.01}
+                  value={displayTo}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (!Number.isNaN(val)) commitTo(normalizeValue(val));
+                  }}
+                  className="h-8 text-right text-xs"
+                />
+              )}
             </div>
           </div>
         </div>
@@ -326,10 +376,11 @@ export function RangeFilter({ col, icon, triggerClassName }: { col: string; icon
     return s?.type?.toUpperCase() ?? '';
   }, [schema, col]);
 
-  const isInteger = INT_TYPES.test(colType);
-  const formatValue = (value: number) => (isInteger ? Math.round(value).toLocaleString() : value.toFixed(2));
+  const isTemporal = isTemporalType(colType);
+  const isInteger = !isTemporal && INT_TYPES.test(colType);
+  const formatValue = (value: number) => (isTemporal ? formatEpoch(value, colType) : isInteger ? Math.round(value).toLocaleString() : value.toFixed(2));
 
-  const statsRef = useColumnStats(col, isInteger);
+  const statsRef = useColumnStats(col, isInteger, isTemporal);
 
   return (
     <Popover open={open} onOpenChange={(o) => onOpenFilterCol(o ? col : null)}>
@@ -372,7 +423,7 @@ export function RangeFilter({ col, icon, triggerClassName }: { col: string; icon
           {({ raw }) => {
             const stats = processStatsRows(raw as Record<string, unknown>[], isInteger);
             if (!stats) return <div className="text-muted-foreground font-mono text-xs">Stats not available</div>;
-            return <RangeFilterContent stats={stats} isInteger={isInteger} col={col} colType={colType} />;
+            return <RangeFilterContent stats={stats} isInteger={isInteger} isTemporal={isTemporal} col={col} colType={colType} />;
           }}
         </Materialize>
       </PopoverContent>

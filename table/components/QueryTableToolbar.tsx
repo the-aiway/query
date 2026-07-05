@@ -12,7 +12,7 @@ import { ExportButton } from './ExportButton';
 import { SqlQueryEditorPopover } from './SqlQueryEditorPopover';
 import { useQT } from './QueryTableContext';
 import { useTab } from './TabContext';
-import { isSetFilter, isRangeFilter } from '../../sqlUtils';
+import { isSetFilter, isRangeFilter, isTemporalType, formatEpoch, type FilterValue } from '../../sqlUtils';
 import { cn } from '../ui/utils';
 
 export function QueryTableToolbar() {
@@ -34,6 +34,7 @@ export function QueryTableToolbar() {
     totalFilterCount,
     globalFilter,
     setGlobalFilter,
+    columnTypes,
     onClearCol,
     clearAllFilters,
     table,
@@ -53,6 +54,14 @@ export function QueryTableToolbar() {
   const searchInputRefToUse = searchInputRef || searchInputRefInternal;
   const [columnsOpen, setColumnsOpen] = React.useState(false);
   const [columnSearch, setColumnSearch] = React.useState('');
+
+  const fmtFilterChip = (col: string, val: FilterValue): string => {
+    if (isSetFilter(val)) return `(${val.length})`;
+    if (!isRangeFilter(val)) return '';
+    const type = columnTypes?.[col];
+    if (isTemporalType(type)) return `[${formatEpoch(val.$between[0], type ?? '')} → ${formatEpoch(val.$between[1], type ?? '')}]`;
+    return `[${Math.round(val.$between[0] * 100) / 100}, ${Math.round(val.$between[1] * 100) / 100}]`;
+  };
 
   const hiddenColumnCount = React.useMemo(() => Object.values(columnVisibility).filter((isVisible) => isVisible === false).length, [columnVisibility]);
   const allLeafColumns = table.getAllLeafColumns();
@@ -114,7 +123,7 @@ export function QueryTableToolbar() {
                 <button key={col} type="button" className="bg-background inline-flex h-7 items-center gap-1 rounded border px-2 font-mono text-[11px]" onClick={() => onClearCol(col)}>
                   <span className="max-w-45 truncate">{col}</span>
                   <span className="text-muted-foreground">
-                    {isSetFilter(val) ? `(${val.length})` : isRangeFilter(val) ? `[${Math.round(val.$between[0] * 100) / 100}, ${Math.round(val.$between[1] * 100) / 100}]` : ''}
+                    {fmtFilterChip(col, val)}
                   </span>
                   <X className="text-muted-foreground h-3.5 w-3.5" />
                 </button>
@@ -146,7 +155,7 @@ export function QueryTableToolbar() {
                       <button key={col} type="button" className="bg-background inline-flex h-7 items-center gap-1 rounded border px-2 font-mono text-[11px]" onClick={() => onClearCol(col)}>
                         <span className="max-w-65 truncate">{col}</span>
                         <span className="text-muted-foreground">
-                          {isSetFilter(val) ? `(${val.length})` : isRangeFilter(val) ? `[${Math.round(val.$between[0] * 100) / 100}, ${Math.round(val.$between[1] * 100) / 100}]` : ''}
+                          {fmtFilterChip(col, val)}
                         </span>
                         <X className="text-muted-foreground h-3.5 w-3.5" />
                       </button>
