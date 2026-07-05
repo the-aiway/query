@@ -20,15 +20,17 @@ type QueryBase = {
   globalFilter: string;
   columnFilters: FiltersState;
   fieldNames: string[];
+  columnTypes?: Record<string, string>;
 };
 
 export type QueryParts = { tableRef: QueryRef; filteredRef: QueryRef };
 
-export function useQueryParts({ tableRef, globalFilter, columnFilters, fieldNames }: QueryBase): QueryParts {
+export function useQueryParts({ tableRef, globalFilter, columnFilters, fieldNames, columnTypes }: QueryBase): QueryParts {
   const { whereClause } = buildWhereClause({
     globalFilter,
     fieldNamesForGlobal: globalFilter.trim() ? fieldNames : [],
     columnFilters,
+    columnTypes,
   });
   const filteredRef = useSql((t) => `SELECT * FROM ${t.base}${whereClause}`, { base: tableRef });
   return { tableRef, filteredRef };

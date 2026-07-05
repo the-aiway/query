@@ -7,6 +7,25 @@ export type FiltersState = Record<string, FilterValue>;
 export const isSetFilter = (v: FilterValue): v is string[] => Array.isArray(v);
 export const isRangeFilter = (v: FilterValue): v is { $between: [number, number] } => !Array.isArray(v) && typeof v === 'object' && '$between' in v;
 
+// DATE / TIME / TIMESTAMP columns are handled in epoch-second space for range
+// filtering, since INTERVAL arithmetic (e.g. dividing timestamp deltas) is unsupported.
+export const isTemporalType = (type: string | undefined): boolean => !!type && /DATE|TIME|TIMESTAMP/i.test(type);
+export const isDateOnlyType = (type: string) => /\bDATE\b/.test(type) && !/TIME/.test(type);
+export const isTimeOnlyType = (type: string) => /\bTIME\b/.test(type) && !/TIMESTAMP/.test(type);
+
+// Renders an epoch-second value (how temporal range filters are stored) back to a
+// readable UTC string. DuckDB timestamps are timezone-naive, so we read them as UTC
+// to preserve the original wall-clock value.
+export function formatEpoch(sec: number | undefined, colType: string): string {
+  if (sec === undefined || sec === null || Number.isNaN(sec)) return '—';
+  const d = new Date(sec * 1000);
+  if (Number.isNaN(d.getTime())) return '—';
+  const iso = d.toISOString();
+  if (isDateOnlyType(colType)) return iso.slice(0, 10);
+  if (isTimeOnlyType(colType)) return iso.slice(11, 19);
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
+}
+
 const cond = (col: string, val: SqlConditionValue) => sqlConditions(mapKeys({ _: val }, () => col));
 
 export function quoteIdent(name: string) {
@@ -27,7 +46,13 @@ export function normalizeSelectSql(sql: string) {
   return /^from\b/i.test(cleaned) ? `SELECT * ${cleaned}` : cleaned;
 }
 
-export function buildWhereClause(opts: { globalFilter: string; fieldNamesForGlobal: string[]; columnFilters: FiltersState; excludeCol?: string }): { whereClause: string } {
+export function buildWhereClause(opts: {
+  globalFilter: string;
+  fieldNamesForGlobal: string[];
+  columnFilters: FiltersState;
+  excludeCol?: string;
+  columnTypes?: Record<string, string>;
+}): { whereClause: string } {
   const parts: string[] = [];
 
   for (const [col, f] of Object.entries(opts.columnFilters).sort(([a], [b]) => a.localeCompare(b))) {
@@ -38,7 +63,9 @@ export function buildWhereClause(opts: { globalFilter: string; fieldNamesForGlob
       const or = [...(nonNull.length > 0 ? [cond(cast(col), { $in: nonNull })] : []), ...(f.includes('__NULL__') ? [cond(qi(col), { $eq: null })] : [])];
       if (or.length > 0) parts.push(`(${or.join(' OR ')})`);
     } else if (isRangeFilter(f)) {
-      parts.push(cond(qi(col), { $between: f.$between }));
+      // Temporal ranges are stored as epoch seconds, so compare against epoch(col).
+      const lhs = isTemporalType(opts.columnTypes?.[col]) ? `epoch(${qi(col)})` : qi(col);
+      parts.push(cond(lhs, { $between: f.$between }));
     }
   }
 

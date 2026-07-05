@@ -10,12 +10,13 @@ import { Input } from '../ui/Input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { ScrollArea } from '../ui/ScrollArea';
 
-function useColumnOptions(opts: { col: string | null; tableRef: QueryRef; globalFilter: string; fieldNamesForGlobal: string[]; columnFilters: FiltersState; search: string; limit?: number }) {
+function useColumnOptions(opts: { col: string | null; tableRef: QueryRef; globalFilter: string; fieldNamesForGlobal: string[]; columnFilters: FiltersState; search: string; limit?: number; columnTypes?: Record<string, string> }) {
   const { whereClause } = buildWhereClause({
     globalFilter: opts.globalFilter,
     fieldNamesForGlobal: opts.fieldNamesForGlobal,
     columnFilters: opts.columnFilters,
     excludeCol: opts.col ?? undefined,
+    columnTypes: opts.columnTypes,
   });
 
   const colIdent = opts.col ? quoteIdent(opts.col) : '';
@@ -40,7 +41,7 @@ function useColumnOptions(opts: { col: string | null; tableRef: QueryRef; global
 }
 
 export function OptionsFilter({ col, icon, limit, triggerClassName }: { col: string; icon: React.ReactNode; limit?: number; triggerClassName?: string }) {
-  const { columnFilters, onChangeFilter, onClearCol, openFilterCol, onOpenFilterCol, filterSearch, setFilterSearch, queryParts, globalFilter, fieldNamesForGlobal } = useQT();
+  const { columnFilters, onChangeFilter, onClearCol, openFilterCol, onOpenFilterCol, filterSearch, setFilterSearch, queryParts, globalFilter, fieldNamesForGlobal, columnTypes } = useQT();
 
   const open = openFilterCol === col;
   const filterValue = columnFilters[col];
@@ -54,6 +55,7 @@ export function OptionsFilter({ col, icon, limit, triggerClassName }: { col: str
     columnFilters,
     search: open ? filterSearch : '',
     limit,
+    columnTypes,
   });
 
   return (
