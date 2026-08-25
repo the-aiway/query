@@ -64,7 +64,7 @@
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5",
-    "@tanstack/react-table": "^8",
+    "@tanstack/react-table": "^9",
     "@tanstack/react-virtual": "^3",
     "apache-arrow": "^17",
     "nuqs": "^2",

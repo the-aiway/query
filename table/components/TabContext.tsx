@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
-import { type SortingState, type ColumnSizingState, type VisibilityState, type ColumnPinningState } from '@tanstack/react-table';
+import { type SortingState, type ColumnSizingState, type ColumnVisibilityState, type ColumnPinningState } from '@tanstack/react-table';
 import { type QueryRef } from '../../react/reducks';
 import { type FiltersState } from '../../sqlUtils';
 
@@ -38,7 +38,7 @@ type TableState = {
   columnFilters: FiltersState;
   globalFilter: string;
   columnSizing: ColumnSizingState;
-  columnVisibility: VisibilityState;
+  columnVisibility: ColumnVisibilityState;
   columnPinning: ColumnPinningState;
   openFilterCol: string | null;
   filterSearch: string;
@@ -83,7 +83,7 @@ const createDefaultTableState = (): TableState => ({
   globalFilter: '',
   columnSizing: {},
   columnVisibility: {},
-  columnPinning: {},
+  columnPinning: { start: [], end: [] },
   openFilterCol: null,
   filterSearch: '',
   isSearchExpanded: false,

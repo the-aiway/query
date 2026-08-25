@@ -1,10 +1,9 @@
-import type { Column } from '@tanstack/react-table';
 import type { Vector } from 'apache-arrow';
 import { Calendar, Hash } from 'lucide-react';
 import React from 'react';
 
 import type { ColumnSummary } from './Datasource';
-import { useQT } from './QueryTableContext';
+import { useQT, type QTColumn } from './QueryTableContext';
 
 export const colors = [
   'bg-gray-300/10 text-gray-500 ring-1 ring-inset ring-gray-300/20 dark:text-gray-300',
@@ -181,7 +180,7 @@ function getCellTheme(colName: string, typeRaw: string, display: string, summary
 }
 
 type CellProps = {
-  column: Column<Record<string, unknown>>;
+  column: QTColumn;
   colName: string;
   type: string;
   pageData: { vectors: Map<string, Vector> } | undefined;

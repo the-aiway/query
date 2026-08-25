@@ -129,8 +129,8 @@ export function Headers() {
                     <>
                       <ContextMenuItem onClick={() => copyToClipboard(colName)}>Copy Column Name</ContextMenuItem>
                       <ContextMenuSeparator />
-                      <ContextMenuItem onClick={() => header.column.pin('left')}>Pin Left</ContextMenuItem>
-                      <ContextMenuItem onClick={() => header.column.pin('right')}>Pin Right</ContextMenuItem>
+                      <ContextMenuItem onClick={() => header.column.pin('start')}>Pin Left</ContextMenuItem>
+                      <ContextMenuItem onClick={() => header.column.pin('end')}>Pin Right</ContextMenuItem>
                       <ContextMenuItem onClick={() => header.column.pin(false)}>Unpin</ContextMenuItem>
                       <ContextMenuSeparator />
                       <ContextMenuItem onClick={() => header.column.toggleVisibility(false)}>Hide Column</ContextMenuItem>

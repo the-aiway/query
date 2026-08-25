@@ -1,4 +1,18 @@
-import { type ColumnDef, getCoreRowModel, useReactTable, type ColumnSizingState, type ColumnPinningState, type SortingState, type VisibilityState } from '@tanstack/react-table';
+import {
+  columnPinningFeature,
+  columnResizingFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
+  createColumnHelper,
+  rowSortingFeature,
+  tableFeatures,
+  useTable,
+  type Column,
+  type ColumnPinningState,
+  type ColumnSizingState,
+  type ColumnVisibilityState,
+  type SortingState,
+} from '@tanstack/react-table';
 import { Table } from 'apache-arrow';
 import React, { createContext, useContext, useMemo, useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 
@@ -67,6 +81,30 @@ const ESTIMATE_PADDING_PX = 32;
 
 const LAYOUT_DEBOUNCE_MS = 500;
 
+/**
+ * v9 gates column options and instance methods on the registered features:
+ * `size`/`minSize`/`maxSize` need columnSizing, `enableSorting` needs rowSorting,
+ * `column.pin()` needs columnPinning, and so on. Rows come from DuckDB, so no
+ * row-model factory is registered — the table is only used as a column engine.
+ */
+const QT_FEATURES = tableFeatures({
+  columnPinningFeature,
+  columnResizingFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
+  rowSortingFeature,
+});
+
+type QTRow = Record<string, unknown>;
+
+export type QTColumn = Column<typeof QT_FEATURES, QTRow>;
+
+const columnHelper = createColumnHelper<typeof QT_FEATURES, QTRow>();
+
+// Rows are rendered from Arrow vectors, not from the table instance; a stable
+// empty array keeps the table options identity-stable across renders.
+const NO_ROWS: QTRow[] = [];
+
 function useQueryTableState({
   id,
   tableRef,
@@ -98,13 +136,13 @@ function useQueryTableState({
   const layoutKey = `qt_layout_${id}`;
 
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
-  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({});
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [columnPinning, setColumnPinning] = useState<ColumnPinningState>({ start: [], end: [] });
+  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({});
 
   const layoutTimerRef = useRef<Timer | null>(null);
 
   const saveLayout = useCallback(
-    (sizing: ColumnSizingState, visibility: VisibilityState) => {
+    (sizing: ColumnSizingState, visibility: ColumnVisibilityState) => {
       if (layoutTimerRef.current) clearTimeout(layoutTimerRef.current);
       layoutTimerRef.current = setTimeout(() => {
         localStorage.setItem(layoutKey, serializeQTLayout(visibility, sizing));
@@ -128,7 +166,7 @@ function useQueryTableState({
   );
 
   const setColumnVisibilityWithSave = useCallback(
-    (updater: VisibilityState | ((prev: VisibilityState) => VisibilityState)) => {
+    (updater: ColumnVisibilityState | ((prev: ColumnVisibilityState) => ColumnVisibilityState)) => {
       setColumnVisibility((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : updater;
         setColumnSizing((sz) => {
@@ -210,46 +248,41 @@ function useQueryTableState({
     }
   }, [queryError, hasActiveFiltersOrSorting]);
 
-  const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
+  const columns = useMemo(() => {
     const effDefault = enableFilters ? colDefaultWidth : Math.min(colDefaultWidth, 72);
     const effMin = enableFilters ? colMinWidth : Math.min(colMinWidth, 44);
     const effMax = compact ? (enableFilters ? colMaxWidth : Math.min(colMaxWidth, 110)) : 9999;
 
-    const dataColumns = schema.flatMap((col) => {
-      return [
-        {
-          id: col.name,
-          accessorKey: col.name,
-          header: col.name.replace(/^\d+_/, ''),
-          size: effDefault,
-          minSize: effMin,
-          maxSize: effMax,
-        },
-      ];
-    });
+    const dataColumns = schema.map((col) =>
+      columnHelper.accessor(col.name, {
+        id: col.name,
+        header: col.name.replace(/^\d+_/, ''),
+        size: effDefault,
+        minSize: effMin,
+        maxSize: effMax,
+      })
+    );
 
     if (showRowNumbers) {
-      return [
-        {
+      return columnHelper.columns([
+        columnHelper.accessor('_row_index', {
           id: '_row_index',
-          accessorKey: '_row_index',
           header: '#',
           size: 60,
           minSize: 50,
           maxSize: 80,
           enableSorting: false,
-          enableColumnFilter: false,
           enableHiding: false,
-          meta: { isRowIndex: true },
-        },
+        }),
         ...dataColumns,
-      ];
+      ]);
     }
-    return dataColumns;
+    return columnHelper.columns(dataColumns);
   }, [schema, enableFilters, colDefaultWidth, colMinWidth, colMaxWidth, showRowNumbers, compact]);
 
-  const table = useReactTable({
-    data: [],
+  const table = useTable({
+    features: QT_FEATURES,
+    data: NO_ROWS,
     columns,
     state: { sorting, columnSizing, columnPinning, columnVisibility },
     enableColumnResizing: compact,
@@ -262,7 +295,6 @@ function useQueryTableState({
       setColumnVisibilityWithSave((prev) => (typeof updater === 'function' ? updater(prev) : updater));
     },
     columnResizeMode: 'onChange',
-    getCoreRowModel: getCoreRowModel(),
     manualSorting: true,
   });
 
@@ -305,7 +337,7 @@ function useQueryTableState({
         setColumnVisibility(savedLayout.visibility);
         initializedVisibilityRef.current = schemaKey;
       } else if (Object.keys(columnVisibility).length === 0) {
-        const nextVisibility: VisibilityState = {};
+        const nextVisibility: ColumnVisibilityState = {};
         if (showRowNumbers) nextVisibility['_row_index'] = true;
         for (const name of fieldNames) nextVisibility[name] = true;
         setColumnVisibility(nextVisibility);
@@ -330,7 +362,7 @@ function useQueryTableState({
     setFilterSearch('');
     setColumnSizing({});
     setColumnVisibility({});
-    setColumnPinning({});
+    setColumnPinning({ start: [], end: [] });
     initializedSchemaRef.current = '';
     initializedVisibilityRef.current = '';
   }, []);
