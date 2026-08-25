@@ -426,6 +426,30 @@ Contributions are welcome! This component is built with:
 - Radix UI
 - Tailwind CSS
 
+### Releasing
+
+`main` is protected and has no bypass actors, so the version commit cannot be
+pushed to it directly. A stable release is therefore two steps:
+
+```sh
+bun run release:major     # on main: bumps package.json on a branch, opens the PR
+# ...merge that PR...
+git checkout main && git pull
+bun run release:publish   # tags the merge commit and publishes
+```
+
+`release:patch` and `release:minor` work the same way. `release:publish`
+refuses to run if the tag already exists or the version is already on the
+registry, so it is safe to re-run after a partial failure.
+
+Release candidates skip the PR entirely — the ruleset only covers `main`, so an
+rc is committed, tagged and published straight from a feature branch, which is
+the point: try it against a consumer before it lands.
+
+```sh
+bun run release:rc        # on a feature branch -> x.y.z-rc.N, published under the beta tag
+```
+
 ## License
 
 MIT — see [LICENSE](./LICENSE) for details.
