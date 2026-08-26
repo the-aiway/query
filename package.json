@@ -32,13 +32,14 @@
     ]
   },
   "scripts": {
-    "bump:patch": "npm version patch -m 'chore: bump version to %s' && git push && git push --tags && npm publish",
-    "bump:minor": "npm version minor -m 'chore: bump version to %s' && git push && git push --tags && npm publish",
-    "bump:major": "npm version major -m 'chore: bump version to %s' && git push && git push --tags && npm publish",
-    "bump:patch:rc": "npm version prepatch --preid rc -m 'chore: bump candidate to %s' && git push && git push --tags && npm publish --tag beta",
-    "bump:minor:rc": "npm version preminor --preid rc -m 'chore: bump candidate to %s' && git push && git push --tags && npm publish --tag beta",
-    "bump:major:rc": "npm version premajor --preid rc -m 'chore: bump candidate to %s' && git push && git push --tags && npm publish --tag beta",
-    "bump:rc": "npm version prerelease --preid rc -m 'chore: bump candidate to %s' && git push && git push --tags && npm publish --tag beta",
+    "release:patch": "./scripts/release.sh prepare patch",
+    "release:minor": "./scripts/release.sh prepare minor",
+    "release:major": "./scripts/release.sh prepare major",
+    "release:publish": "./scripts/release.sh publish",
+    "release:rc": "./scripts/release.sh rc prerelease",
+    "release:rc:patch": "./scripts/release.sh rc prepatch",
+    "release:rc:minor": "./scripts/release.sh rc preminor",
+    "release:rc:major": "./scripts/release.sh rc premajor",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },
