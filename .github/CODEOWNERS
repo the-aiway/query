@@ -1,0 +1,6 @@
+# Code owners for query.
+# Syntax: https://docs.github.com/articles/about-code-owners
+#
+# The engineering team owns the entire repository by default and is
+# requested for review on every pull request.
+* @the-aiway/engineering
