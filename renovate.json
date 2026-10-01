@@ -1,0 +1,38 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "timezone": "Europe/Paris",
+  "schedule": ["before 7am on monday"],
+  "semanticCommits": "enabled",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 7am on monday"]
+  },
+  "packageRules": [
+    {
+      "description": "Group non-major production dependency updates into one PR",
+      "matchManagers": ["npm", "bun"],
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "production dependencies (non-major)"
+    },
+    {
+      "description": "Group non-major dev dependency updates into one PR",
+      "matchManagers": ["npm", "bun"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dev dependencies (non-major)"
+    },
+    {
+      "description": "DuckDB-Wasm only publishes X.Y.Z-devN.0 builds, even on the latest tag, which semver reads as prereleases: without this, Renovate only offers new dev builds of the current X.Y.Z. Pinned, because Renovate truncates a caret range on that suffix. In a PR of its own",
+      "matchPackageNames": ["@duckdb/duckdb-wasm"],
+      "ignoreUnstable": false,
+      "rangeStrategy": "pin",
+      "allowedVersions": "/^\\d+\\.\\d+\\.\\d+(-dev\\d+\\.\\d+)?$/",
+      "groupName": "duckdb-wasm"
+    }
+  ]
+}
