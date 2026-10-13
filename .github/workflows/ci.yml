@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Required by the `main` ruleset (the-aiway/infra, github/rulesets.ts): keep the
+  # job name stable. Building Storybook bundles every component with the real
+  # dependencies. `bun test` and `tsc` are not run yet: both fail on main today.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - run: bun install --frozen-lockfile
+      - run: bun run build-storybook --quiet
