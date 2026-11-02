@@ -186,6 +186,32 @@ const NEVER = new Promise<never>(() => {});
 let _seq = 0;
 const uid = (prefix: string) => `${prefix}_${++_seq}_${Math.random().toString(36).slice(2, 6)}`;
 
+const isTrimmable = (ch: string) => ch === ";" || /\s/.test(ch);
+const isLineTerminator = (ch: string) => ch === "\n" || ch === "\r" || ch === " " || ch === " ";
+
+// Linear equivalent of `query.replace(/[;\n\s]*$/gm, "")`: a run of `;`/whitespace is dropped
+// when it ends the query, otherwise only the part before its last line terminator is dropped.
+function trimSemicolonsAndBlanksAtLineEnds(query: string): string {
+  let out = "";
+  let i = 0;
+  while (i < query.length) {
+    if (!isTrimmable(query[i]!)) {
+      out += query[i];
+      i++;
+      continue;
+    }
+    let end = i;
+    let lastLineTerminator = -1;
+    while (end < query.length && isTrimmable(query[end]!)) {
+      if (isLineTerminator(query[end]!)) lastLineTerminator = end;
+      end++;
+    }
+    if (end < query.length) out += query.slice(lastLineTerminator === -1 ? i : lastLineTerminator, end);
+    i = end;
+  }
+  return out;
+}
+
 export function isRef(v: unknown): v is Duckable {
   return v instanceof Duckable;
 }
@@ -273,8 +299,7 @@ export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
   ) {
     this.id = options.id ?? uid(type[0]!);
     this.type = type;
-    // replace trailling ; and \n\s*
-    this.query = query?.replace(/[;\n\s]*$/gm, "") ?? "";
+    this.query = query == null ? "" : trimSemicolonsAndBlanksAtLineEnds(query);
     this.dependencies = dependencies;
     this.status = status;
     this.name = options.name;
