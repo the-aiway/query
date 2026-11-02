@@ -41,7 +41,8 @@ const qi = quoteIdent;
 const cast = (col: string) => `CAST(${qi(col)} AS VARCHAR)`;
 
 export function normalizeSelectSql(sql: string) {
-  const cleaned = sql.trim().replace(/;+$/, '');
+  let cleaned = sql.trim();
+  while (cleaned.endsWith(';')) cleaned = cleaned.slice(0, -1);
   if (!cleaned) return '';
   return /^from\b/i.test(cleaned) ? `SELECT * ${cleaned}` : cleaned;
 }
