@@ -25,6 +25,14 @@ describe('escapeJsonForSql', () => {
   test('preserves escaped double quotes', () => {
     expect(toValues([{ payload: { msg: 'say "hello"' } }], ['payload'])).toBe("({'msg':'say \"hello\"'})");
   });
+
+  test('trailing backslash does not swallow the closing quote', () => {
+    expect(toValues([{ p: { a: 'x\\', b: ') OR 1=1 --' } }], ['p'])).toBe("({'a':'x\\','b':') OR 1=1 --'})");
+  });
+
+  test('backslash followed by a double quote', () => {
+    expect(toValues([{ p: { a: 'x\\"y' } }], ['p'])).toBe("({'a':'x\\\"y'})");
+  });
 });
 
 describe('toValues', () => {
