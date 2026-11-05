@@ -220,15 +220,15 @@ function useQueryTableState({
   const rowCount = countQuery.data ?? 0;
   const isInitialLoad = schemaQuery.isLoading || (countQuery.isLoading && schema.length === 0);
 
-  const summariesQuery = useColumnSummaries(tableRef);
+  const summariesQuery = useColumnSummaries(tableRef, fieldNames);
   const columnSummaries = summariesQuery.data ?? [];
   const summaryMap = useMemo(() => new Map(columnSummaries.map((s) => [s.name, s])), [columnSummaries]);
 
-  const describeQuery = useColumnDescribe(tableRef);
+  const describeQuery = useColumnDescribe(tableRef, fieldNames);
   const columnDescribe = describeQuery.data ?? [];
   const describeMap = useMemo(() => new Map<string, ColumnDescribe>(columnDescribe.map((d) => [d.name, d])), [columnDescribe]);
 
-  const sizesQuery = useColumnSizes(tableRef, { enabled: compact });
+  const sizesQuery = useColumnSizes(tableRef, fieldNames, { enabled: compact });
   const columnSizes = sizesQuery.data ?? [];
   const sizeMap = useMemo(() => new Map(columnSizes.map((s) => [s.name, s])), [columnSizes]);
 
