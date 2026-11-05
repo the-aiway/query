@@ -1,7 +1,7 @@
 function escapeJsonForSql(obj: object): string {
   return JSON.stringify(obj, (_, v) => (typeof v === 'bigint' ? v.toString() : v))
     .replace(/'/g, "''")
-    .replace(/\\/g, '__ESC_DQ__')
+    .replace(/\\"/g, '__ESC_DQ__')
     .replace(/"/g, "'")
     .replace(/__ESC_DQ__/g, '"');
 }
