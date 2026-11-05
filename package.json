@@ -44,7 +44,7 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
-    "@duckdb/duckdb-wasm": "^1.33.1-dev18.0",
+    "@duckdb/duckdb-wasm": "1.33.1-dev114.0",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-checkbox": "^1.1.5",
     "@radix-ui/react-context-menu": "^2.2.7",
