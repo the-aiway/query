@@ -68,18 +68,14 @@ function resolveBundleBasePath(bundlePath: string) {
 function getRelevantBundle(bundlePath: string) {
   const origin = resolveBundleBasePath(bundlePath);
   return duckdb.selectBundle({
-    mvp: {
-      mainModule: `${origin}/duckdb-mvp.wasm`,
-      mainWorker: `${origin}/duckdb-browser-mvp.worker.js`,
+    base: {
+      mainModule: `${origin}/duckdb-base.wasm`,
+      mainWorker: `${origin}/duckdb-browser-base.worker.js`,
     },
-    eh: {
-      mainModule: `${origin}/duckdb-eh.wasm`,
-      mainWorker: `${origin}/duckdb-browser-eh.worker.js`,
-    },
-    coi: {
-      mainModule: `${origin}/duckdb-coi.wasm`,
-      mainWorker: `${origin}/duckdb-browser-coi.worker.js`,
-      pthreadWorker: `${origin}/duckdb-browser-coi.pthread.worker.js`,
+    threads: {
+      mainModule: `${origin}/duckdb-threads.wasm`,
+      mainWorker: `${origin}/duckdb-browser-threads.worker.js`,
+      pthreadWorker: `${origin}/duckdb-browser-threads.pthread.worker.js`,
     },
   });
 }
