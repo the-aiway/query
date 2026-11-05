@@ -8,7 +8,8 @@
     "strict": true,
     "noEmit": true,
     "isolatedModules": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["bun"]
   },
   "include": ["react/*", "table/*", "duck/*"],
   "exclude": ["node_modules/*", "dist/*"]
