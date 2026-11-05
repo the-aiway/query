@@ -114,14 +114,7 @@ export function ExportButton({ disabled }: { disabled?: boolean }) {
     <div className="flex shrink-0 items-center gap-2">
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 shrink-0 p-0"
-            onClick={() => void handleExport('csv')}
-            disabled={disabled || isDownloading}
-            title="Download (Right-click for options)"
-          >
+          <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" onClick={() => void handleExport('csv')} disabled={disabled || isDownloading} title="Download (Right-click for options)">
             <Download className="h-3.5 w-3.5" />
           </Button>
         </ContextMenuTrigger>

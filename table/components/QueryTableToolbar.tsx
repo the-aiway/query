@@ -122,9 +122,7 @@ export function QueryTableToolbar() {
               {activeColumnFilters.map(([col, val]) => (
                 <button key={col} type="button" className="bg-background inline-flex h-7 items-center gap-1 rounded border px-2 font-mono text-[11px]" onClick={() => onClearCol(col)}>
                   <span className="max-w-45 truncate">{col}</span>
-                  <span className="text-muted-foreground">
-                    {fmtFilterChip(col, val)}
-                  </span>
+                  <span className="text-muted-foreground">{fmtFilterChip(col, val)}</span>
                   <X className="text-muted-foreground h-3.5 w-3.5" />
                 </button>
               ))}
@@ -154,9 +152,7 @@ export function QueryTableToolbar() {
                     {activeColumnFilters.map(([col, val]) => (
                       <button key={col} type="button" className="bg-background inline-flex h-7 items-center gap-1 rounded border px-2 font-mono text-[11px]" onClick={() => onClearCol(col)}>
                         <span className="max-w-65 truncate">{col}</span>
-                        <span className="text-muted-foreground">
-                          {fmtFilterChip(col, val)}
-                        </span>
+                        <span className="text-muted-foreground">{fmtFilterChip(col, val)}</span>
                         <X className="text-muted-foreground h-3.5 w-3.5" />
                       </button>
                     ))}

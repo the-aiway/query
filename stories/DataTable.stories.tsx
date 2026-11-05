@@ -138,4 +138,3 @@ export const Wide: Story = {
     height: 400,
   },
 };
-

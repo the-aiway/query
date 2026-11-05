@@ -85,9 +85,7 @@ export function formatCell(value: unknown, type: string, colName: string, compac
   }
   if (typeof value === 'function') return '[function]';
   if (typeof value === 'object') {
-    return JSON.stringify(value, (key, value) =>
-  typeof value === "bigint" ? Number(value) : value,
-);
+    return JSON.stringify(value, (key, value) => (typeof value === 'bigint' ? Number(value) : value));
   }
   return '';
 }

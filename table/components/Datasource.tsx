@@ -103,15 +103,13 @@ export function useColumnSummaries(tableRef: QueryRef | null) {
     queryKey: ['reducks-summaries', stackedRef.id],
     queryFn: async () => {
       const rows = await stackedRef.toArray();
-      return rows.map(
-        (r): ColumnSummary => ({
-          name: String(r.name),
-          type: String(r.type),
-          uniq: Number(r.uniq ?? 0),
-          nulls: Number(r.nulls ?? 0),
-          total: Number(r.total ?? 0),
-        })
-      );
+      return rows.map((r): ColumnSummary => ({
+        name: String(r.name),
+        type: String(r.type),
+        uniq: Number(r.uniq ?? 0),
+        nulls: Number(r.nulls ?? 0),
+        total: Number(r.total ?? 0),
+      }));
     },
     enabled: !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,
@@ -144,12 +142,10 @@ export function useColumnSizes(tableRef: QueryRef | null, opts?: { enabled?: boo
     queryKey: ['reducks-sizes', sizesRef.id],
     queryFn: async () => {
       const rows = await sizesRef.toArray();
-      return rows.map(
-        (r): ColumnSize => ({
-          name: String(r.name),
-          p80Len: Number(r.p80Len ?? 0),
-        })
-      );
+      return rows.map((r): ColumnSize => ({
+        name: String(r.name),
+        p80Len: Number(r.p80Len ?? 0),
+      }));
     },
     enabled: opts?.enabled !== false && !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,
@@ -185,12 +181,10 @@ export function useColumnDescribe(tableRef: QueryRef | null) {
     queryKey: ['reducks-describe', describeRef.id],
     queryFn: async () => {
       const rows = await describeRef.toArray();
-      return rows.map(
-        (r): ColumnDescribe => ({
-          name: String(r.name),
-          emptyCount: Number(r.empty_count ?? 0),
-        })
-      );
+      return rows.map((r): ColumnDescribe => ({
+        name: String(r.name),
+        emptyCount: Number(r.empty_count ?? 0),
+      }));
     },
     enabled: !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,

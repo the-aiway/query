@@ -1,46 +1,17 @@
-import type { Table } from "apache-arrow";
-import {
-  type InferDuckTable,
-  type InferSQLStrict,
-  type Materialize,
-} from "../duck/inferSqlReturntype";
-import {
-  $in,
-  between,
-  buildWhere,
-  eq,
-  gt,
-  gte,
-  ilike,
-  like,
-  lt,
-  lte,
-  neq,
-  type SqlConditionValue,
-} from "../sqlConditions";
-import { escapeSQL, fnv1a32 } from "../sqlUtils";
-import { toValues, toValuesSelect } from "../toValues";
+import type { Table } from 'apache-arrow';
+import { type InferDuckTable, type InferSQLStrict, type Materialize } from '../duck/inferSqlReturntype';
+import { $in, between, buildWhere, eq, gt, gte, ilike, like, lt, lte, neq, type SqlConditionValue } from '../sqlConditions';
+import { escapeSQL, fnv1a32 } from '../sqlUtils';
+import { toValues, toValuesSelect } from '../toValues';
 
 // ─── Types ───────────────────────────────────────────────────
 
-export type QueryStatus = "pending" | "idle" | "writing" | "ready" | "error";
-export type QueryType = "fragment" | "table" | "opfs" | "arrow";
-export type DuckDBType =
-  | "VARCHAR"
-  | "INT"
-  | "INTEGER"
-  | "BIGINT"
-  | "FLOAT"
-  | "DOUBLE"
-  | "BOOLEAN"
-  | "DATE"
-  | "TIMESTAMP"
-  | "DECIMAL"
-  | "HUGEINT"
-  | (string & {});
+export type QueryStatus = 'pending' | 'idle' | 'writing' | 'ready' | 'error';
+export type QueryType = 'fragment' | 'table' | 'opfs' | 'arrow';
+export type DuckDBType = 'VARCHAR' | 'INT' | 'INTEGER' | 'BIGINT' | 'FLOAT' | 'DOUBLE' | 'BOOLEAN' | 'DATE' | 'TIMESTAMP' | 'DECIMAL' | 'HUGEINT' | (string & {});
 
 export type ScalarValue = string | number | boolean | null | undefined;
-export type ParamString<T> = string extends keyof T ? string : "";
+export type ParamString<T> = string extends keyof T ? string : '';
 export type ParamProxy<T> = { [K in keyof T]: ParamString<T> } & {
   raw: T;
   where: (conditions: Record<string, SqlConditionValue>) => ParamString<T>;
@@ -56,24 +27,20 @@ export type ParamProxy<T> = { [K in keyof T]: ParamString<T> } & {
   ilike: (col: string, val: string) => ParamString<T>;
 };
 
-type WhitespaceChar = " " | "\n" | "\t" | "\r";
+type WhitespaceChar = ' ' | '\n' | '\t' | '\r';
 type TrimLeft<T extends string> = T extends `${WhitespaceChar}${infer R}` ? TrimLeft<R> : T;
 
 export type ValidSQL<T extends string> = string extends T
   ? T
-  : TrimLeft<T> extends `${"SELECT" | "FROM" | "PIVOT" | "--sql" | "--SQL" | "WITH" | "with"}${string}`
+  : TrimLeft<T> extends `${'SELECT' | 'FROM' | 'PIVOT' | '--sql' | '--SQL' | 'WITH' | 'with'}${string}`
     ? T
-    : "ERROR: SQL must start with SELECT, FROM, PIVOT, WITH or --sql";
+    : 'ERROR: SQL must start with SELECT, FROM, PIVOT, WITH or --sql';
 
 type InferRow<TQuery extends string> = InferSQLStrict<TQuery>[number];
 
 type FillUnknown<T, Fill> = Materialize<{ [K in keyof T]: unknown extends T[K] ? Fill : T[K] }>;
 
-export type ApplyFill<TRow, TFill> = [TFill] extends [never]
-  ? TRow
-  : TFill extends Record<string, unknown>
-    ? TFill
-    : FillUnknown<TRow, TFill>;
+export type ApplyFill<TRow, TFill> = [TFill] extends [never] ? TRow : TFill extends Record<string, unknown> ? TFill : FillUnknown<TRow, TFill>;
 
 type OverrideRow<TQuery extends string, TOverride> = [TOverride] extends [never]
   ? InferRow<TQuery>
@@ -90,21 +57,11 @@ export type QueryRef<TRow = unknown> = Duckable<TRow>;
 export type ThenableRef<TRow = unknown> = Duckable<TRow>;
 
 type SqlCallable<Thenable extends boolean = false> = {
-  <
-    TOverride = never,
-    TParams extends Record<string, unknown> = Record<string, unknown>,
-    TQuery extends string = string,
-  >(
+  <TOverride = never, TParams extends Record<string, unknown> = Record<string, unknown>, TQuery extends string = string>(
     queryFn: (t: ParamProxy<TParams>) => ValidSQL<TQuery>,
-    params?: TParams,
-  ): Thenable extends true
-    ? ThenableRef<OverrideRow<TQuery, TOverride>>
-    : Duckable<OverrideRow<TQuery, TOverride>>;
-  <TOverride = never, TQuery extends string = string>(
-    sql: ValidSQL<TQuery>,
-  ): Thenable extends true
-    ? ThenableRef<OverrideRow<TQuery, TOverride>>
-    : Duckable<OverrideRow<TQuery, TOverride>>;
+    params?: TParams
+  ): Thenable extends true ? ThenableRef<OverrideRow<TQuery, TOverride>> : Duckable<OverrideRow<TQuery, TOverride>>;
+  <TOverride = never, TQuery extends string = string>(sql: ValidSQL<TQuery>): Thenable extends true ? ThenableRef<OverrideRow<TQuery, TOverride>> : Duckable<OverrideRow<TQuery, TOverride>>;
 };
 
 export type SqlFunction = SqlCallable<true>;
@@ -115,14 +72,8 @@ export type UseCacheTableHook = SqlCallable;
 
 export interface UseValuesHook {
   <TData extends Record<string, unknown>>(data: TData[]): Duckable<TData>;
-  <TSchema extends Record<string, DuckDBType>>(
-    data: Partial<InferDuckTable<TSchema>>[],
-    schema: TSchema,
-  ): Duckable<InferDuckTable<TSchema>>;
-  <TKey extends string>(
-    data: Record<string, unknown>[],
-    columns: readonly TKey[],
-  ): Duckable<{ [K in TKey]: unknown }>;
+  <TSchema extends Record<string, DuckDBType>>(data: Partial<InferDuckTable<TSchema>>[], schema: TSchema): Duckable<InferDuckTable<TSchema>>;
+  <TKey extends string>(data: Record<string, unknown>[], columns: readonly TKey[]): Duckable<{ [K in TKey]: unknown }>;
 }
 
 export type StoreRef<TRow = unknown> = Duckable<TRow> & {
@@ -152,7 +103,7 @@ let _runtime: DuckRuntime | null = null;
 function rowsFromResult(result: DuckResult): unknown[] {
   if (result.rows) return result.rows();
   if (result.toArray) return result.toArray();
-  throw new Error("[reducks] Runtime exec() result must provide rows() or toArray()");
+  throw new Error('[reducks] Runtime exec() result must provide rows() or toArray()');
 }
 
 function rowFromResult(result: DuckResult): unknown {
@@ -162,10 +113,7 @@ function rowFromResult(result: DuckResult): unknown {
 
 function arrowTableFromResult(result: DuckResult): unknown {
   const value = result.toArrow ?? result.arrowTable ?? result.raw;
-  if (value == null)
-    throw new Error(
-      "[reducks] Runtime exec() result must provide arrowTable or raw for arrowTable()",
-    );
+  if (value == null) throw new Error('[reducks] Runtime exec() result must provide arrowTable or raw for arrowTable()');
   return value;
 }
 
@@ -174,8 +122,7 @@ export function setRuntime(runtime: DuckRuntime) {
 }
 
 export function getRuntime(): DuckRuntime {
-  if (!_runtime)
-    throw new Error("[reducks] No runtime set. Call setRuntime() before consuming refs.");
+  if (!_runtime) throw new Error('[reducks] No runtime set. Call setRuntime() before consuming refs.');
   return _runtime;
 }
 
@@ -186,13 +133,13 @@ const NEVER = new Promise<never>(() => {});
 let _seq = 0;
 const uid = (prefix: string) => `${prefix}_${++_seq}_${Math.random().toString(36).slice(2, 6)}`;
 
-const isTrimmable = (ch: string) => ch === ";" || /\s/.test(ch);
-const isLineTerminator = (ch: string) => ch === "\n" || ch === "\r" || ch === " " || ch === " ";
+const isTrimmable = (ch: string) => ch === ';' || /\s/.test(ch);
+const isLineTerminator = (ch: string) => ch === '\n' || ch === '\r' || ch === ' ' || ch === ' ';
 
 // Linear equivalent of `query.replace(/[;\n\s]*$/gm, "")`: a run of `;`/whitespace is dropped
 // when it ends the query, otherwise only the part before its last line terminator is dropped.
 function trimSemicolonsAndBlanksAtLineEnds(query: string): string {
-  let out = "";
+  let out = '';
   let i = 0;
   while (i < query.length) {
     if (!isTrimmable(query[i]!)) {
@@ -227,7 +174,7 @@ export function buildProxy<T extends Record<string, unknown>>(params: T): ParamP
       raw[k] = v;
     } else {
       escaped[k] = escapeSQL(v);
-      raw[k] = String(v ?? "");
+      raw[k] = String(v ?? '');
     }
   }
   return Object.assign(escaped, {
@@ -247,16 +194,16 @@ export function buildProxy<T extends Record<string, unknown>>(params: T): ParamP
 }
 
 export function depsResolved(params: Record<string, unknown>) {
-  return Object.values(params).every((v) => (isRef(v) ? v.status !== "pending" : true));
+  return Object.values(params).every((v) => (isRef(v) ? v.status !== 'pending' : true));
 }
 
 export function resolveSql(queryFn: unknown, params: Record<string, unknown>) {
-  return typeof queryFn === "function" ? queryFn(buildProxy(params)) : queryFn;
+  return typeof queryFn === 'function' ? queryFn(buildProxy(params)) : queryFn;
 }
 
 // ─── DuckRef ───────────────────────────────────────────────
 export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
-  readonly [Symbol.toStringTag] = "Duckable";
+  readonly [Symbol.toStringTag] = 'Duckable';
   readonly id: string;
   readonly type: QueryType;
   readonly query: string;
@@ -275,14 +222,12 @@ export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
 
   then<TResult1 = NonNullable<TRow>[], TResult2 = never>(
     onfulfilled?: ((value: NonNullable<TRow>[]) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
   ): Promise<TResult1 | TResult2> {
     return this.rows().then(onfulfilled, onrejected);
   }
 
-  catch<TResult = never>(
-    onrejected?: ((reason: unknown) => TResult | PromiseLike<TResult>) | null,
-  ): Promise<NonNullable<TRow>[] | TResult> {
+  catch<TResult = never>(onrejected?: ((reason: unknown) => TResult | PromiseLike<TResult>) | null): Promise<NonNullable<TRow>[] | TResult> {
     return this.rows().catch(onrejected);
   }
 
@@ -290,16 +235,10 @@ export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
     return this.rows().finally(onfinally);
   }
 
-  constructor(
-    status: QueryStatus,
-    type: QueryType,
-    query: string,
-    dependencies: Duckable[] = [],
-    options: { id?: string; name?: string; arrowTable?: unknown } = {},
-  ) {
+  constructor(status: QueryStatus, type: QueryType, query: string, dependencies: Duckable[] = [], options: { id?: string; name?: string; arrowTable?: unknown } = {}) {
     this.id = options.id ?? uid(type[0]!);
     this.type = type;
-    this.query = query == null ? "" : trimSemicolonsAndBlanksAtLineEnds(query);
+    this.query = query == null ? '' : trimSemicolonsAndBlanksAtLineEnds(query);
     this.dependencies = dependencies;
     this.status = status;
     this.name = options.name;
@@ -312,7 +251,7 @@ export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
 
   setStatus(status: QueryStatus, error?: Error) {
     this.status = status;
-    this.error = status === "error" ? error : undefined;
+    this.error = status === 'error' ? error : undefined;
   }
 
   takeArrowTable() {
@@ -323,14 +262,14 @@ export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
 
   static toStatement(ref: Duckable) {
     const tag = `--:re:${ref.type}:${ref.name ?? ref.id}\n`;
-    if (ref.type === "fragment") return tag + ref.query;
-    if (ref.type === "opfs") return tag + `FROM 'opfs://${ref.id}.parquet'`;
+    if (ref.type === 'fragment') return tag + ref.query;
+    if (ref.type === 'opfs') return tag + `FROM 'opfs://${ref.id}.parquet'`;
     return tag + `FROM ${ref.id}`;
   }
 
   static toExpr(ref: Duckable) {
-    if (ref.type === "fragment") return `(${ref.query})`;
-    if (ref.type === "opfs") return `'opfs://${ref.id}.parquet'`;
+    if (ref.type === 'fragment') return `(${ref.query})`;
+    if (ref.type === 'opfs') return `'opfs://${ref.id}.parquet'`;
     return `"${ref.id}"`;
   }
 
@@ -339,7 +278,7 @@ export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
   }
 
   private cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    if (this.status === "pending") return NEVER as Promise<T>;
+    if (this.status === 'pending') return NEVER as Promise<T>;
     const hit = this._promises.get(key);
     if (hit) return hit as Promise<T>;
     const promise = fn();
@@ -353,7 +292,7 @@ export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
   }
 
   rows<TFill = never>(): Promise<NonNullable<ApplyFill<TRow, TFill>>[]> {
-    return this.cached("a", async () => rowsFromResult(await this.execute()) as never);
+    return this.cached('a', async () => rowsFromResult(await this.execute()) as never);
   }
 
   /** @deprecated Use rows() */
@@ -367,14 +306,14 @@ export class Duckable<TRow = unknown> implements Promise<NonNullable<TRow>[]> {
   }
 
   arrowTable(): Promise<Table> {
-    return this.cached("w", async () => {
+    return this.cached('w', async () => {
       const result = await this.execute();
       return arrowTableFromResult(result) as Table;
     });
   }
 
   row<TFill = never>(): Promise<NonNullable<ApplyFill<TRow, TFill>> | null> {
-    return this.cached("n", async () => rowFromResult(await this.execute()) as never);
+    return this.cached('n', async () => rowFromResult(await this.execute()) as never);
   }
 
   async toSql(): Promise<string> {
@@ -399,45 +338,40 @@ function getDependencyChain(ref: Duckable): Duckable[] {
 }
 
 async function materializeRef(ref: Duckable): Promise<void> {
-  if (ref.status === "ready" || ref.type === "fragment") return;
-  if (ref.status === "error") throw ref.error;
+  if (ref.status === 'ready' || ref.type === 'fragment') return;
+  if (ref.status === 'error') throw ref.error;
   if (ref._materializing) return ref._materializing;
 
   const promise = (async () => {
-    ref.setStatus("writing");
+    ref.setStatus('writing');
     const runtime = getRuntime();
     const name = ref.name ?? ref.id;
     try {
-      if (ref.type === "arrow") {
+      if (ref.type === 'arrow') {
         const arrowTable = ref.takeArrowTable();
         if (!arrowTable) throw new Error(`[materialize:${name}] Arrow table missing`);
-        if (!runtime.insertArrow)
-          throw new Error(`[materialize:${name}] Runtime does not support insertArrow`);
+        if (!runtime.insertArrow) throw new Error(`[materialize:${name}] Runtime does not support insertArrow`);
         await runtime.insertArrow(ref.id, arrowTable);
       } else if (ref._storeSchema) {
         const cols = Object.entries(ref._storeSchema)
           .map(([c, t]) => `${c} ${t}`)
-          .join(", ");
+          .join(', ');
         await runtime.exec(`--:re:table:${name}\nCREATE TABLE IF NOT EXISTS ${ref.id} (${cols})`);
         if (ref._storeBuffer && ref._storeBuffer.length > 0) {
           const colNames = Object.keys(ref._storeSchema);
-          await runtime.exec(
-            `--:re:table:${name}\nINSERT INTO ${ref.id} SELECT * FROM (VALUES ${toValues(ref._storeBuffer, ref._storeSchema)}) AS _v(${colNames.join(",")})`,
-          );
+          await runtime.exec(`--:re:table:${name}\nINSERT INTO ${ref.id} SELECT * FROM (VALUES ${toValues(ref._storeBuffer, ref._storeSchema)}) AS _v(${colNames.join(',')})`);
           ref._storeBuffer = [];
         }
-      } else if (ref.type === "opfs") {
+      } else if (ref.type === 'opfs') {
         const path = `opfs://${ref.id}.parquet`;
         await runtime.registerOPFSFileName!(path);
         await runtime.exec(`--:re:opfs:${name}\nCOPY (${ref.query}) TO '${path}' (FORMAT PARQUET)`);
       } else {
-        await runtime.exec(
-          `--:re:table:${name}\nCREATE TABLE IF NOT EXISTS "${ref.id}" AS ${ref.query}`,
-        );
+        await runtime.exec(`--:re:table:${name}\nCREATE TABLE IF NOT EXISTS "${ref.id}" AS ${ref.query}`);
       }
-      ref.setStatus("ready");
+      ref.setStatus('ready');
     } catch (err) {
-      ref.setStatus("error", err as Error);
+      ref.setStatus('error', err as Error);
       console.error(`[materialize:${name}]`, err);
       throw err;
     } finally {
@@ -451,14 +385,14 @@ async function materializeRef(ref: Duckable): Promise<void> {
 
 export async function materializeChain(ref: Duckable): Promise<void> {
   for (const node of getDependencyChain(ref)) {
-    if (node.type !== "fragment" && node.status !== "ready") {
+    if (node.type !== 'fragment' && node.status !== 'ready') {
       await materializeRef(node);
     }
   }
 }
 
 export function needsMaterialization(ref: Duckable) {
-  return getDependencyChain(ref).some((n) => n.type !== "fragment" && n.status !== "ready");
+  return getDependencyChain(ref).some((n) => n.type !== 'fragment' && n.status !== 'ready');
 }
 
 export async function runSql(query: string): Promise<void> {
@@ -469,13 +403,9 @@ export async function runSql(query: string): Promise<void> {
 
 const _refCache = new Map<string, Duckable>();
 
-export function makeRef(
-  type: "fragment" | "table" | "opfs",
-  queryFn: unknown,
-  params: Record<string, unknown> = {},
-): Duckable {
-  const hasPending = Object.values(params).some((v) => isRef(v) && v.status === "pending");
-  if (hasPending) return new Duckable("pending", type, "", []);
+export function makeRef(type: 'fragment' | 'table' | 'opfs', queryFn: unknown, params: Record<string, unknown> = {}): Duckable {
+  const hasPending = Object.values(params).some((v) => isRef(v) && v.status === 'pending');
+  if (hasPending) return new Duckable('pending', type, '', []);
 
   const sqlStr = resolveSql(queryFn, params);
   const key = `${type}\0${sqlStr}`;
@@ -483,39 +413,27 @@ export function makeRef(
   if (hit) return hit;
 
   const deps = Object.values(params).filter(isRef);
-  const prefix = type === "fragment" ? "f" : type === "opfs" ? "o" : "t";
-  const id = type === "fragment" ? uid("f") : `${prefix}_${Duckable.deterministicId(sqlStr)}`;
-  const ref = new Duckable(type === "fragment" ? "ready" : "idle", type, sqlStr, deps, { id });
+  const prefix = type === 'fragment' ? 'f' : type === 'opfs' ? 'o' : 't';
+  const id = type === 'fragment' ? uid('f') : `${prefix}_${Duckable.deterministicId(sqlStr)}`;
+  const ref = new Duckable(type === 'fragment' ? 'ready' : 'idle', type, sqlStr, deps, { id });
   _refCache.set(key, ref);
   return ref;
 }
 
-export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(
-  id: string,
-  _schema: TSchema,
-): StoreRef<InferDuckTable<TSchema>>;
-export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(
-  _schema: TSchema,
-): StoreRef<InferDuckTable<TSchema>>;
-export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(
-  ...params: [string | TSchema, TSchema?]
-): StoreRef<InferDuckTable<TSchema>> {
-  const [id, schema] =
-    params.length === 1 ? [uid("s"), params[0]!] : [params[0]! as string, params[1]! as TSchema];
-  const ref = new Duckable("idle", "table", "", [], { id });
+export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(id: string, _schema: TSchema): StoreRef<InferDuckTable<TSchema>>;
+export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(_schema: TSchema): StoreRef<InferDuckTable<TSchema>>;
+export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(...params: [string | TSchema, TSchema?]): StoreRef<InferDuckTable<TSchema>> {
+  const [id, schema] = params.length === 1 ? [uid('s'), params[0]!] : [params[0]! as string, params[1]! as TSchema];
+  const ref = new Duckable('idle', 'table', '', [], { id });
   ref._storeSchema = schema as Record<string, string>;
   ref._storeBuffer = [];
 
-  const insert = async (
-    rows: Partial<InferDuckTable<TSchema>> | Partial<InferDuckTable<TSchema>>[],
-  ) => {
+  const insert = async (rows: Partial<InferDuckTable<TSchema>> | Partial<InferDuckTable<TSchema>>[]) => {
     const arr = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
-    if (ref.status === "ready") {
+    if (ref.status === 'ready') {
       if (arr.length === 0) return;
       const colNames = Object.keys(schema);
-      await getRuntime().exec(
-        `--:re:table:${ref.name ?? ref.id}\nINSERT INTO ${id} SELECT * FROM (VALUES ${toValues(arr, schema as Record<string, string>)}) AS _v(${colNames.join(",")})`,
-      );
+      await getRuntime().exec(`--:re:table:${ref.name ?? ref.id}\nINSERT INTO ${id} SELECT * FROM (VALUES ${toValues(arr, schema as Record<string, string>)}) AS _v(${colNames.join(',')})`);
     } else {
       ref._storeBuffer!.push(...arr);
     }
@@ -531,52 +449,38 @@ export function makeStoreRef<TSchema extends Record<string, DuckDBType>>(
 
 // ─── re namespace (imperative API) ───────────────────────────
 
-const sqlFn = ((queryFn: unknown, params?: Record<string, unknown>) =>
-  makeRef("fragment", queryFn, params ?? {})) as SqlFunction;
+const sqlFn = ((queryFn: unknown, params?: Record<string, unknown>) => makeRef('fragment', queryFn, params ?? {})) as SqlFunction;
 
-const tableFn = ((queryFn: unknown, params?: Record<string, unknown>) =>
-  makeRef("table", queryFn, params ?? {})) as SqlFunction;
+const tableFn = ((queryFn: unknown, params?: Record<string, unknown>) => makeRef('table', queryFn, params ?? {})) as SqlFunction;
 
-const opfsFn = ((queryFn: unknown, params?: Record<string, unknown>) =>
-  makeRef("opfs", queryFn, params ?? {})) as SqlFunction;
+const opfsFn = ((queryFn: unknown, params?: Record<string, unknown>) => makeRef('opfs', queryFn, params ?? {})) as SqlFunction;
 
-const valuesFn: UseValuesHook = ((
-  data: Record<string, unknown>[],
-  schema?: Record<string, string> | readonly string[],
-): Duckable => {
+const valuesFn: UseValuesHook = ((data: Record<string, unknown>[], schema?: Record<string, string> | readonly string[]): Duckable => {
   const valSql = toValuesSelect(data, schema);
   const key = `fragment\0${valSql}`;
   const hit = _refCache.get(key);
   if (hit) return hit;
-  const ref = new Duckable("ready", "fragment", valSql, [], { id: uid("f") });
+  const ref = new Duckable('ready', 'fragment', valSql, [], { id: uid('f') });
   _refCache.set(key, ref);
   return ref;
 }) as UseValuesHook;
 
 function fromArrowFn(arrowTable: Table) {
-  const id = uid("a");
-  return new Duckable("idle", "arrow", `FROM ${id}`, [], { id, arrowTable });
+  const id = uid('a');
+  return new Duckable('idle', 'arrow', `FROM ${id}`, [], { id, arrowTable });
 }
 
-export function statement<TVariable extends Record<string, unknown>>(): <
-  TFixed extends Record<string, unknown>,
->(
+export function statement<TVariable extends Record<string, unknown>>(): <TFixed extends Record<string, unknown>>(
   builder: (t: ParamProxy<TVariable & TFixed>) => string,
-  fixed: TFixed,
+  fixed: TFixed
 ) => (params: TVariable) => ThenableRef<unknown>;
-export function statement<
-  TVariable extends Record<string, unknown>,
-  TFixed extends Record<string, unknown> = Record<string, unknown>,
-  TQuery extends string = string,
-  TOverride = never,
->(
+export function statement<TVariable extends Record<string, unknown>, TFixed extends Record<string, unknown> = Record<string, unknown>, TQuery extends string = string, TOverride = never>(
   builder: (t: ParamProxy<TVariable & TFixed>) => ValidSQL<TQuery>,
-  fixed?: TFixed,
+  fixed?: TFixed
 ): (params: TVariable) => ThenableRef<OverrideRow<TQuery, TOverride>>;
 export function statement(builder?: unknown, fixed?: Record<string, unknown>): unknown {
   if (builder === undefined) {
-    return (b: unknown, f: Record<string, unknown>) => (params: Record<string, unknown>) =>
-      sqlFn(b as never, { ...f, ...params });
+    return (b: unknown, f: Record<string, unknown>) => (params: Record<string, unknown>) => sqlFn(b as never, { ...f, ...params });
   }
   return (params: Record<string, unknown>) => sqlFn(builder as never, { ...fixed, ...params });
 }
@@ -593,13 +497,7 @@ export const re = {
   statement,
 };
 
-export {
-  fromArrowFn as fromArrow,
-  opfsFn as opfs,
-  sqlFn as sql,
-  tableFn as table,
-  valuesFn as values,
-};
+export { fromArrowFn as fromArrow, opfsFn as opfs, sqlFn as sql, tableFn as table, valuesFn as values };
 /** @deprecated Use re.table */
 export const cacheTable = tableFn;
 /** @deprecated Use re.table */
@@ -620,7 +518,7 @@ export async function _typeCheck() {
       t satisfies { whatever: string };
       return `SELECT 42::int AS XX from ${t.whatever}`;
     },
-    { whatever: "t" },
+    { whatever: 't' }
   );
 
   const f3 = re.sql(() => `SELECT sum(cost)::int as total_cost, carrier as best FROM t`);
@@ -679,40 +577,39 @@ export async function _typeCheck() {
 
   const cutoffsTyped = re.values(
     [
-      { carrier: "heppner", cutoff: 250 },
-      { carrier: "geodist", cutoff: 300 },
+      { carrier: 'heppner', cutoff: 250 },
+      { carrier: 'geodist', cutoff: 300 },
     ],
-    { carrier: "VARCHAR", cutoff: "INT" },
+    { carrier: 'VARCHAR', cutoff: 'INT' }
   );
   cutoffsTyped && (cutoffsTyped satisfies ThenableRef<{ carrier: unknown; cutoff: unknown }>);
 
   const cutoffsSimple = re.values(
     [
-      { carrier: "heppner", cutoff: 250 },
-      { carrier: "geodist", cutoff: 300 },
+      { carrier: 'heppner', cutoff: 250 },
+      { carrier: 'geodist', cutoff: 300 },
     ],
-    ["carrier", "cutoff"],
+    ['carrier', 'cutoff']
   );
   cutoffsSimple && (cutoffsSimple satisfies ThenableRef<{ carrier: unknown; cutoff: unknown }>);
 
-  const emptyTyped = re.values([], { id: "INT", name: "VARCHAR" });
+  const emptyTyped = re.values([], { id: 'INT', name: 'VARCHAR' });
   emptyTyped && (emptyTyped satisfies ThenableRef<{ id: unknown; name: unknown }>);
 
-  const emptySimple = re.values([], ["id", "name"] as const);
+  const emptySimple = re.values([], ['id', 'name'] as const);
   emptySimple && (emptySimple satisfies ThenableRef<{ id: unknown; name: unknown }>);
 
-  const s1 = re.sql((t) => "SELECT 42 AS TOTO  FROM LOL");
+  const s1 = re.sql((t) => 'SELECT 42 AS TOTO  FROM LOL');
   s1 satisfies ThenableRef<{ TOTO: number }>;
-  const r1 = re.statement((t) => `SELECT 42 AS TOTO  FROM LOL = ${t.xx}`, {xx: 312})
+  const r1 = re.statement((t) => `SELECT 42 AS TOTO  FROM LOL = ${t.xx}`, { xx: 312 });
   // @ts-expect-error
-  r1()
-  const execed = await r1({ lol: "t" })
+  r1();
+  const execed = await r1({ lol: 't' });
   execed satisfies { TOTO: number }[];
 
-const r2 = re.statement((t) => "SELECT 42 AS TOTO  FROM LOL");
-  const execed2 = await r2({})
+  const r2 = re.statement((t) => 'SELECT 42 AS TOTO  FROM LOL');
+  const execed2 = await r2({});
   execed2 satisfies { TOTO: number }[];
-
 
   // --- useSql with multi-CTE object syntax ---
 

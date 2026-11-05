@@ -17,15 +17,7 @@ import { Table } from 'apache-arrow';
 import React, { createContext, useContext, useMemo, useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 
 import { type ColumnDescribe, useColumnDescribe, useColumnSummaries, useColumnSizes, useQueryParts, useTableCount, useTableSchema } from './Datasource';
-import {
-  type FilterValue,
-  type FiltersState,
-  buildWhereClause,
-  isSetFilter,
-  isRangeFilter,
-  serializeQTLayout,
-  parseQTLayout,
-} from '../../sqlUtils';
+import { type FilterValue, type FiltersState, buildWhereClause, isSetFilter, isRangeFilter, serializeQTLayout, parseQTLayout } from '../../sqlUtils';
 import { useDuckDB } from '../../react/DuckDBProvider';
 import { useSql, type QueryRef } from '../../react/reducks';
 

@@ -10,7 +10,16 @@ import { Input } from '../ui/Input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/Popover';
 import { ScrollArea } from '../ui/ScrollArea';
 
-function useColumnOptions(opts: { col: string | null; tableRef: QueryRef; globalFilter: string; fieldNamesForGlobal: string[]; columnFilters: FiltersState; search: string; limit?: number; columnTypes?: Record<string, string> }) {
+function useColumnOptions(opts: {
+  col: string | null;
+  tableRef: QueryRef;
+  globalFilter: string;
+  fieldNamesForGlobal: string[];
+  columnFilters: FiltersState;
+  search: string;
+  limit?: number;
+  columnTypes?: Record<string, string>;
+}) {
   const { whereClause } = buildWhereClause({
     globalFilter: opts.globalFilter,
     fieldNamesForGlobal: opts.fieldNamesForGlobal,
@@ -92,14 +101,12 @@ export function OptionsFilter({ col, icon, limit, triggerClassName }: { col: str
         </div>
         <Materialize source={{ rows: optionsRef }} disabled={!open} fallback={<div className="text-muted-foreground font-mono text-xs">loading…</div>}>
           {({ rows }) => {
-            const options = (rows as Record<string, unknown>[]).map(
-              (r): ColumnOption => ({
-                key: String(r.key),
-                label: r.key === '__NULL__' ? '(null)' : String(r.key),
-                count: Number(r.cnt),
-                frac: Number(r.frac),
-              })
-            );
+            const options = (rows as Record<string, unknown>[]).map((r): ColumnOption => ({
+              key: String(r.key),
+              label: r.key === '__NULL__' ? '(null)' : String(r.key),
+              count: Number(r.cnt),
+              frac: Number(r.frac),
+            }));
             const optionsTotal = options.reduce((acc, o) => acc + o.count, 0) || 1;
             return (
               <>
