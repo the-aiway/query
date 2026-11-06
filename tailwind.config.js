@@ -1,10 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    './table/**/*.{ts,tsx}',
-    './react/**/*.{ts,tsx}',
-    './stories/**/*.{ts,tsx}',
-  ],
+  content: ['./table/**/*.{ts,tsx}', './react/**/*.{ts,tsx}', './stories/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {

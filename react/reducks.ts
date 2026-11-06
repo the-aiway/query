@@ -1,29 +1,71 @@
 import type { Table } from 'apache-arrow';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    depsResolved,
-    Duckable,
-    makeRef,
-    makeStoreRef,
-    resolveSql,
-    table as reTable,
-    values as reValues,
-    sql,
-    type ApplyFill,
-    type DuckDBType,
-    type ParamProxy,
-    type SqlFunction,
-    type StoreRef,
-    type ThenableRef,
-    type UseSqlHook,
-    type UseTableHook,
-    type UseValuesHook,
+  depsResolved,
+  Duckable,
+  makeRef,
+  makeStoreRef,
+  resolveSql,
+  table as reTable,
+  values as reValues,
+  sql,
+  type ApplyFill,
+  type DuckDBType,
+  type ParamProxy,
+  type SqlFunction,
+  type StoreRef,
+  type ThenableRef,
+  type UseSqlHook,
+  type UseTableHook,
+  type UseValuesHook,
 } from '../core/reducks';
 import type { InferDuckTable } from '../duck/inferSqlReturntype';
 import { toValuesSelect } from '../toValues';
 
-export { buildProxy, cacheTable, depsResolved, Duckable, fromArrow, getRuntime, isRef, lazyTable, makeRef, makeStoreRef, materializeChain, needsMaterialization, opfs, re, resolveSql, runSql, setRuntime, sql, statement, table, values } from '../core/reducks';
-export type { ApplyFill, DuckDBType, DuckResult, DuckRuntime, ExtractRow, ParamProxy, ParamString, QueryRef, QueryStatus, QueryType, ScalarValue, SqlFunction, StoreRef, ThenableRef, UseCacheTableHook, UseSqlHook, UseTableHook, UseValuesHook, ValidSQL } from '../core/reducks';
+export {
+  buildProxy,
+  cacheTable,
+  depsResolved,
+  Duckable,
+  fromArrow,
+  getRuntime,
+  isRef,
+  lazyTable,
+  makeRef,
+  makeStoreRef,
+  materializeChain,
+  needsMaterialization,
+  opfs,
+  re,
+  resolveSql,
+  runSql,
+  setRuntime,
+  sql,
+  statement,
+  table,
+  values,
+} from '../core/reducks';
+export type {
+  ApplyFill,
+  DuckDBType,
+  DuckResult,
+  DuckRuntime,
+  ExtractRow,
+  ParamProxy,
+  ParamString,
+  QueryRef,
+  QueryStatus,
+  QueryType,
+  ScalarValue,
+  SqlFunction,
+  StoreRef,
+  ThenableRef,
+  UseCacheTableHook,
+  UseSqlHook,
+  UseTableHook,
+  UseValuesHook,
+  ValidSQL,
+} from '../core/reducks';
 
 // ─── Hooks ───────────────────────────────────────────────────
 
@@ -188,7 +230,7 @@ export function useRow<T, R>(ref: Duckable<T>, select?: (row: NonNullable<T> | n
   selectRef.current = select;
   const result = useMemo(() => (selectRef.current ? selectRef.current(state.data) : state.data), [state.data]);
 
-  return [ result, { isLoading: state.isLoading, error: state.error }];
+  return [result, { isLoading: state.isLoading, error: state.error }];
 }
 
 const useRowsRef = function <TRow, R>(this: Duckable<TRow>, select?: (rows: NonNullable<TRow>[]) => R) {

@@ -47,13 +47,9 @@ export function normalizeSelectSql(sql: string) {
   return /^from\b/i.test(cleaned) ? `SELECT * ${cleaned}` : cleaned;
 }
 
-export function buildWhereClause(opts: {
-  globalFilter: string;
-  fieldNamesForGlobal: string[];
-  columnFilters: FiltersState;
-  excludeCol?: string;
-  columnTypes?: Record<string, string>;
-}): { whereClause: string } {
+export function buildWhereClause(opts: { globalFilter: string; fieldNamesForGlobal: string[]; columnFilters: FiltersState; excludeCol?: string; columnTypes?: Record<string, string> }): {
+  whereClause: string;
+} {
   const parts: string[] = [];
 
   for (const [col, f] of Object.entries(opts.columnFilters).sort(([a], [b]) => a.localeCompare(b))) {

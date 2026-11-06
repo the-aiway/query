@@ -178,7 +178,11 @@ function Stats() {
 
   if (isLoading) return <Spinner />;
   if (error) return <ErrorCard error={error} />;
-  return <div>{stats.total} orders, {stats.revenue}€</div>;
+  return (
+    <div>
+      {stats.total} orders, {stats.revenue}€
+    </div>
+  );
 }
 ```
 
@@ -186,13 +190,13 @@ Also available as methods on the ref itself:
 
 ```tsx
 const [rows, { isLoading, error }] = ordersRef.useRows();
-const [row,  { isLoading, error }] = statsRef.useRow();
+const [row, { isLoading, error }] = statsRef.useRow();
 ```
 
-| Context | Array | Single row |
-|---|---|---|
-| `await` | `ref.rows()` | `ref.row()` |
-| Suspense | `use(ref.rows())` | `use(ref.row())` |
+| Context     | Array                            | Single row                     |
+| ----------- | -------------------------------- | ------------------------------ |
+| `await`     | `ref.rows()`                     | `ref.row()`                    |
+| Suspense    | `use(ref.rows())`                | `use(ref.row())`               |
 | No Suspense | `useRows(ref)` / `ref.useRows()` | `useRow(ref)` / `ref.useRow()` |
 
 Return value: `[data, { isLoading, error }]`

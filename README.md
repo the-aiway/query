@@ -93,13 +93,7 @@ function MyComponent() {
 import { QueryTable } from '@the-aiway/query/table';
 
 function MyComponent() {
-  return (
-    <QueryTable
-      id="active-users"
-      sql="SELECT * FROM users WHERE status = 'active'"
-      height={400}
-    />
-  );
+  return <QueryTable id="active-users" sql="SELECT * FROM users WHERE status = 'active'" height={400} />;
 }
 ```
 
@@ -129,13 +123,7 @@ function Dashboard() {
   const orders = useTable((t) => `SELECT * FROM orders`);
   const customers = useTable((t) => `SELECT * FROM customers`);
 
-  return (
-    <QueryTable
-      id="dashboard"
-      table={{ orders, customers }}
-      height={500}
-    />
-  );
+  return <QueryTable id="dashboard" table={{ orders, customers }} height={500} />;
 }
 ```
 
@@ -143,36 +131,36 @@ function Dashboard() {
 
 ### `<QueryTable>` Props
 
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `table` | `QueryRef \| string \| Record<string, unknown>[] \| Table \| Record<string, QueryRef>` | - | Data source (JSON array, Arrow Table, QueryRef, or named source map for tabs) |
-| `sql` | `string` | - | SQL query string (alternative to `table`) |
-| `id` | `string` | - | Unique identifier for state persistence |
-| `height` | `number` | `560` | Table height in pixels |
-| `rowHeight` | `number` | `24` (compact) / `28` (normal) | Height of each row in pixels |
-| `compact` | `boolean` | `true` | Enable compact column sizing based on content |
-| `overscan` | `number` | `12` | Number of rows to render outside viewport |
-| `enableFilters` | `boolean` | `true` | Enable column filtering |
-| `showRowNumbers` | `boolean` | `false` | Show row index column |
-| `colDefaultWidth` | `number` | `140` | Default column width |
-| `colMinWidth` | `number` | `80` | Minimum column width |
-| `colMaxWidth` | `number` | `180` | Maximum column width |
-| `getRowClassName` | `(ctx: { get, rowIndex }) => string` | - | Custom row CSS class |
-| `renderCell` | `(ctx: { colName, type, rawValue, display, rowIndex, pageRowIndex }) => ReactNode \| undefined` | - | Custom cell renderer (return `undefined` for default) |
-| `title` | `string` | - | Display title |
-| `footer` | `ReactNode` | - | Footer content |
-| `persistStateInUrl` | `boolean` | `true` | Persist filters/sorting in URL |
-| `resolutionStrategy` | `'direct' \| 'materialized' \| 'lazy'` | `'direct'` | How data is resolved from QueryRefs |
+| Prop                 | Type                                                                                            | Default                        | Description                                                                   |
+| -------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------- |
+| `table`              | `QueryRef \| string \| Record<string, unknown>[] \| Table \| Record<string, QueryRef>`          | -                              | Data source (JSON array, Arrow Table, QueryRef, or named source map for tabs) |
+| `sql`                | `string`                                                                                        | -                              | SQL query string (alternative to `table`)                                     |
+| `id`                 | `string`                                                                                        | -                              | Unique identifier for state persistence                                       |
+| `height`             | `number`                                                                                        | `560`                          | Table height in pixels                                                        |
+| `rowHeight`          | `number`                                                                                        | `24` (compact) / `28` (normal) | Height of each row in pixels                                                  |
+| `compact`            | `boolean`                                                                                       | `true`                         | Enable compact column sizing based on content                                 |
+| `overscan`           | `number`                                                                                        | `12`                           | Number of rows to render outside viewport                                     |
+| `enableFilters`      | `boolean`                                                                                       | `true`                         | Enable column filtering                                                       |
+| `showRowNumbers`     | `boolean`                                                                                       | `false`                        | Show row index column                                                         |
+| `colDefaultWidth`    | `number`                                                                                        | `140`                          | Default column width                                                          |
+| `colMinWidth`        | `number`                                                                                        | `80`                           | Minimum column width                                                          |
+| `colMaxWidth`        | `number`                                                                                        | `180`                          | Maximum column width                                                          |
+| `getRowClassName`    | `(ctx: { get, rowIndex }) => string`                                                            | -                              | Custom row CSS class                                                          |
+| `renderCell`         | `(ctx: { colName, type, rawValue, display, rowIndex, pageRowIndex }) => ReactNode \| undefined` | -                              | Custom cell renderer (return `undefined` for default)                         |
+| `title`              | `string`                                                                                        | -                              | Display title                                                                 |
+| `footer`             | `ReactNode`                                                                                     | -                              | Footer content                                                                |
+| `persistStateInUrl`  | `boolean`                                                                                       | `true`                         | Persist filters/sorting in URL                                                |
+| `resolutionStrategy` | `'direct' \| 'materialized' \| 'lazy'`                                                          | `'direct'`                     | How data is resolved from QueryRefs                                           |
 
 ### `<DuckQueryWasmProvider>` Props
 
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `bundlePath` | `string` | `'/static/duckdb'` | Path to DuckDB WASM bundle files |
-| `maxConnections` | `number` | `navigator.hardwareConcurrency` | Connection pool size |
-| `debug` | `boolean` | `false` | Enable debug logging |
-| `onInit` | `(pool: ConnectionPool) => Promise<void>` | - | Callback after initialization |
-| `logger` | `Logger` | `VoidLogger` | DuckDB logger instance |
+| Prop             | Type                                      | Default                         | Description                      |
+| ---------------- | ----------------------------------------- | ------------------------------- | -------------------------------- |
+| `bundlePath`     | `string`                                  | `'/static/duckdb'`              | Path to DuckDB WASM bundle files |
+| `maxConnections` | `number`                                  | `navigator.hardwareConcurrency` | Connection pool size             |
+| `debug`          | `boolean`                                 | `false`                         | Enable debug logging             |
+| `onInit`         | `(pool: ConnectionPool) => Promise<void>` | -                               | Callback after initialization    |
+| `logger`         | `Logger`                                  | `VoidLogger`                    | DuckDB logger instance           |
 
 ### `<Materialize>`
 
@@ -185,15 +173,15 @@ const orders = useSql(() => `SELECT * FROM orders`);
 
 <Materialize source={{ orders }} fallback={<div>Loading...</div>}>
   {({ orders }) => <MyChart data={orders} />}
-</Materialize>
+</Materialize>;
 ```
 
-| Prop | Type | Description |
-| --- | --- | --- |
-| `source` | `Record<string, QueryRef \| Promise>` | Named data sources to resolve |
-| `children` | `(data: ResolvedData) => ReactNode` | Render function with typed resolved data |
-| `fallback` | `ReactNode` | Loading UI (shown during Suspense) |
-| `disabled` | `boolean` | Skip rendering entirely |
+| Prop       | Type                                  | Description                              |
+| ---------- | ------------------------------------- | ---------------------------------------- |
+| `source`   | `Record<string, QueryRef \| Promise>` | Named data sources to resolve            |
+| `children` | `(data: ResolvedData) => ReactNode`   | Render function with typed resolved data |
+| `fallback` | `ReactNode`                           | Loading UI (shown during Suspense)       |
+| `disabled` | `boolean`                             | Skip rendering entirely                  |
 
 ## Reactive SQL Hooks
 
@@ -204,10 +192,7 @@ Creates a SQL fragment QueryRef. Dependencies are resolved as subqueries.
 ```tsx
 import { useSql } from '@the-aiway/query/reducks';
 
-const active = useSql(
-  (t) => `SELECT * FROM ${t.base} WHERE status = 'active'`,
-  { base: someTableRef }
-);
+const active = useSql((t) => `SELECT * FROM ${t.base} WHERE status = 'active'`, { base: someTableRef });
 
 // Consume with Suspense
 const rows = use(active.rows());
@@ -223,10 +208,7 @@ Creates a materialized table QueryRef (written to DuckDB as a temp table).
 ```tsx
 import { useTable } from '@the-aiway/query/reducks';
 
-const cached = useTable(
-  (t) => `SELECT * FROM ${t.source} WHERE amount > 100`,
-  { source: rawDataRef }
-);
+const cached = useTable((t) => `SELECT * FROM ${t.source} WHERE amount > 100`, { source: rawDataRef });
 ```
 
 ### `useValues`
@@ -237,7 +219,10 @@ Creates a QueryRef from an in-memory array.
 import { useValues } from '@the-aiway/query/reducks';
 
 const cutoffs = useValues(
-  [{ region: 'US', min: 100 }, { region: 'EU', min: 200 }],
+  [
+    { region: 'US', min: 100 },
+    { region: 'EU', min: 200 },
+  ],
   { region: 'VARCHAR', min: 'INT' }
 );
 ```
@@ -287,32 +272,26 @@ For use outside React components (event handlers, server-side, scripts):
 ```tsx
 import { re } from '@the-aiway/query';
 
-const stats = re.sql(
-  (t) => `SELECT COUNT(*) as n FROM ${t.orders}`,
-  { orders: re.table(() => `SELECT * FROM raw_orders`) }
-);
+const stats = re.sql((t) => `SELECT COUNT(*) as n FROM ${t.orders}`, { orders: re.table(() => `SELECT * FROM raw_orders`) });
 
 const rows = await stats.rows();
 ```
 
 ## QueryRef Consumption
 
-| Context | Rows | Single Row |
-| --- | --- | --- |
-| `await` | `ref.rows()` | `ref.row()` |
-| Suspense | `use(ref.rows())` | `use(ref.row())` |
-| Hook | `ref.useRows()` | `ref.useRow()` |
-| Arrow | `ref.arrowTable()` | - |
+| Context  | Rows               | Single Row       |
+| -------- | ------------------ | ---------------- |
+| `await`  | `ref.rows()`       | `ref.row()`      |
+| Suspense | `use(ref.rows())`  | `use(ref.row())` |
+| Hook     | `ref.useRows()`    | `ref.useRow()`   |
+| Arrow    | `ref.arrowTable()` | -                |
 
 ### Parameter Proxy
 
 The template function receives a proxy with SQL-safe interpolation:
 
 ```tsx
-const filtered = useSql(
-  (t) => `SELECT * FROM ${t.base} ${t.where({ status: 'active', age: { $gte: 18 } })}`,
-  { base: tableRef }
-);
+const filtered = useSql((t) => `SELECT * FROM ${t.base} ${t.where({ status: 'active', age: { $gte: 18 } })}`, { base: tableRef });
 ```
 
 Available condition helpers: `t.eq()`, `t.neq()`, `t.gt()`, `t.gte()`, `t.lt()`, `t.lte()`, `t.between()`, `t.in()`, `t.like()`, `t.ilike()`, `t.where()`.
@@ -330,12 +309,15 @@ setRuntime({
   async exec(sql: string) {
     // Must return { rows?, toArray?, row?, arrowTable?, raw? }
     const table = await pool.queryIPCTable(sql);
-    return { rows: () => table.toArray().map(r => r?.toJSON?.()), arrowTable: table, raw: table };
+    return { rows: () => table.toArray().map((r) => r?.toJSON?.()), arrowTable: table, raw: table };
   },
   async insertArrow(name: string, arrowTable: unknown) {
     const conn = await pool.acquire();
-    try { await conn.insertArrowTable(arrowTable, { name, create: true }); }
-    finally { pool.release(conn); }
+    try {
+      await conn.insertArrowTable(arrowTable, { name, create: true });
+    } finally {
+      pool.release(conn);
+    }
   },
 });
 ```
@@ -376,10 +358,7 @@ Query uses Tailwind CSS. Add the library's content path to your Tailwind config:
 ```js
 // tailwind.config.js
 module.exports = {
-  content: [
-    './src/**/*.{js,jsx,ts,tsx}',
-    './node_modules/@the-aiway/query/**/*.{ts,tsx}',
-  ],
+  content: ['./src/**/*.{js,jsx,ts,tsx}', './node_modules/@the-aiway/query/**/*.{ts,tsx}'],
 };
 ```
 
