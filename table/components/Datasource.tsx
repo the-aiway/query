@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { useSql, type QueryRef } from '../../react/reducks';
-import { buildWhereClause, type FiltersState } from '../../sqlUtils';
+import { buildWhereClause, escapeSQL, type FiltersState } from '../../sqlUtils';
 
 export type SortingState = Array<{ id: string; desc: boolean }>;
 export type ColumnOption = { key: string; label: string; count: number; frac: number };
@@ -75,28 +75,31 @@ export function useTableCount(filteredRef: QueryRef) {
   });
 }
 
-export function useColumnSummaries(tableRef: QueryRef | null) {
-  const metricsRef = useSql(
-    (t) => `SELECT {
-      name: any_value(alias(COLUMNS(*))),
-      type: first(typeof(COLUMNS(*)))::VARCHAR,
-      uniq: approx_count_distinct(COLUMNS(*))::BIGINT,
-      nulls: (count(*) - count(COLUMNS(*)))::BIGINT,
-      total: count(*)::BIGINT
-    } AS "m_\\0"
-    FROM ${t.base}`,
-    { base: tableRef }
-  );
+const quoteColumn = (name: string) => `"${name.replaceAll('"', '""')}"`;
 
+// DuckDB 2.0 binds COLUMNS(*) ~35x slower than 1.5 and evaluates it wrongly inside FILTER, so each column is spelled out.
+function perColumnStats(fieldNames: string[], fields: (column: string) => string, base: string) {
+  const items = fieldNames.map((name) => `{ name: ${escapeSQL(name)}, ${fields(quoteColumn(name))} }`).join(',\n      ');
+  return `SELECT * FROM (
+    SELECT unnest(m, recursive := true) FROM (SELECT [
+      ${items}
+    ] AS m FROM ${base})
+  )
+  ORDER BY name`;
+}
+
+export function useColumnSummaries(tableRef: QueryRef | null, fieldNames: string[]) {
   const stackedRef = useSql(
-    (t) => `SELECT value.name AS name,
-      value.type AS type,
-      value.uniq AS uniq,
-      value.nulls AS nulls,
-      value.total AS total
-    FROM (UNPIVOT ${t.metrics} ON COLUMNS(*) INTO NAME _col VALUE value)
-    ORDER BY name`,
-    { metrics: metricsRef }
+    (t) =>
+      perColumnStats(
+        fieldNames,
+        (c) => `type: first(typeof(${c}))::VARCHAR,
+        uniq: approx_count_distinct(${c})::BIGINT,
+        nulls: (count(*) - count(${c}))::BIGINT,
+        total: count(*)::BIGINT`,
+        `${t.base}`
+      ),
+    { base: tableRef }
   );
 
   return useQuery({
@@ -111,31 +114,24 @@ export function useColumnSummaries(tableRef: QueryRef | null) {
         total: Number(r.total ?? 0),
       }));
     },
-    enabled: !!tableRef && tableRef.status !== 'pending',
+    enabled: fieldNames.length > 0 && !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,
     staleTime: Infinity,
     gcTime: Infinity,
   });
 }
 
-export function useColumnSizes(tableRef: QueryRef | null, opts?: { enabled?: boolean }) {
+export function useColumnSizes(tableRef: QueryRef | null, fieldNames: string[], opts?: { enabled?: boolean }) {
   const sampleRef = useSql((t) => `SELECT * FROM ${t.base} USING SAMPLE 1000`, { base: tableRef });
 
-  const metricsRef = useSql(
-    (t) => `SELECT {
-      name: any_value(alias(COLUMNS(*))),
-      p80Len: coalesce(quantile_cont(length(CAST(COLUMNS(*) AS VARCHAR)), 0.8) FILTER (WHERE COLUMNS(*) IS NOT NULL AND length(CAST(COLUMNS(*) AS VARCHAR)) > 0), 0)::INT
-    } AS "m_\\0"
-    FROM ${t.sample}`,
-    { sample: sampleRef }
-  );
-
   const sizesRef = useSql(
-    (t) => `SELECT value.name AS name,
-      value.p80Len AS p80Len
-    FROM (UNPIVOT ${t.metrics} ON COLUMNS(*) INTO NAME _col VALUE value)
-    ORDER BY name`,
-    { metrics: metricsRef }
+    (t) =>
+      perColumnStats(
+        fieldNames,
+        (c) => `p80Len: coalesce(quantile_cont(length(CAST(${c} AS VARCHAR)), 0.8) FILTER (WHERE ${c} IS NOT NULL AND length(CAST(${c} AS VARCHAR)) > 0), 0)::INT`,
+        `${t.sample}`
+      ),
+    { sample: sampleRef }
   );
 
   return useQuery({
@@ -147,33 +143,21 @@ export function useColumnSizes(tableRef: QueryRef | null, opts?: { enabled?: boo
         p80Len: Number(r.p80Len ?? 0),
       }));
     },
-    enabled: opts?.enabled !== false && !!tableRef && tableRef.status !== 'pending',
+    enabled: opts?.enabled !== false && fieldNames.length > 0 && !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,
     staleTime: Infinity,
     gcTime: Infinity,
   });
 }
 
-export function useColumnDescribe(tableRef: QueryRef | null) {
+export function useColumnDescribe(tableRef: QueryRef | null, fieldNames: string[]) {
   const describeRef = useSql(
-    (t) => `SELECT
-      value.name AS name,
-      value.empty_count AS empty_count
-    FROM (
-      UNPIVOT (
-        SELECT {
-          name: any_value(alias(COLUMNS(*))),
-          empty_count: (
-            COUNT(*) FILTER (
-              WHERE COLUMNS(*) IS NOT NULL
-                AND length(trim(CAST(COLUMNS(*) AS VARCHAR))) = 0
-            )
-          )::BIGINT
-        } AS "m_\\0"
-        FROM ${t.base}
-      ) ON COLUMNS(*) INTO NAME _col VALUE value
-    )
-    ORDER BY name`,
+    (t) =>
+      perColumnStats(
+        fieldNames,
+        (c) => `empty_count: (COUNT(*) FILTER (WHERE ${c} IS NOT NULL AND length(trim(CAST(${c} AS VARCHAR))) = 0))::BIGINT`,
+        `${t.base}`
+      ),
     { base: tableRef }
   );
 
@@ -186,7 +170,7 @@ export function useColumnDescribe(tableRef: QueryRef | null) {
         emptyCount: Number(r.empty_count ?? 0),
       }));
     },
-    enabled: !!tableRef && tableRef.status !== 'pending',
+    enabled: fieldNames.length > 0 && !!tableRef && tableRef.status !== 'pending',
     placeholderData: keepPreviousData,
     staleTime: Infinity,
     gcTime: Infinity,
