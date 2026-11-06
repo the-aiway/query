@@ -151,15 +151,9 @@ export function useColumnSizes(tableRef: QueryRef | null, fieldNames: string[], 
 }
 
 export function useColumnDescribe(tableRef: QueryRef | null, fieldNames: string[]) {
-  const describeRef = useSql(
-    (t) =>
-      perColumnStats(
-        fieldNames,
-        (c) => `empty_count: (COUNT(*) FILTER (WHERE ${c} IS NOT NULL AND length(trim(CAST(${c} AS VARCHAR))) = 0))::BIGINT`,
-        `${t.base}`
-      ),
-    { base: tableRef }
-  );
+  const describeRef = useSql((t) => perColumnStats(fieldNames, (c) => `empty_count: (COUNT(*) FILTER (WHERE ${c} IS NOT NULL AND length(trim(CAST(${c} AS VARCHAR))) = 0))::BIGINT`, `${t.base}`), {
+    base: tableRef,
+  });
 
   return useQuery({
     queryKey: ['reducks-describe', describeRef.id],
